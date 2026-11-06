@@ -1,0 +1,3 @@
+# Hosted services own tradeable inventory
+
+The shared project account does not make local characters or items authoritative: official marketplace inventory and future asynchronous settlement belong to hosted game/backend services. Offline and TCP/IP saves cannot become official tradeable inventory through uploads or launcher inspection, and the launcher never settles trades by editing saves. This keeps local play independent while placing item ownership and economy enforcement with the services responsible for them; see the [shared-service contract resolution](https://github.com/synpoox/launcher-clean/issues/7).
