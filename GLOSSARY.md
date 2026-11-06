@@ -1,14 +1,16 @@
 # Launcher
 
-The shared launcher for PD2R, Project 09, and Project Forever.
+The shared launcher for Project Diablo 2: Resurrected, Diablo II: Resurrected Forever, and Diablo II: Resurrected 09. These umbrella/product labels are provisional; technical paths and existing planning aliases remain unchanged.
 
-**PD2: Resurrected**:
-The public display name of the product also called PD2R in existing launcher planning. Full name: **Project Diablo II: Resurrected**. Avoid PD2Resurrect in user-facing copy. See the [shared website context](docs/agents/web-context.md).
+**Project Resurrected**: The current preview identity for the shared website and project family, including the mods and D2R Tools. The owner also suggested The Resurrected Project and explicitly asked not to finalize branding. [Web ADR 0004](https://github.com/synpoox/project-web-clean/blob/codex/guides-tools-naming/docs/adr/0004-provisional-umbrella-and-project-directory.md) and its `branding.json` record the reversible display-name choice.
+
+**Project Diablo 2: Resurrected** (existing planning alias: **PD2: Resurrected**, **PD2R**):
+The latest website preview display name for the product called PD2R or PD2: Resurrected in existing launcher planning. Older planning uses Project Diablo II: Resurrected. Avoid PD2Resurrect in user-facing copy. See the [shared website context](docs/agents/web-context.md).
 
 ## Language
 
 **Product**:
-One of the three mods offered through the launcher: PD2R, Project 09, or Project Forever.
+One of the three mods offered through the launcher: Project Diablo 2: Resurrected, Diablo II: Resurrected Forever, or Diablo II: Resurrected 09. Existing planning may use PD2R, Project 09, or Project Forever.
 _Avoid_: Game mode
 
 **Adoption**:
@@ -41,10 +43,10 @@ Restoring a complete installation after an update fails, without changing or con
 **Repair**:
 Restoring a product's missing or damaged managed files while retaining player files.
 
-**Project 09**:
+**Diablo II: Resurrected 09** (existing planning/repository alias: **Project 09**):
 A port of Lord of Destruction 1.09d to Diablo II: Resurrected 3.3.
 
-**Project Forever**:
+**Diablo II: Resurrected Forever** (existing planning/repository alias: **Project Forever**):
 An overhaul mod of Diablo II: Resurrected 3.3 encompassing class changes, legacy items, league mechanics, and endgame changes.
 
 **TCP/IP co-op**:
