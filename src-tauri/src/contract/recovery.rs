@@ -49,23 +49,61 @@ impl PlannedRename {
     }
 }
 
-/// One copy the journal planned (sentinel into staging, player files carried
-/// forward). Copies are written to a temporary sibling and renamed into place, so a
-/// present destination is a complete copy.
+/// One file copy the journal planned (the sentinel `L` -> `S`, player files carried
+/// forward `K` -> new `L`). The copy is written to `temp`, a sibling of `to`, flushed,
+/// then renamed over `to`, so `to` is never half-written.
+///
+/// The destination may already exist before the copy (a shipped default at the
+/// path of the player's edited file), so presence proves nothing: the copy is done
+/// only when `to` has the same bytes as `from`.
+///
+/// Copies are never reversed one by one: their destinations live in `S` or the new
+/// `L`, which rollback discards as a whole. A crash between writing `temp` and the
+/// rename leaves `temp` behind; recovery and `CleanedUp` delete any planned `temp`
+/// that is present.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedCopy {
     pub from: PathBuf,
     pub to: PathBuf,
+    pub temp: PathBuf,
+}
+
+/// Byte-for-byte equality of two regular files (stronger than comparing hashes).
+fn same_file_contents(a: &Path, b: &Path) -> std::io::Result<bool> {
+    use std::io::Read;
+    let (ma, mb) = (std::fs::symlink_metadata(a)?, std::fs::symlink_metadata(b)?);
+    if !ma.is_file() || !mb.is_file() || ma.len() != mb.len() {
+        return Ok(false);
+    }
+    let (mut fa, mut fb) = (std::fs::File::open(a)?, std::fs::File::open(b)?);
+    let (mut ba, mut bb) = (vec![0u8; 64 * 1024], vec![0u8; 64 * 1024]);
+    loop {
+        let n = fa.read(&mut ba)?;
+        if n == 0 {
+            return Ok(true);
+        }
+        fb.read_exact(&mut bb[..n])?;
+        if ba[..n] != bb[..n] {
+            return Ok(false);
+        }
+    }
 }
 
 impl PlannedCopy {
-    /// Destination present: done (undo deletes it). Destination absent and source
-    /// present: not done. Both absent: conflict.
+    /// `to` has exactly `from`'s bytes: done. Otherwise (absent, or holding other
+    /// content such as a shipped default): not done, and performing it replaces
+    /// `to`. `from` missing, or an I/O error while comparing: conflict.
     pub fn on_disk(&self) -> EntryOnDisk {
-        match (present(&self.from), present(&self.to)) {
-            (_, true) => EntryOnDisk::Done,
-            (true, false) => EntryOnDisk::NotDone,
-            (false, false) => EntryOnDisk::Conflict,
+        if !present(&self.from) {
+            return EntryOnDisk::Conflict;
+        }
+        if !present(&self.to) {
+            return EntryOnDisk::NotDone;
+        }
+        match same_file_contents(&self.from, &self.to) {
+            Ok(true) => EntryOnDisk::Done,
+            Ok(false) => EntryOnDisk::NotDone,
+            Err(_) => EntryOnDisk::Conflict,
         }
     }
 }
@@ -134,23 +172,93 @@ mod tests {
     }
 
     #[test]
-    fn both_or_neither_side_present_is_a_conflict() {
+    fn rename_with_both_or_neither_side_present_is_a_conflict() {
         let dir = tempfile::tempdir().unwrap();
         let (a, b) = (dir.path().join("a"), dir.path().join("b"));
         let rename = PlannedRename {
             from: a.clone(),
             to: b.clone(),
         };
-        let copy = PlannedCopy {
-            from: a.clone(),
-            to: b.clone(),
-        };
         assert_eq!(rename.on_disk(), EntryOnDisk::Conflict);
-        assert_eq!(copy.on_disk(), EntryOnDisk::Conflict);
         std::fs::write(&a, b"").unwrap();
-        assert_eq!(copy.on_disk(), EntryOnDisk::NotDone);
         std::fs::write(&b, b"").unwrap();
         assert_eq!(rename.on_disk(), EntryOnDisk::Conflict);
+    }
+
+    fn copy_in(dir: &Path, from: &str, to: &str) -> PlannedCopy {
+        PlannedCopy {
+            from: dir.join(from),
+            to: dir.join(to),
+            temp: dir.join(format!("{to}.resurrected-tmp")),
+        }
+    }
+
+    /// Clean install carries the player's edited filter from `K` into the new `L`,
+    /// where the shipped default already sits at the same path. The default must not
+    /// read as a finished copy.
+    #[test]
+    fn carried_forward_player_file_over_shipped_default_is_not_done_until_copied() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("edited.filter"), b"player edit").unwrap();
+        std::fs::write(dir.path().join("live.filter"), b"shipped default").unwrap();
+        let copy = copy_in(dir.path(), "edited.filter", "live.filter");
+        assert_eq!(copy.on_disk(), EntryOnDisk::NotDone);
+
+        // Same length, different bytes: still not done.
+        std::fs::write(dir.path().join("live.filter"), b"player edjt").unwrap();
+        assert_eq!(copy.on_disk(), EntryOnDisk::NotDone);
+
+        std::fs::copy(&copy.from, &copy.temp).unwrap();
+        std::fs::rename(&copy.temp, &copy.to).unwrap();
         assert_eq!(copy.on_disk(), EntryOnDisk::Done);
+    }
+
+    /// The sentinel copy `L` -> `S` follows the same rule.
+    #[test]
+    fn sentinel_copy_is_done_only_with_matching_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let copy = copy_in(dir.path(), "L.sentinel", "S.sentinel");
+        assert_eq!(copy.on_disk(), EntryOnDisk::Conflict, "source missing");
+        std::fs::write(&copy.from, b"").unwrap();
+        assert_eq!(copy.on_disk(), EntryOnDisk::NotDone);
+        std::fs::write(&copy.to, b"x").unwrap();
+        assert_eq!(copy.on_disk(), EntryOnDisk::NotDone);
+        std::fs::write(&copy.to, b"").unwrap();
+        assert_eq!(copy.on_disk(), EntryOnDisk::Done);
+    }
+
+    /// Update replacing `x`: `L/x -> B/x`, then `S/x -> L/x`. Restoring `B/x` reads
+    /// `Conflict` while the new `L/x` is in place, which is why
+    /// `NewEntriesRemovedFromLive` must run before `BackupRestoredToLive`.
+    #[test]
+    fn backup_restore_of_a_replaced_file_needs_new_entries_removed_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        for sub in ["L", "B", "S"] {
+            std::fs::create_dir(d.join(sub)).unwrap();
+        }
+        std::fs::write(d.join("L/x"), b"old").unwrap();
+        std::fs::write(d.join("S/x"), b"new").unwrap();
+        let to_backup = PlannedRename {
+            from: d.join("L/x"),
+            to: d.join("B/x"),
+        };
+        let to_live = PlannedRename {
+            from: d.join("S/x"),
+            to: d.join("L/x"),
+        };
+        std::fs::rename(&to_backup.from, &to_backup.to).unwrap();
+        std::fs::rename(&to_live.from, &to_live.to).unwrap();
+
+        assert_eq!(to_backup.on_disk(), EntryOnDisk::Conflict);
+        // NewEntriesRemovedFromLive
+        assert_eq!(to_live.on_disk(), EntryOnDisk::Done);
+        let undo = to_live.reversed();
+        std::fs::rename(&undo.from, &undo.to).unwrap();
+        // BackupRestoredToLive
+        assert_eq!(to_backup.on_disk(), EntryOnDisk::Done);
+        let undo = to_backup.reversed();
+        std::fs::rename(&undo.from, &undo.to).unwrap();
+        assert_eq!(std::fs::read(d.join("L/x")).unwrap(), b"old");
     }
 }

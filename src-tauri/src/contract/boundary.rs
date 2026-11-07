@@ -49,9 +49,13 @@
 //! crash, whose boundary the journal has not recorded), it examines *every* entry
 //! the journal planned for that step, not only those recorded as done, and decides
 //! each one with [`super::PlannedRename::on_disk`] / [`super::PlannedCopy::on_disk`]:
-//! `Done` entries are reversed by rollback (or skipped by roll-forward), `NotDone`
+//! `Done` renames are reversed by rollback (or skipped by roll-forward), `NotDone`
 //! entries are left (or performed), `Conflict` stops recovery with
-//! [`super::ErrorCode::RecoveryRequired`] without further changes. Examples:
+//! [`super::ErrorCode::RecoveryRequired`] without further changes. A copy is `Done`
+//! only when the destination has the source's exact bytes, because the destination
+//! may have existed before the copy (a shipped default under the player's edited
+//! file). Copies are never reversed singly; their destinations are inside `S` or
+//! the new `L`, which rollback discards whole. Examples:
 //!
 //! * crash at `LiveMovedToBackup` `AfterEntry(k)`: entry `k` is in `B` but
 //!   unjournaled; `BackupRestoredToLive` still finds it `Done` and moves it back;
@@ -63,7 +67,12 @@
 //! Rollback steps plan their entries as the reverses of the forward step's planned
 //! entries, so they are covered by the same rule and are idempotent: re-running a
 //! rollback step after a crash finds finished entries `NotDone` (already reversed).
-//! Deletes in `CleanedUp` are decided the same way (target absent = done).
+//! Their order matters: `NewEntriesRemovedFromLive` must finish before
+//! `BackupRestoredToLive`, because a replaced file's backup entry reads `Conflict`
+//! while the new file still occupies its live path.
+//! Deletes in `CleanedUp` are decided the same way (target absent = done), and
+//! recovery and `CleanedUp` delete any planned copy `temp` file left by a crash
+//! between writing it and renaming it into place.
 //!
 //! Recovery is itself journaled, so a crash during recovery is resolved by the next
 //! recovery. It never touches player or unknown files or dirs: it only acts on
@@ -159,7 +168,9 @@ pub enum Boundary {
     NewEntriesRemovedFromLive,
     /// Each planned `L` -> `B` entry that disk shows done has been renamed back into `L` (for
     /// clean install: `K` is renamed back to `L`). The previous complete
-    /// installation is in place again. Multi-entry.
+    /// installation is in place again. Multi-entry. Only correct after
+    /// `NewEntriesRemovedFromLive` finished: until then a replaced file's entry reads
+    /// `Conflict`.
     BackupRestoredToLive,
     /// The live root has been re-read and matches the previous installation's
     /// inventory (or, for a first install, holds no managed content), with player
@@ -167,7 +178,8 @@ pub enum Boundary {
     RollbackVerified,
 
     // ---- both directions ----
-    /// Transaction scratch has been removed: staging `S`, backup `B` and the archive.
+    /// Transaction scratch has been removed: staging `S`, backup `B`, the archive and
+    /// any stray copy `temp` files the journal planned.
     /// After a committed uninstall it also removes managed dirs left empty; after a
     /// committed update, required empty dirs the new release no longer lists if they
     /// are still empty. It never removes `K`, a non-empty dir it did not create, or
