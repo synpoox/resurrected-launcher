@@ -29,11 +29,10 @@ export const PRODUCTS = [
     tag: 'Coming soon',
     headline: ['A different future.', 'A resurrected world.'],
     blurb: 'Class changes, legacy items, league mechanics and a reworked endgame.',
-    art: CDN + 'blt9c12f249ac15c7ec/blt06acc1f47b6156a8/6962c5865a1d2cc3f390a43b/necromancer_background_2600.webp',
-    // Class strips are 2600x906 with the character at ~70% across: zoom in and pull them toward centre.
-    artPos: '74% 22%',
-    artSize: 'auto 135%',
-    credit: 'Necromancer class art',
+    // #22 trial: textless 30th Anniversary key art (news.blizzard.com), see docs/research/d2r-forever-hero-image.md.
+    art: CDN + 'blt286175c11a6b3f4c/bltbc24705a63d11582/6aee1babc978be3136a3cfe5/DIA_D2R_30th_Anniversary_Key_Art_1920x1080_nologo_GG01.png',
+    artPos: '20% 30%',
+    credit: '30th Anniversary key art',
     playable: false,
   },
   {
@@ -62,4 +61,3 @@ export const NEWS = {
   '09': [],
 };
 
-export const CREDIT = 'Official D2R promotional artwork © Blizzard Entertainment · Not mod gameplay';

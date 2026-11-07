@@ -30,7 +30,6 @@ a { color: inherit; }
 .slash .btn { font-family: var(--mono); font-weight: 400; }
 .slash .btn::before { content: '/\00a0'; }
 .label { font-size: var(--label); font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
-.credit { font-size: var(--label); color: var(--muted); opacity: .8; }
 .art { position: absolute; inset: 0; background-size: cover; animation: fade .45s ease-out; }
 @keyframes fade { from { opacity: 0; } }
 @keyframes lift { from { opacity: 0; transform: translateY(8px); } }
@@ -51,7 +50,6 @@ a { color: inherit; }
 .A .hero .copy { position: relative; padding: 40px 36px; max-width: 460px; }
 .A .hero .h1 { font-size: 40px; margin: 16px 0 12px; }
 .A .hero p { color: var(--hero-copy); font-size: 14px; line-height: 1.6; }
-.A .hero .credit { position: absolute; right: 16px; bottom: 10px; }
 .A .news { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 0 36px 28px; }
 .A .card { background: var(--panel); border-top: 2px solid var(--accent); padding: 18px 20px; display: grid; gap: 8px; }
 .A .card .t { font-weight: 800; font-size: 15px; }
@@ -88,7 +86,6 @@ a { color: inherit; }
 .B .feed a:hover .t , .D .feed a:hover .t { text-decoration: underline; }
 .B .feed .t , .D .feed .t { font-weight: 700; font-size: 13px; }
 .B .feed .m , .D .feed .m { font-size: var(--label); color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
-.B .credit , .D .credit { position: absolute; top: 14px; right: 18px; }
 
 /* ===== C: Home + product tabs ===== */
 .C { display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
@@ -105,7 +102,6 @@ a { color: inherit; }
 .C .banner .shade { position: absolute; inset: 0; background: linear-gradient(90deg,var(--bg) 10%,#10101100 60%), linear-gradient(0deg,var(--bg),#10101100 50%); }
 .C .banner .copy { position: absolute; left: 36px; bottom: 22px; }
 .C .banner .h1 { font-size: 34px; margin-top: 10px; }
-.C .banner .credit { position: absolute; right: 16px; top: 12px; }
 .C .bar { display: flex; align-items: stretch; gap: 1px; margin: 0 36px; background: var(--line); border: 1px solid var(--line); }
 .C .bar .btn.primary { min-height: 64px; padding: 0 56px; font-size: 16px; }
 .C .bar .seg { flex: 1; background: var(--panel); padding: 12px 18px; display: grid; align-content: center; gap: 4px; }
@@ -135,7 +131,6 @@ a { color: inherit; }
 .D nav .brand { display: flex; align-items: center; gap: 12px; padding: 0 24px 34px; }
 .D nav .brand .glyph { color: var(--accent); font-size: 44px; line-height: 1; }
 .D nav .brand .name { font-size: 16px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; line-height: 1.25; }
-.D .credit { top: 42px; }
 .D .act .btn.primary { min-width: 260px; min-height: 60px; font-size: 16px; }
 .D .bottom { grid-template-columns: 1fr 250px; gap: 32px; }
 .D .h1 { font-size: 50px; }

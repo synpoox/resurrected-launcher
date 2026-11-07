@@ -1,6 +1,6 @@
 // PROTOTYPE variants for #17. Each variant owns its layout; only data and the title bar are shared.
 import { useState } from 'react';
-import { PRODUCTS, NEWS, CREDIT, UMBRELLA } from './data.js';
+import { PRODUCTS, NEWS, UMBRELLA } from './data.js';
 
 const Art = ({ p, className = '' }) => (
   <div key={p.id} className={'art ' + className} role="img" aria-label={p.credit + ' (official D2R promotional art)'}
@@ -28,7 +28,6 @@ export function VariantA({ product, setProduct }) {
             <h1 className="h1"><Headline p={p} /></h1>
             <p>{p.blurb}</p>
           </div>
-          <div className="credit">{CREDIT}</div>
         </section>
         <section className="news" aria-label="News">
           {news.length ? news.map((n) => (
@@ -84,7 +83,6 @@ function VariantBMain({ p, brief }) {
   return (
       <main>
         <Art p={p} /><div className="shade" />
-        <div className="credit">{CREDIT}</div>
         <div className="bottom">
           <div className="lift" key={p.id}>
             <span className={'ribbon' + (p.playable ? '' : ' soon')}>{p.tag}</span>
@@ -148,7 +146,6 @@ export function VariantC({ product, setProduct }) {
         <main>
           <section className="banner">
             <Art p={p} /><div className="shade" />
-            <div className="credit">{CREDIT}</div>
             <div className="copy lift" key={p.id}>
               <span className={'ribbon' + (p.playable ? '' : ' soon')}>{p.tag}</span>
               <h1 className="h1"><Headline p={p} /></h1>

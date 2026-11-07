@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client';
 import './tokens.css';
 import './styles.css';
 import './journey.css';
-import { PRODUCTS, NEWS, CREDIT, UMBRELLA } from './data.js';
+import { PRODUCTS, NEWS, UMBRELLA } from './data.js';
 
 const [PD2R, FOREVER] = PRODUCTS;
 const SAVES = 'C:\\Users\\Player\\Saved Games\\Diablo II Resurrected\\mods\\PD2R';
@@ -226,7 +226,6 @@ function App() {
             <main>
               <div key={p.id} className="art" role="img" aria-label={p.credit} style={{ backgroundImage: `url("${p.art}")`, backgroundPosition: p.artPos, backgroundSize: p.artSize }} />
               <div className="shade" />
-              <div className="credit">{CREDIT}</div>
               <div className="bottom">
                 <div>
                   <span className={'ribbon' + (p.playable ? '' : ' soon')}>{p.tag}</span>
