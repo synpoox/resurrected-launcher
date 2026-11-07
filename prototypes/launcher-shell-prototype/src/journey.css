@@ -53,3 +53,14 @@
 .J .kept { padding-left: 18px; display: grid; gap: 6px; }
 /* With a secondary button beside it, Play/Update narrows so the row fits at 1024. */
 .J .act:has(.btn.ghost) .btn.primary { min-width: 200px; }
+
+/* Layout E (#20): notice sits directly above the action row; Patch Notes keeps only the main action top-left. */
+.J.T .notice { margin: 0 0 16px; }
+.J .topact .act { margin: 0; flex-wrap: nowrap; }
+.J .topact .act > .btn.ghost, .J .topact .ready, .J .topact .manage { display: none; }
+.J .topact .act .btn.primary { min-width: 0; min-height: 48px; padding: 0 30px; font-size: 14px; }
+.J .topact .progress { width: 250px; gap: 6px; }
+.J .topact .progress .top { font-size: 12px; }
+.J .topact .progress .bottomrow span { display: none; }
+.J .topact .progress .bottomrow { justify-content: flex-start; }
+.J .tabs .alert { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-left: 6px; vertical-align: top; }

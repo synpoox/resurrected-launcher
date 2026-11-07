@@ -61,3 +61,23 @@ export const NEWS = {
   '09': [],
 };
 
+
+// E/F Patch Notes tab: release notes per product, newest first (illustrative copy).
+// News items tagged Release notes are dropped from the feed in E (#20 Q13).
+export const NOTES = {
+  pd2r: [
+    { version: 'alpha 0.4.2', date: '3 days ago', summary: 'Loot filter fixes, corruption lines on items and a stash crash fix.',
+      sections: [
+        ['Loot filter', ['Rune names highlight again in the default filter.', 'Custom filters keep their colours after an update.', 'Fixed set items showing as uniques in some filters.']],
+        ['Items', ['Corrupted items now show their corruption line in the tooltip.', 'Map item tooltips list all their modifiers.']],
+        ['Fixes', ['Fixed a crash when opening the stash with a full cube.', 'Fixed mercenary equipment resetting after a zone change.', 'Fixed the Act 3 waypoint sometimes not registering.']],
+      ] },
+    { version: 'alpha 0.4.1', date: '3 weeks ago', summary: 'TCP/IP co-op join fixes and early Act 1 drop rates.',
+      sections: [
+        ['Co-op', ['TCP/IP games now list correctly on the join screen.', 'Players joining mid-game keep their party.']],
+        ['Balance', ['Rebalanced early Act 1 drop rates.', 'Normal Countess drops runes more often.']],
+      ] },
+  ],
+  forever: [],
+  '09': [],
+};

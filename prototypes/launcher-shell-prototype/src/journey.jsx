@@ -1,4 +1,6 @@
-// PROTOTYPE for #18: v1 journey states inside the approved shell (variant D from #17).
+// PROTOTYPE for #18: v1 journey states inside the approved shell, now layout E (#20): copy mid-height,
+// notices above the action row, Overview | Patch Notes tabs. On Patch Notes the state's action moves top-left
+// (secondary buttons and detail hidden) and a red dot on Overview points to any notice.
 // Open /journey.html?state=<key>; ← → cycle states. Buttons jump to the state they would lead to.
 // Spec sources: journeys #5, update contract #6, ADR 0001. Throwaway: never merge into main.
 import { useEffect, useState } from 'react';
@@ -6,7 +8,8 @@ import { createRoot } from 'react-dom/client';
 import './tokens.css';
 import './styles.css';
 import './journey.css';
-import { PRODUCTS, NEWS, UMBRELLA } from './data.js';
+import { PRODUCTS, NEWS, NOTES, UMBRELLA } from './data.js';
+import { PatchNotes } from './variants.jsx';
 
 const [PD2R, FOREVER] = PRODUCTS;
 const SAVES = 'C:\\Users\\Player\\Saved Games\\Diablo II Resurrected\\mods\\PD2R';
@@ -183,6 +186,7 @@ function App() {
   const [si, setSi] = useState(Math.max(0, STATES.findIndex((s) => s.key === param('state', 'd2r-missing'))));
   const [size, setSize] = useState(SIZES[param('size', '1280')] ? param('size', '1280') : '1280');
   const [vw, setVw] = useState([innerWidth, innerHeight]);
+  const [tab, setTab] = useState(param('tab', 'overview'));
   const s = STATES[si];
   const p = s.product ?? PD2R;
   const [w, h] = SIZES[size];
@@ -202,7 +206,10 @@ function App() {
     return () => { removeEventListener('keydown', onKey); removeEventListener('resize', onResize); };
   }, []);
 
-  const news = NEWS[p.id];
+  const news = NEWS[p.id].filter((n) => n.tag !== 'Release notes');
+  const notes = NOTES[p.id] ?? [];
+  const reading = tab === 'notes' && notes.length > 0;
+  const pickTab = (t) => { setTab(t); setParam('tab', t); };
   return (
     <>
       <div className="stage">
@@ -213,7 +220,7 @@ function App() {
             <button className="win" aria-label="Maximise">&#9633;</button>
             <button className="win close" aria-label="Close">&#10005;</button>
           </header>
-          <div className="D J">
+          <div className="D J T mid">
             <nav aria-label="Products">
               <div className="brand"><span className="glyph" aria-hidden>/</span><span className="name">{UMBRELLA}</span></div>
               {PRODUCTS.map((x) => (
@@ -224,23 +231,43 @@ function App() {
               <button className="item foot">Settings</button>
             </nav>
             <main>
-              <div key={p.id} className="art" role="img" aria-label={p.credit} style={{ backgroundImage: `url("${p.art}")`, backgroundPosition: p.artPos, backgroundSize: p.artSize }} />
-              <div className="shade" />
-              <div className="bottom">
-                <div>
-                  <span className={'ribbon' + (p.playable ? '' : ' soon')}>{p.tag}</span>
-                  <h1 className="h1">{p.headline[0]}<br />{p.headline[1]}</h1>
-                  <p>{p.blurb}</p>
-                  {s.notice && <div className={'notice' + (s.tone ? ' ' + s.tone : '')}>{s.notice}</div>}
-                  <div className="act">{s.act(go)}</div>
+              {reading ? (
+                <>
+                  <PatchNotes p={p} notes={notes} />
+                  <div className="fade" aria-hidden />
+                  <div className="topact"><div className="act">{s.act(go)}</div></div>
+                </>
+              ) : (
+                <>
+                  <div key={p.id} className="art" role="img" aria-label={p.credit} style={{ backgroundImage: `url("${p.art}")`, backgroundPosition: p.artPos, backgroundSize: p.artSize }} />
+                  <div className="shade" />
+                  <div className="copy">
+                    <span className={'ribbon' + (p.playable ? '' : ' soon')}>{p.tag}</span>
+                    <h1 className="h1">{p.headline[0]}<br />{p.headline[1]}</h1>
+                    <p>{p.blurb}</p>
+                  </div>
+                  <div className="bottom">
+                    <div>
+                      {s.notice && <div className={'notice' + (s.tone ? ' ' + s.tone : '')}>{s.notice}</div>}
+                      <div className="act">{s.act(go)}</div>
+                    </div>
+                    <div className="feed" aria-label="News">
+                      <span className="label" style={{ padding: '10px 0' }}>News</span>
+                      {s.feed ?? (news.length ? news.map((n) => (
+                        <a key={n.title} href="#"><span className="m">{n.tag} · {n.date}</span><span className="t">{n.title} ↗</span></a>
+                      )) : <span className="m" style={{ padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>Nothing yet.</span>)}
+                    </div>
+                  </div>
+                </>
+              )}
+              {notes.length > 0 && (
+                <div className="tabs" role="tablist" aria-label={p.short + ' pages'}>
+                  <button role="tab" aria-selected={!reading} onClick={() => pickTab('overview')}>
+                    Overview{reading && s.notice && <span className="alert" aria-label=" (needs attention)" />}
+                  </button>
+                  <button role="tab" aria-selected={reading} onClick={() => pickTab('notes')}>Patch Notes</button>
                 </div>
-                <div className="feed" aria-label="News">
-                  <span className="label" style={{ padding: '10px 0' }}>News</span>
-                  {s.feed ?? (news.length ? news.map((n) => (
-                    <a key={n.title} href="#"><span className="m">{n.tag} · {n.date}</span><span className="t">{n.title} ↗</span></a>
-                  )) : <span className="m" style={{ padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>Nothing yet.</span>)}
-                </div>
-              </div>
+              )}
               {s.dialog && s.dialog(go)}
             </main>
           </div>

@@ -9,7 +9,7 @@
   --accent: #e3353d;
   --line: #353233;
   --button: #c72d37;
-  --button-hover: #e13742;
+  --button-hover: #e0303b; /* #20 Q3: web #e13742 fails AA with white (4.35:1) */
   --detail: #eb626b;
   /* ---- candidates ---- */
   --rail: #0b0b0c;        /* styles.css rail #0b0b0cf5, made opaque: sidebar + title bar */

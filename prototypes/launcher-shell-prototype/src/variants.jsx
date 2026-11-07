@@ -1,6 +1,6 @@
 // PROTOTYPE variants for #17. Each variant owns its layout; only data and the title bar are shared.
 import { useState } from 'react';
-import { PRODUCTS, NEWS, UMBRELLA } from './data.js';
+import { PRODUCTS, NEWS, NOTES, UMBRELLA } from './data.js';
 
 const Art = ({ p, className = '' }) => (
   <div key={p.id} className={'art ' + className} role="img" aria-label={p.credit + ' (official D2R promotional art)'}
@@ -79,30 +79,42 @@ export function VariantB({ product, setProduct }) {
   );
 }
 
+const Act = ({ p, brief }) => (
+  <div className="act">
+    {p.playable ? (
+      <>
+        <button className="btn primary">Play</button>
+        <span className="ready"><span className="dot" />Ready · {brief ? p.readiness[0][1] : p.readiness.map((r) => r[1]).join(' · ')}</span>
+      </>
+    ) : <button className="btn ghost">About {p.short}</button>}
+  </div>
+);
+const Feed = ({ p, items = NEWS[p.id] }) => (
+  <div className="feed" aria-label="News">
+    <span className="label" style={{ padding: '10px 0' }}>News</span>
+    {items.length ? items.map((n) => (
+      <a key={n.title} href="#"><span className="m">{n.tag} · {n.date}</span><span className="t">{n.title} ↗</span></a>
+    )) : <span className="m" style={{ padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>Nothing yet.</span>}
+  </div>
+);
+const Copy = ({ p }) => (
+  <>
+    <span className={'ribbon' + (p.playable ? '' : ' soon')}>{p.tag}</span>
+    <h1 className="h1"><Headline p={p} /></h1>
+    <p>{p.blurb}</p>
+  </>
+);
+
 function VariantBMain({ p, brief }) {
   return (
       <main>
         <Art p={p} /><div className="shade" />
         <div className="bottom">
           <div className="lift" key={p.id}>
-            <span className={'ribbon' + (p.playable ? '' : ' soon')}>{p.tag}</span>
-            <h1 className="h1"><Headline p={p} /></h1>
-            <p>{p.blurb}</p>
-            <div className="act">
-              {p.playable ? (
-                <>
-                  <button className="btn primary">Play</button>
-                  <span className="ready"><span className="dot" />Ready · {brief ? p.readiness[0][1] : p.readiness.map((r) => r[1]).join(' · ')}</span>
-                </>
-              ) : <button className="btn ghost">About {p.short}</button>}
-            </div>
+            <Copy p={p} />
+            <Act p={p} brief={brief} />
           </div>
-          <div className="feed" aria-label="News">
-            <span className="label" style={{ padding: '10px 0' }}>News</span>
-            {NEWS[p.id].length ? NEWS[p.id].map((n) => (
-              <a key={n.title} href="#"><span className="m">{n.tag} · {n.date}</span><span className="t">{n.title} ↗</span></a>
-            )) : <span className="m" style={{ padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>Nothing yet.</span>}
-          </div>
+          <Feed p={p} />
         </div>
       </main>
   );
@@ -180,25 +192,89 @@ export function VariantC({ product, setProduct }) {
 
 // D: owner's pick after round 1 - B's cinematic main with A's text sidebar, branding in the sidebar,
 // seamless title bar (window controls float over the art), wider Play.
+const Sidebar = ({ p, setProduct }) => (
+  <nav aria-label="Products">
+    <div className="brand"><span className="glyph" aria-hidden>/</span><span className="name">{UMBRELLA}</span></div>
+    {PRODUCTS.map((x) => (
+      <button key={x.id} className="item" aria-current={x.id === p.id || undefined} onClick={() => setProduct(x.id)}>{x.name}</button>
+    ))}
+    <button className="item foot">Settings</button>
+  </nav>
+);
+
 export function VariantD({ product, setProduct }) {
-  const p = product;
   return (
     <div className="D">
-      <nav aria-label="Products">
-        <div className="brand"><span className="glyph" aria-hidden>/</span><span className="name">{UMBRELLA}</span></div>
-        {PRODUCTS.map((x) => (
-          <button key={x.id} className="item" aria-current={x.id === p.id || undefined} onClick={() => setProduct(x.id)}>{x.name}</button>
-        ))}
-        <button className="item foot">Settings</button>
-      </nav>
-      <VariantBMain p={p} brief />
+      <Sidebar p={product} setProduct={setProduct} />
+      <VariantBMain p={product} brief />
     </div>
   );
 }
+
+// E/F: owner aside on #20 (Riot TFT page): Overview | Patch Notes tabs top-centre over the art.
+// E centres the hero copy vertically; F sits it just under the tabs. Play and news stay at the bottom.
+// Patch Notes (owner, #20): fills the main area, scrolls under a top fade, Play moves top-left.
+// Products with no release (Forever, 09) get no tabs at all (#20 Q10).
+function Tabbed({ product, setProduct, place }) {
+  const p = product;
+  const [tab, setTab] = useState('overview');
+  const notes = NOTES[p.id] ?? [];
+  const onNotes = tab === 'notes' && notes.length > 0;
+  return (
+    <div className={'D T ' + place + (onNotes ? ' reading' : '')}>
+      <Sidebar p={p} setProduct={(id) => { setTab('overview'); setProduct(id); }} />
+      <main>
+        {onNotes ? (
+          <>
+            <PatchNotes p={p} notes={notes} />
+            <div className="fade" aria-hidden />
+            <div className="topact"><button className="btn primary">▶ Play</button></div>
+          </>
+        ) : (
+          <>
+            <Art p={p} /><div className="shade" />
+            <div className="copy lift" key={p.id} role={notes.length ? 'tabpanel' : undefined}><Copy p={p} /></div>
+            <div className="bottom">
+              <Act p={p} brief />
+              <Feed p={p} items={NEWS[p.id].filter((n) => n.tag !== 'Release notes')} />
+            </div>
+          </>
+        )}
+        {notes.length > 0 && (
+          <div className="tabs" role="tablist" aria-label={p.short + ' pages'}>
+            {[['overview', 'Overview'], ['notes', 'Patch Notes']].map(([k, l]) => (
+              <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>
+            ))}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+export const PatchNotes = ({ p, notes }) => (
+  <div className="notes" role="tabpanel" aria-label="Patch notes">
+    {notes.map((n) => (
+      <article key={n.version}>
+        <header>
+          <h1 className="h1">{p.short} {n.version}</h1>
+          <p className="sum">{n.summary}</p>
+          <div className="meta"><span className="k">Patch notes</span><span>{n.date}</span></div>
+        </header>
+        {n.sections.map(([h, items]) => (
+          <section key={h}><h2>{h}</h2><ul>{items.map((i) => <li key={i}>{i}</li>)}</ul></section>
+        ))}
+      </article>
+    ))}
+  </div>
+);
+export const VariantE = (props) => <Tabbed {...props} place="mid" />;
+export const VariantF = (props) => <Tabbed {...props} place="top" />;
 
 export const VARIANTS = [
   { key: 'A', name: 'Riot skeleton', C: VariantA, mark: 'glyph' },
   { key: 'B', name: 'Cinematic full-bleed', C: VariantB, mark: 'svg' },
   { key: 'C', name: 'Home + tabs', C: VariantC, mark: 'svg' },
   { key: 'D', name: 'B + A sidebar (round 2)', C: VariantD, mark: 'none' },
+  { key: 'E', name: 'D + tabs, copy centred', C: VariantE, mark: 'none' },
+  { key: 'F', name: 'D + tabs, copy under tabs', C: VariantF, mark: 'none' },
 ];
