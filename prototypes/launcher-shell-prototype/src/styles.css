@@ -140,3 +140,6 @@ a { color: inherit; }
 .D .bottom { grid-template-columns: 1fr 250px; gap: 32px; }
 .D .h1 { font-size: 50px; }
 .D .act { flex-wrap: wrap; row-gap: 12px; }
+/* Hero title: always exactly the two authored lines; size follows the headline column width. */
+.D main { container-type: inline-size; }
+.D .h1 { white-space: nowrap; font-size: clamp(30px, calc((100cqi - 370px) / 11.5), 50px); }
