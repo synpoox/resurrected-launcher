@@ -288,13 +288,23 @@ impl Rig {
         plan::product_root(self.game.d2r(), &release(PD2R_1).manifest)
     }
 
+    /// The installed PD2R release ID, after checking the record also names that
+    /// fixture's exact manifest and is marked verified.
     pub fn installed_release(&self) -> Option<String> {
         let state = self.state.lock().unwrap();
-        state
+        let r = state
             .installed_releases()
             .iter()
-            .find(|r| r.product_id.0 == "pd2r")
-            .map(|r| r.release_id.clone())
+            .find(|r| r.product_id.0 == "pd2r")?;
+        let manifest = &release(&r.release_id).manifest_json;
+        assert_eq!(
+            r.manifest_sha256,
+            sha256(manifest),
+            "{}: manifest sha",
+            r.release_id
+        );
+        assert!(r.verified, "{}: record not verified", r.release_id);
+        Some(r.release_id.clone())
     }
 
     pub fn recover(&self, injector: &dyn FaultInjector) -> Result<Recovery, LauncherError> {
@@ -380,9 +390,9 @@ pub struct Scenario {
 }
 
 impl Scenario {
-    /// Every scenario has an unknown plugin; all but install and clean install
-    /// also an edited loot filter (install has no filter yet; clean install's
-    /// carries forward and is covered by [`preservation`]); all but uninstall a save.
+    /// Every scenario has an unknown plugin; all but install also an edited loot
+    /// filter (install has no filter yet; clean install carries it forward, so
+    /// `PlayerFilesCarriedForward` has a real entry); all but uninstall a save.
     pub fn new(kind: OperationKind) -> Self {
         Self::on(Rig::new(), kind)
     }
@@ -442,12 +452,14 @@ impl Scenario {
             }
             CleanInstall => {
                 let m1 = rig.install_1();
+                let filter = edit_loot_filter(&root);
                 add_unknown_plugin(&root);
                 add_save(&root);
-                // The plugin stays in the labelled backup only; the save is not a
-                // release file, so it is not recognised either.
+                // The edited filter is carried forward; the plugin and save are
+                // not release files, so they stay in the labelled backup only.
+                let new = with_file(release_tree(&r2), LOOT_FILTER, &filter);
                 let op = Op::new(&rig, CleanInstall, PD2R_2, Some(m1));
-                (op, release_tree(&r2), Some(PD2R_1), Some(PD2R_2))
+                (op, new, Some(PD2R_1), Some(PD2R_2))
             }
             Adopt => unreachable!("adoption writes only the record"),
         };

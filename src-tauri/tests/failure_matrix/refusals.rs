@@ -125,13 +125,32 @@ fn update_never_writes_through_a_junction_inside_the_product_root() {
     let before = tree(&s.root);
     let target = tree(&elsewhere);
 
-    s.run(&NoFaults).unwrap_err();
+    let err = s.run(&NoFaults).unwrap_err();
 
+    assert_eq!(err.code, ErrorCode::ProductRootNotDisposable, "{err}");
     assert_eq!(tree(&elsewhere), target, "junction target untouched");
     assert_eq!(tree(&s.root), before);
     assert_eq!(s.rig.installed_release().as_deref(), Some(PD2R_1));
     assert_eq!(s.rig.recover(&NoFaults).unwrap(), Recovery::Nothing);
     assert!(siblings(&s.root).is_empty(), "{:?}", siblings(&s.root));
+}
+
+// ---- live verification ----
+
+#[test]
+fn activation_that_fails_live_verification_rolls_back_to_the_previous_installation() {
+    for kind in [Install, Update, Repair, CleanInstall] {
+        let s = Scenario::new(kind);
+        // A newly moved-in file is damaged between activation and verification.
+        let damage = Hook(|b, p| {
+            if (b, p) == (Boundary::StagedMovedToLive, FaultPoint::AfterStep) {
+                fs::write(s.root.join(ARMOR), b"damaged after activation").unwrap();
+            }
+        });
+        let err = s.run(&damage).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InventoryMismatch, "{kind:?}: {err}");
+        s.assert_unchanged(&format!("{kind:?} failing LiveVerified"));
+    }
 }
 
 // ---- insufficient space ----
