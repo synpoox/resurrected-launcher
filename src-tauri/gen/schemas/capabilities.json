@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Main window. Grants no plugin or core permissions; app commands (only `ping`) need none.","local":true,"windows":["main"],"permissions":[]}}
