@@ -8,3 +8,7 @@
 //! Every write into a product root must hold a [`crate::contract::WriteGuard`], and
 //! every transaction reports each [`crate::contract::Boundary`] of its
 //! [`crate::contract::Boundary::sequence`] to a [`crate::contract::FaultInjector`].
+
+pub mod download;
+pub mod extract;
+pub mod paths;
