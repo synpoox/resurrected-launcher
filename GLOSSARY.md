@@ -2,7 +2,7 @@
 
 The shared launcher for Project Diablo 2: Resurrected, Diablo II: Resurrected Forever, and Diablo II: Resurrected 09. These umbrella/product labels are provisional; technical paths and existing planning aliases remain unchanged.
 
-**Project Resurrected**: The current preview identity for the shared website and project family, including the mods and D2R Tools. The owner also suggested The Resurrected Project and explicitly asked not to finalize branding. [Web ADR 0004](https://github.com/synpoox/project-web-clean/blob/codex/guides-tools-naming/docs/adr/0004-provisional-umbrella-and-project-directory.md) and its `branding.json` record the reversible display-name choice.
+**Project Resurrected**: The current preview identity for the shared website and project family, including the mods and D2R Tools. The owner also suggested The Resurrected Project and explicitly asked not to finalize branding. [Web ADR 0004](https://github.com/synpoox/resurrected-web/blob/codex/guides-tools-naming/docs/adr/0004-provisional-umbrella-and-project-directory.md) and its `branding.json` record the reversible display-name choice.
 
 **Project Diablo 2: Resurrected** (existing planning alias: **PD2: Resurrected**, **PD2R**):
 The latest website preview display name for the product called PD2R or PD2: Resurrected in existing launcher planning. Older planning uses Project Diablo II: Resurrected. Avoid PD2Resurrect in user-facing copy. See the [shared website context](docs/agents/web-context.md).
@@ -78,3 +78,10 @@ A short-lived permission to enter a hosted game, scoped to a player and a produc
 
 **Optional game plugin**:
 A player-installed product-local game extension, distinct from the mod's approved release-managed extensions; permitted in offline single-player and direct TCP/IP co-op, not project-hosted multiplayer or ladder play.
+
+**Plugin toggle**:
+A player's per-product choice to enable or disable an optional game plugin they installed themselves. The launcher offers the toggle; it does not supply, catalog or install plugins.
+_Avoid_: Plugin manager, tools catalog
+
+**D2R Tools**:
+The project's directory of player plugins and utilities, presented on the website. It is not a product and does not appear in the launcher.
