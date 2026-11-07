@@ -1,0 +1,18 @@
+/* Launcher design tokens, copied from docs/specs/launcher-ui.md ("Tokens").
+   Every colour in the frontend comes from here. */
+:root {
+  --bg: #101011;
+  --panel: #1d1d1e;
+  --text: #f4f1ed;
+  --muted: #b1adac;
+  --accent: #e3353d;
+  --line: #353233;
+  --button: #c72d37;
+  --button-hover: #e0303b;
+  --detail: #eb626b;
+  --rail: #0b0b0c;
+  --ribbon: #b52b35;
+  --focus: #fff;
+  --rule: #ffffff24;
+  --hero-copy: #cbc3c2;
+}
