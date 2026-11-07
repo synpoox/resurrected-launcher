@@ -1,0 +1,11 @@
+{
+  "release_id": "pd2r-fixture-3",
+  "display_version": "fixture 3",
+  "release_date": "2026-11-15",
+  "saves": {
+    "folder": "PD2R",
+    "save_breaking": true,
+    "incompatibility_notice": "Characters from fixture 2 will not load in fixture 3. Back up your saves before updating.",
+    "loader_save_format": { "file": "d2rloader/config.ini", "key": "save_format", "value": "pd2r-3" }
+  }
+}
