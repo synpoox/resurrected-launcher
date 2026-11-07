@@ -11,6 +11,7 @@ Tag [`launcher-ui-prototype-v1`](https://github.com/synpoox/resurrected-launcher
 | `/?variant=E` | Shell, Overview and Patch Notes |
 | `/journey.html?state=<key>&tab=overview\|notes` | Every journey state (← → cycles) |
 | `/settings.html?variant=B` | Settings and troubleshooting |
+| `/tray.html?variant=A&tray=<state>` | Tray icon and menu (tag [`launcher-tray-prototype-v1`](https://github.com/synpoox/resurrected-launcher/tree/launcher-tray-prototype-v1/prototypes/launcher-shell-prototype), branch `prototype/launcher-tray`) |
 
 Other variants (A–D, F; settings A, C, D) are kept for the record only. Copy, versions and paths in the prototype are illustrative.
 
@@ -48,7 +49,7 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 
 - Frameless with a **seamless title bar**: content runs to the top edge, and the minimise, maximise and close controls float top-right over it. There is no title-bar mark or name.
 - 1280×720 by default, 1024×640 minimum. Every layout below is checked at both sizes.
-- Closing the window keeps the launcher in the tray, and Quit lives in the tray menu (the tray is not yet designed; see gaps).
+- Closing the window keeps the launcher in the tray, and Quit lives in the tray menu (see [Tray](#tray)).
 
 ## Layout
 
@@ -101,6 +102,35 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 - **Notice**: explains a state in words, as above.
 - **Dialog**: square, on `--panel`, with a 2px top rule (accent for destructive or risky actions) over a `#000000b3` backdrop.
 - **Toast**: bottom-right. Information is muted and auto-dismisses; errors are accent and stay until dismissed.
+
+## Tray
+
+Variant A (plain menu), approved in [#27](https://github.com/synpoox/resurrected-launcher/issues/27). Variants B (status menu with notifications) and C (launcher-styled flyout) are kept on the prototype branch for the record only.
+
+- **Icon**: the mark at 16px with its strokes thickened so they survive at that size, plus one overlay per state:
+  - Idle: no overlay.
+  - Update available: `↑` on an accent square, bottom-right.
+  - Game running: a white dot, bottom-right.
+  - Progress: a bar along the bottom edge in accent over `--line`, filled to the %.
+  - Error: `!` on a `--button` square, bottom-right.
+  The icon sits on its own dark square, so it reads on both dark and light taskbars. Windows 11 puts new icons in the ⌃ overflow by default, and the launcher does not try to change that.
+- **Tooltip**: "Project Resurrected", then "PD2R: <status>" (for example "Ready · alpha 0.4.2 (latest)" or "Downloading alpha 0.4.2 · 52%").
+- **Left-click**: opens the window, restoring and focusing it if it is hidden or minimised. It never hides the window.
+- **Right-click**: a native Windows menu that follows the system theme:
+  1. **Open Project Resurrected** (bold, the default item)
+  2. separator
+  3. The PD2R action for the state: Play PD2R · Update PD2R and Play 0.4.1 · a disabled "PD2R is running" · a disabled "Downloading PD2R · 52%" and Cancel download · Try again and Show what happened (opens the window).
+  4. separator
+  5. **Quit**
+- Products without a release (Forever and 09 today) don't appear in the menu.
+- Tray actions don't open the window, except Show what happened, and Update when the release is save-breaking: that opens the window on the save-breaking dialog (ADR 0001). Save-breaking was not simulated in the prototype.
+- **Closing the window** hides it to the tray. The first close ever shows one Windows notification: "Still running in the tray. Downloads and update checks carry on here. To exit, right-click the icon and choose Quit." There are no other tray notifications in v1.
+- **Start with Windows** starts in the tray only: no window and no notification.
+- **Quit**:
+  - Idle, update available or error: exits at once.
+  - Game running: the launcher exits and the game keeps running.
+  - Downloading: the window opens on a dialog, "Quit while PD2R is downloading?", with **Cancel download and quit** and **Keep downloading**. The installed release stays playable.
+  - Final application (`applying`, `cancelling`): Quit is not designed; the default is the same dialog, and quitting waits for the safe stop.
 
 ## Journey states
 
@@ -172,7 +202,6 @@ Each item has a default to build to unless a later decision replaces it.
 
 | Gap | Default |
 | --- | --- |
-| Tray menu | Follow-up prototype ticket. Needed before v1. |
 | Launcher self-update notice | Follow-up prototype ticket. Needed before v1. |
 | First-run onboarding | No separate onboarding; use the inline states `d2r-missing`, `d2r-choose` and `loader-missing`. |
 | Splash or loading screen | None. The window opens on the last product, or PD2R. |
