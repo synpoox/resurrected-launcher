@@ -2,7 +2,7 @@
 
 The shared launcher for Project Diablo 2: Resurrected, Diablo II: Resurrected Forever, and Diablo II: Resurrected 09. These umbrella/product labels are provisional; technical paths and existing planning aliases remain unchanged.
 
-**Project Resurrected**: The current preview identity for the shared website and project family, including the mods and D2R Tools. The owner also suggested The Resurrected Project and explicitly asked not to finalize branding. [Web ADR 0004](https://github.com/synpoox/project-web-clean/blob/codex/guides-tools-naming/docs/adr/0004-provisional-umbrella-and-project-directory.md) and its `branding.json` record the reversible display-name choice.
+**Project Resurrected**: The current preview identity for the shared website and project family, including the mods and D2R Tools. The owner also suggested The Resurrected Project and explicitly asked not to finalize branding. [Web ADR 0004](https://github.com/synpoox/resurrected-web/blob/codex/guides-tools-naming/docs/adr/0004-provisional-umbrella-and-project-directory.md) and its `branding.json` record the reversible display-name choice.
 
 **Project Diablo 2: Resurrected** (existing planning alias: **PD2: Resurrected**, **PD2R**):
 The latest website preview display name for the product called PD2R or PD2: Resurrected in existing launcher planning. Older planning uses Project Diablo II: Resurrected. Avoid PD2Resurrect in user-facing copy. See the [shared website context](docs/agents/web-context.md).
