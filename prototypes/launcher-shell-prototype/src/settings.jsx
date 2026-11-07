@@ -71,7 +71,7 @@ function useControls({ running, failFolder }) {
     saves: <Row label="PD2R saves" hint={<code>{SAVES}</code>}><button className="btn ghost small" onClick={() => open(SAVES)}>Open folder</button></Row>,
     config: game.pd2r && <Row label="PD2R settings and filters" hint={<code>{f.config}</code>}><button className="btn ghost small" onClick={() => open(f.config)}>Open folder</button></Row>,
     globalPlugins: (
-      <Row label="Plugins for every product" hint={<>Loads for every product. <code>{f.globalPlugins}</code></>}>
+      <Row label="Global plugins" hint={<>Loads for every product. <code>{f.globalPlugins}</code></>}>
         <button className="btn ghost small" onClick={() => open(f.globalPlugins, true)}>Open plugins folder</button>
       </Row>
     ),
