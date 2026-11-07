@@ -196,8 +196,9 @@ impl Downloader {
     ///
     /// Errors: [`ErrorCode::DownloadFailed`] (network, HTTP status, non-HTTPS URL or
     /// redirect, truncated body), [`ErrorCode::VerificationFailed`] (size or SHA-256),
-    /// [`ErrorCode::Cancelled`], [`ErrorCode::AccessDenied`] / [`ErrorCode::Internal`]
-    /// for local I/O.
+    /// [`ErrorCode::Cancelled`], and for local I/O [`ErrorCode::AccessDenied`],
+    /// [`ErrorCode::GameRunning`] (a sharing violation), [`ErrorCode::InsufficientSpace`]
+    /// or [`ErrorCode::Internal`].
     pub fn fetch(
         &self,
         source: &Archive,

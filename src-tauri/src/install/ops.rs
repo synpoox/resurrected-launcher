@@ -183,7 +183,11 @@ impl Steps for OpSteps<'_> {
             }
             Boundary::LiveVerified => {
                 // What moved to `B` is what was inspected; else roll back, putting it back.
-                plan::verify_live(&paths.backup, &self.insp.expect_backup).map_err(|_| {
+                // A real I/O error surfaces as itself.
+                plan::verify_live(&paths.backup, &self.insp.expect_backup).map_err(|e| {
+                    if e.code != ErrorCode::InventoryMismatch {
+                        return e;
+                    }
                     LauncherError::new(
                         ErrorCode::InventoryMismatch,
                         "the product folder changed during the operation",

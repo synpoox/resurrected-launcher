@@ -245,9 +245,7 @@ pub fn inspect(
                     expect.push((f.path.to_string(), want));
                 }
                 Fate::Replace => {
-                    let OnDisk::File(d) = disk else {
-                        unreachable!("only a file is replaced")
-                    };
+                    let d = file_digest(disk)?;
                     plan.to_backup.push(f.path.clone());
                     insp.expect_backup.push((f.path.to_string(), Want::File(d)));
                     plan.to_live.push(f.path.clone());
@@ -255,9 +253,7 @@ pub fn inspect(
                     recovery += f.size;
                 }
                 Fate::KeepEdited => {
-                    let OnDisk::File(d) = disk else {
-                        unreachable!("only a file is edited")
-                    };
+                    let d = file_digest(disk)?;
                     let bad = if matches!(kind, Install | Update | CleanInstall) {
                         setting_conflicts(new, root, &f.path)?
                     } else {
@@ -383,6 +379,17 @@ pub fn inspect(
         }
     }
     Ok(insp)
+}
+
+/// The digest of `disk`; [`fate`] only replaces or keeps edited a regular file.
+fn file_digest(disk: OnDisk) -> Result<Digest, LauncherError> {
+    match disk {
+        OnDisk::File(d) => Ok(d),
+        _ => Err(LauncherError::new(
+            ErrorCode::Internal,
+            "a replaced or edited path is not a regular file",
+        )),
+    }
 }
 
 /// Mandatory settings of `m` that the kept file `path` under `root` fails.

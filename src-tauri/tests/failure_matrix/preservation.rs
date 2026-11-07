@@ -4,7 +4,7 @@
 //! never deleted. Includes the two #50 follow-ups.
 
 use super::*;
-use resurrected_launcher_lib::contract::FailAt;
+use resurrected_launcher_lib::contract::{ErrorCode, FailAt};
 
 #[test]
 fn update_replaces_untouched_shipped_defaults_with_the_new_release_defaults() {
@@ -136,23 +136,90 @@ fn clean_install_backup_is_retained_through_later_operations_and_recovery() {
 fn update_keeps_a_loot_filter_edited_between_the_staging_recheck_and_activation() {
     let rig = Rig::new();
     let m1 = rig.install_1();
-    let root = rig.root();
-    let edit = b"// edited while the update was staging\n".to_vec();
-    let player = Hook(|b, p| {
-        if (b, p) == (Boundary::StagedInventoryVerified, FaultPoint::AfterStep) {
-            fs::write(root.join(LOOT_FILTER), &edit).unwrap();
-        }
-    });
+    let late = LateEdit::new(&rig, Boundary::StagedInventoryVerified, None);
 
-    let _ = Op::new(&rig, Update, PD2R_2, Some(m1)).run(&rig, &player);
-    let _ = rig.recover(&NoFaults);
-
-    let now = fs::read(root.join(LOOT_FILTER)).ok();
+    let result = Op::new(&rig, Update, PD2R_2, Some(m1)).run(&rig, &late);
     assert_eq!(
-        now.as_deref(),
-        Some(&edit[..]),
-        "the player's edit was lost"
+        result.map_err(|e| e.code).err(),
+        Some(ErrorCode::InventoryMismatch)
     );
+    late.assert_kept(&rig);
+}
+
+/// #50 item 1, crash variant: the process dies after the edited file moved to `B`
+/// but before `LiveVerified` checks it; recovery rolls back and the edit is kept.
+#[test]
+fn update_keeps_a_late_edit_when_it_crashes_before_the_backup_check() {
+    let rig = Rig::new();
+    let m1 = rig.install_1();
+    let crash = FailAt {
+        boundary: Boundary::LiveVerified,
+        point: FaultPoint::BeforeStep,
+    };
+    let late = LateEdit::new(&rig, Boundary::StagedInventoryVerified, Some(crash));
+
+    assert!(Op::new(&rig, Update, PD2R_2, Some(m1))
+        .run(&rig, &late)
+        .is_err());
+    assert_eq!(rig.recover(&NoFaults).unwrap(), Recovery::RolledBack);
+    late.assert_kept(&rig);
+}
+
+/// #50 item 1, uninstall: an untouched default edited after inspection is not
+/// removed with the release's files.
+#[test]
+fn uninstall_keeps_a_loot_filter_edited_after_inspection() {
+    let rig = Rig::new();
+    let m1 = rig.install_1();
+    let late = LateEdit::new(&rig, Boundary::TransactionOpened, None);
+
+    let result = Op::new(&rig, Uninstall, PD2R_1, Some(m1)).run(&rig, &late);
+    assert_eq!(
+        result.map_err(|e| e.code).err(),
+        Some(ErrorCode::InventoryMismatch)
+    );
+    late.assert_kept(&rig);
+}
+
+/// The player edits the untouched loot filter default once the run passes `at`
+/// (`AfterStep`); then, optionally, the process crashes at `crash`.
+struct LateEdit {
+    file: PathBuf,
+    edit: Vec<u8>,
+    at: Boundary,
+    crash: Option<FailAt>,
+}
+
+impl LateEdit {
+    fn new(rig: &Rig, at: Boundary, crash: Option<FailAt>) -> Self {
+        let file = rig.root().join(LOOT_FILTER);
+        let edit = b"// edited while the operation ran\n".to_vec();
+        Self {
+            file,
+            edit,
+            at,
+            crash,
+        }
+    }
+
+    fn assert_kept(&self, rig: &Rig) {
+        let now = fs::read(&self.file).ok();
+        assert_eq!(
+            now.as_deref(),
+            Some(&self.edit[..]),
+            "the player's edit was lost"
+        );
+        assert_eq!(rig.installed_release().as_deref(), Some(PD2R_1));
+    }
+}
+
+impl FaultInjector for LateEdit {
+    fn check(&self, b: Boundary, p: FaultPoint) -> Result<(), InjectedFault> {
+        if (b, p) == (self.at, FaultPoint::AfterStep) {
+            fs::write(&self.file, &self.edit).unwrap();
+        }
+        self.crash.as_ref().map_or(Ok(()), |c| c.check(b, p))
+    }
 }
 
 /// #50 item 2: a kept settings file that is not UTF-8 (an ANSI INI with an
