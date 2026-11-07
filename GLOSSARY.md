@@ -78,3 +78,10 @@ A short-lived permission to enter a hosted game, scoped to a player and a produc
 
 **Optional game plugin**:
 A player-installed product-local game extension, distinct from the mod's approved release-managed extensions; permitted in offline single-player and direct TCP/IP co-op, not project-hosted multiplayer or ladder play.
+
+**Plugin toggle**:
+A player's per-product choice to enable or disable an optional game plugin they installed themselves. The launcher offers the toggle; it does not supply, catalog or install plugins.
+_Avoid_: Plugin manager, tools catalog
+
+**D2R Tools**:
+The project's directory of player plugins and utilities, presented on the website. It is not a product and does not appear in the launcher.
