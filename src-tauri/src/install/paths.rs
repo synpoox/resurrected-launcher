@@ -35,7 +35,8 @@ impl TransactionPaths {
             staging: sibling(".resurrected-staging"),
             backup: sibling(".resurrected-backup"),
             clean_install_backup: sibling(".resurrected-clean-install-backup"),
-            archive: sibling(".resurrected-download"),
+            // Same name as the journal's archive path, so `CleanedUp` removes it.
+            archive: sibling(".resurrected-archive"),
             download_partial: sibling(".resurrected-download.partial"),
         }
     }

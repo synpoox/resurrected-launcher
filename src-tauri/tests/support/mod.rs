@@ -48,9 +48,8 @@
 //! [`Reply::WrongHash`], [`Reply::RedirectToHttp`], [`Reply::Status`] (5xx) and
 //! [`Reply::Reset`] (TCP RST mid-body).
 //!
-//! shortcut: `install::download::Downloader` only trusts WebPKI roots from outside
-//! the crate, so tests in `tests/` cannot yet download from this server; add a
-//! test trust hook to the downloader (#37) and feed it [`FixtureServer::tls_config`].
+//! To download from this server, build the downloader with
+//! `Downloader::with_tls(server.tls_config())` ([`FixtureServer::tls_config`]).
 //!
 //! # Example
 //!
@@ -79,6 +78,7 @@ use resurrected_launcher_lib::install::extract::SevenZip;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+#[allow(unused_imports)] // Not every test crate guards a root itself.
 pub use resurrected_launcher_lib::contract::WriteGuard;
 
 pub const PD2R_1: &str = "pd2r-fixture-1";
