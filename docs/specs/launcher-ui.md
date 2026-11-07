@@ -12,6 +12,7 @@ Tag [`launcher-ui-prototype-v1`](https://github.com/synpoox/resurrected-launcher
 | `/journey.html?state=<key>&tab=overview\|notes` | Every journey state (← → cycles) |
 | `/settings.html?variant=B` | Settings and troubleshooting |
 | `/tray.html?variant=A&tray=<state>` | Tray icon and menu (tag [`launcher-tray-prototype-v1`](https://github.com/synpoox/resurrected-launcher/tree/launcher-tray-prototype-v1/prototypes/launcher-shell-prototype), branch `prototype/launcher-tray`) |
+| `/selfupdate.html?variant=C&phase=<phase>&product=<state>` | Launcher self-update notice (tag [`launcher-self-update-prototype-v1`](https://github.com/synpoox/resurrected-launcher/tree/launcher-self-update-prototype-v1/prototypes/launcher-shell-prototype), branch `prototype/launcher-self-update`) |
 
 Other variants (A–D, F; settings A, C, D) are kept for the record only. Copy, versions and paths in the prototype are illustrative.
 
@@ -87,6 +88,7 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
   - Browsing to a folder without `D2R.exe` shows an inline error, and a notice reports the recheck result.
   - While the game runs, the control is disabled with "Quit the game to change this".
 - **Launcher**: **Start with Windows** switch, off by default, which opens to the tray.
+- **Launcher → Launcher version** (#28): the version and its update status, with **Check for updates**. When an update is ready or has failed, the control becomes Restart to update or Try again (see [Launcher self-update](#launcher-self-update)).
 - **Launcher → About and credits** (new, #20): lists each hero image with its name, source and "Promotional art, not mod gameplay".
 - **Folders and plugins**:
   - A PD2R group: saves, settings and filters, and **PD2R plugins** ("Loads only with PD2R", with the `core-*` note).
@@ -131,6 +133,21 @@ Variant A (plain menu), approved in [#27](https://github.com/synpoox/resurrected
   - Game running: the launcher exits and the game keeps running.
   - Downloading: the window opens on a dialog, "Quit while PD2R is downloading?", with **Cancel download and quit** and **Keep downloading**. The installed release stays playable.
   - Final application (`applying`, `cancelling`): Quit is not designed; the default is the same dialog, and quitting waits for the safe stop.
+
+## Launcher self-update
+
+Variant C (toast, then a dot on Settings), approved in [#28](https://github.com/synpoox/resurrected-launcher/issues/28). Variants A (sidebar block) and B (titlebar chip) are kept on the prototype branch for the record only. Updates are signed Tauri updates ([ADR 0003](../adr/0003-tauri-with-signed-launcher-updates.md)). The notice never enters a product's hero, notice or action row.
+
+- **Download** happens in the background with no notice. Settings → Launcher shows "Downloading 1.3.0 · 38%".
+- **Ready**: an information toast, "Launcher 1.3.0 is ready", with **Restart to update**, **What's new** and **Later**. It does not auto-dismiss. Later closes it and puts a red dot on the Settings sidebar item until the update installs or the player opens Settings.
+- **Install** happens on Restart to update, or the next time the player quits the launcher.
+- **Held restart**: while a product is running or downloading, Restart to update is disabled and the text says why ("Restarts after you quit PD2R", "Restarts after PD2R finishes downloading"). The update still installs on the next Quit.
+- **Restarting**: the main area shows the mark, "Updating the launcher…" and "Back in a few seconds."
+- **Updated**: after the restart, an information toast "Updated to launcher 1.3.0" with **What's new**, which auto-dismisses.
+- **Failures** use the error toast, which stays until dismissed. Later leaves the Settings dot. The current launcher always keeps working.
+  - Download failed: "Couldn't download the launcher update", with **Try again**.
+  - Signature check failed: "Launcher update rejected", saying the update was deleted and nothing was installed, with **Export diagnostics**.
+- **Tray**: no self-update item or notification in v1.
 
 ## Journey states
 
@@ -202,11 +219,10 @@ Each item has a default to build to unless a later decision replaces it.
 
 | Gap | Default |
 | --- | --- |
-| Launcher self-update notice | Follow-up prototype ticket. Needed before v1. |
 | First-run onboarding | No separate onboarding; use the inline states `d2r-missing`, `d2r-choose` and `loader-missing`. |
 | Splash or loading screen | None. The window opens on the last product, or PD2R. |
 | News feed size | Up to three items, newest first. Offline and empty lines as above. |
 | "Reset player settings" | Not designed. It must be separate from Repair ([#5](https://github.com/synpoox/resurrected-launcher/issues/5) Q9). |
 | Clean-install recovery for unrecognised files | Not designed. Use the `blocked` notice treatment. |
-| Launcher self-update settings | Not designed. They belong with the self-update ticket. |
+| Opting out of automatic launcher downloads | Not offered in v1. Prototyped as a Settings switch in [#28](https://github.com/synpoox/resurrected-launcher/issues/28) and left out. |
 | Patch Notes contrast and keyboard checks | Not measured. Check them against the targets above during implementation. |
