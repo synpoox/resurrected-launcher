@@ -239,9 +239,23 @@ impl Launcher {
         let req = resolved.request();
         let insp = ops::inspect(&self.env(&NoFaults, &AtomicBool::new(false)), &req)?;
         let root = plan::product_root(req.d2r, req.release);
-        // Debug of Vec-only structs is deterministic within one launcher build, and
-        // tokens never outlive the process, so it binds exactly what was inspected.
-        let digest = Sha256::digest(format!("{root:?}|{}|{insp:?}", req.release_sha256));
+        // Everything the plan decides, but not `plan.record`: its `installed_at` is
+        // the inspection's wall-clock time. Debug of these Vec-only types is
+        // deterministic within one build, and tokens never outlive the process.
+        let p = &insp.plan;
+        let stable = (
+            (&root, req.release_sha256.to_string(), p.kind),
+            (
+                &p.to_backup,
+                &p.to_live,
+                &p.carry_forward,
+                &p.prune_if_empty,
+                p.space,
+            ),
+            (&insp.preserved, &insp.backup_only, &insp.conflicts),
+            (&insp.save_breaking_notice, &insp.expect),
+        );
+        let digest = Sha256::digest(format!("{stable:?}"));
         let token = digest.iter().map(|b| format!("{b:02x}")).collect();
         Ok((insp, token))
     }
@@ -472,31 +486,44 @@ pub async fn start_operation<R: Runtime>(
                 format!("{} already has an operation running", req.product_id.0),
             ));
         }
-        // Checked under the running lock so two starts cannot both pass it.
-        if launcher.inspect(&resolved)?.1 != inspection_token {
-            return Err(LauncherError::new(
-                ErrorCode::InventoryMismatch,
-                "the product changed since it was inspected; inspect again",
-            ));
-        }
+        // Reserved first so two starts cannot both pass; inspected outside the lock.
         running.insert(req.product_id.clone(), (cancel.clone(), req.kind));
     }
-    let launcher = Arc::clone(&launcher);
+    let checked = match launcher.inspect(&resolved) {
+        Ok((_, token)) if token == inspection_token => Ok(()),
+        Ok(_) => Err(LauncherError::new(
+            ErrorCode::InventoryMismatch,
+            "the product changed since it was inspected; inspect again",
+        )),
+        Err(e) => Err(e),
+    };
+    if let Err(e) = checked {
+        locked(&launcher.running)?.remove(&req.product_id);
+        return Err(e);
+    }
+    let mut finish = Finish {
+        app,
+        launcher: Arc::clone(&launcher),
+        product_id: req.product_id,
+        kind: req.kind,
+        outcome: None,
+    };
     std::thread::spawn(move || {
-        let (product_id, kind) = (req.product_id, req.kind);
+        let (product_id, kind) = (finish.product_id.clone(), finish.kind);
+        let app = finish.app.clone();
         let progress = Progress {
             product_id: product_id.clone(),
             kind,
             reached: Mutex::new(None),
-            emit: |e| {
+            emit: move |e| {
                 let _ = app.emit(PROGRESS_EVENT, Versioned::new(e));
             },
         };
-        let result = ops::run(&launcher.env(&progress, &cancel), &resolved.request());
-        if let Ok(mut running) = launcher.running.lock() {
-            running.remove(&product_id);
-        }
-        let outcome = match result {
+        let result = ops::run(
+            &finish.launcher.env(&progress, &cancel),
+            &resolved.request(),
+        );
+        finish.outcome = Some(match result {
             Ok(_) => OperationOutcome::Succeeded { product_id, kind },
             Err(e) if e.code == ErrorCode::Cancelled => {
                 OperationOutcome::Cancelled { product_id, kind }
@@ -506,10 +533,43 @@ pub async fn start_operation<R: Runtime>(
                 kind,
                 error,
             },
-        };
-        let _ = app.emit(OUTCOME_EVENT, Versioned::new(outcome));
+        });
     });
     Ok(())
+}
+
+/// Ends a started operation even if it panics: frees the product, then emits the
+/// outcome (`Failed` with `Internal` when none was recorded).
+struct Finish<R: Runtime> {
+    app: AppHandle<R>,
+    launcher: Arc<Launcher>,
+    product_id: ProductId,
+    kind: OperationKind,
+    outcome: Option<OperationOutcome>,
+}
+
+impl<R: Runtime> Drop for Finish<R> {
+    fn drop(&mut self) {
+        let mut running = self
+            .launcher
+            .running
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        running.remove(&self.product_id);
+        drop(running);
+        let outcome = self
+            .outcome
+            .take()
+            .unwrap_or_else(|| OperationOutcome::Failed {
+                product_id: self.product_id.clone(),
+                kind: self.kind,
+                error: LauncherError::new(
+                    ErrorCode::Internal,
+                    "the operation stopped unexpectedly",
+                ),
+            });
+        let _ = self.app.emit(OUTCOME_EVENT, Versioned::new(outcome));
+    }
 }
 
 /// `cancel_operation`: asks the running operation to stop. During activation it

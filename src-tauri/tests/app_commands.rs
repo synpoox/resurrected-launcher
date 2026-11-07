@@ -18,7 +18,7 @@ use resurrected_launcher_lib::contract::{
     LauncherError, OperationKind, Phase, ProductId, ProgressEvent, Versioned, CONTRACT_VERSION,
 };
 use resurrected_launcher_lib::install::download::Downloader;
-use resurrected_launcher_lib::install::preflight::SystemHost;
+use resurrected_launcher_lib::install::preflight::{Host, SystemHost};
 use resurrected_launcher_lib::state::{InstalledRelease, Preferences, StateStore};
 use serde_json::{json, Value};
 use support::*;
@@ -87,11 +87,33 @@ impl Releases for Shared {
     }
 }
 
+/// A host whose free-space check panics, standing in for a bug inside `ops::run`.
+struct PanickingHost;
+
+impl Host for PanickingHost {
+    fn free_space(&self, _: &std::path::Path) -> std::io::Result<u64> {
+        panic!("injected panic in the operation thread")
+    }
+    fn processes_using(&self, _: &[PathBuf]) -> Vec<String> {
+        Vec::new()
+    }
+}
+
 fn launcher(
     state_dir: &std::path::Path,
     d2r: &std::path::Path,
     releases: Box<dyn Releases>,
     server: &FixtureServer,
+) -> Launcher {
+    launcher_on(state_dir, d2r, releases, server, Box::new(SystemHost))
+}
+
+fn launcher_on(
+    state_dir: &std::path::Path,
+    d2r: &std::path::Path,
+    releases: Box<dyn Releases>,
+    server: &FixtureServer,
+    host: Box<dyn Host>,
 ) -> Launcher {
     let mut state = StateStore::open(state_dir);
     state
@@ -105,7 +127,7 @@ fn launcher(
         releases,
         Downloader::with_tls(server.tls_config()),
         seven_zip(),
-        Box::new(SystemHost),
+        host,
     )
 }
 
@@ -133,15 +155,20 @@ fn mount(launcher: Launcher) -> (WebviewWindow<MockRuntime>, Receiver<Value>, Re
 
 impl Rig {
     fn new() -> Self {
+        Self::on(Box::new(SystemHost))
+    }
+
+    fn on(host: Box<dyn Host>) -> Self {
         let server = FixtureServer::start();
         let game = DisposableGame::new();
         let state_dir = tempfile::tempdir().unwrap();
         let releases = Arc::new(FixtureReleases::default());
-        let l = launcher(
+        let l = launcher_on(
             state_dir.path(),
             game.d2r(),
             Box::new(Shared(releases.clone())),
             &server,
+            host,
         );
         let (webview, outcomes, progress) = mount(l);
         Self {
@@ -274,6 +301,9 @@ fn install_command_installs_the_recommended_release_with_progress_events() {
     assert!(insp.conflicts.is_empty());
     assert!(insp.files_added > 0);
 
+    // The player reads the inspection for a while: the token must not depend on
+    // the clock (the planned record's `installed_at` is in whole seconds).
+    std::thread::sleep(Duration::from_millis(1100));
     rig.start("install", json!({}), &insp.token).unwrap();
     assert_eq!(rig.outcome()["status"], "succeeded");
     let state = rig.state();
@@ -393,6 +423,18 @@ fn cancel_command_stops_a_download_and_keeps_the_previous_installation() {
         code(rig.invoke("cancel_operation", cancel).unwrap_err()),
         "invalid_request"
     );
+}
+
+#[test]
+fn a_panicking_operation_frees_the_product_and_reports_failure() {
+    let rig = Rig::on(Box::new(PanickingHost));
+    let r1 = rig.publish(PD2R_1);
+    rig.game.product_root(&r1);
+    let outcome = rig.run("install", json!({}));
+    assert_eq!(outcome["status"], "failed");
+    assert_eq!(outcome["error"]["code"], "internal");
+    assert_eq!(rig.state().running, None);
+    assert!(rig.state().installed.is_none());
 }
 
 #[test]
