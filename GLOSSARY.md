@@ -28,6 +28,10 @@ A publisher-maintained sequence identifying the recommended release of a product
 **Release manifest**:
 A description of a release's contents, compatibility requirements, and file ownership.
 
+**Release notes**:
+The publisher's description of what changed in a release, delivered with it. The launcher labels them Patch Notes.
+_Avoid_: Patch, patch notes (outside UI copy)
+
 **Save-breaking release**:
 A release that cannot safely load characters from a previous release's save format.
 

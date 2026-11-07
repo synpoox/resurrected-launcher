@@ -15,6 +15,7 @@ The architecture resolution records later choices that supersede earlier proposa
 
 - [D2R installation, launch and save-isolation research](https://github.com/synpoox/resurrected-launcher/blob/migration-evidence/002/docs/research/d2r-launcher-constraints.md). Read its limitations and the later installer-availability correction in the release/update resolution.
 - [Project glossary](../../GLOSSARY.md).
+- [Launcher UI design spec](launcher-ui.md): look and feel for these journeys.
 - [Save-breaking releases](../adr/0001-warn-on-save-breaking-updates-without-forced-isolation.md).
 - [Authoritative hosted inventory](../adr/0002-hosted-services-own-tradeable-inventory.md).
 - [Tauri and signed launcher updates](../adr/0003-tauri-with-signed-launcher-updates.md).
