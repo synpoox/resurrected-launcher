@@ -89,6 +89,7 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
   - While the game runs, the control is disabled with "Quit the game to change this".
 - **Launcher**: **Start with Windows** switch, off by default, which opens to the tray.
 - **Launcher → Launcher version** (#28): the version and its update status, with **Check for updates**. When an update is ready or has failed, the control becomes Restart to update or Try again (see [Launcher self-update](#launcher-self-update)).
+- **Launcher → Download launcher updates automatically** (#28): switch, on by default. Hint when on: "Updates download in the background and install when you restart or Quit." Hint when off: "You'll be told when an update is available. Nothing downloads until you choose Download."
 - **Launcher → About and credits** (new, #20): lists each hero image with its name, source and "Promotional art, not mod gameplay".
 - **Folders and plugins**:
   - A PD2R group: saves, settings and filters, and **PD2R plugins** ("Loads only with PD2R", with the `core-*` note).
@@ -139,6 +140,7 @@ Variant A (plain menu), approved in [#27](https://github.com/synpoox/resurrected
 Variant C (toast, then a dot on Settings), approved in [#28](https://github.com/synpoox/resurrected-launcher/issues/28). Variants A (sidebar block) and B (titlebar chip) are kept on the prototype branch for the record only. Updates are signed Tauri updates ([ADR 0003](../adr/0003-tauri-with-signed-launcher-updates.md)). The notice never enters a product's hero, notice or action row.
 
 - **Download** happens in the background with no notice. Settings → Launcher shows "Downloading 1.3.0 · 38%".
+- **Automatic downloads off**: the launcher still checks for updates. When one exists, an information toast, "Launcher 1.3.0 is available", offers **Download**, **What's new** and **Later**, and Settings → Launcher shows **Download** in place of Check for updates. After Download, the flow is the same as above.
 - **Ready**: an information toast, "Launcher 1.3.0 is ready", with **Restart to update**, **What's new** and **Later**. It does not auto-dismiss. Later closes it and puts a red dot on the Settings sidebar item until the update installs or the player opens Settings.
 - **Install** happens on Restart to update, or the next time the player quits the launcher.
 - **Held restart**: while a product is running or downloading, Restart to update is disabled and the text says why ("Restarts after you quit PD2R", "Restarts after PD2R finishes downloading"). The update still installs on the next Quit.
@@ -224,5 +226,4 @@ Each item has a default to build to unless a later decision replaces it.
 | News feed size | Up to three items, newest first. Offline and empty lines as above. |
 | "Reset player settings" | Not designed. It must be separate from Repair ([#5](https://github.com/synpoox/resurrected-launcher/issues/5) Q9). |
 | Clean-install recovery for unrecognised files | Not designed. Use the `blocked` notice treatment. |
-| Opting out of automatic launcher downloads | Not offered in v1. Prototyped as a Settings switch in [#28](https://github.com/synpoox/resurrected-launcher/issues/28) and left out. |
 | Patch Notes contrast and keyboard checks | Not measured. Check them against the targets above during implementation. |
