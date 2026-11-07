@@ -5,13 +5,24 @@
 //! execute command, and there must never be one: arguments from the frontend are
 //! product IDs and intents only, and Rust validates every request. Operation
 //! commands arrive with #40; tray and single instance with slice 4.
+//!
+//! # Adding a command
+//!
+//! Registering a command in [`invoke_handler`] is not enough: the ACL refuses every
+//! app command that is not also listed in `build.rs` (`AppManifest::commands`) and
+//! granted as `allow-<name>` in `capabilities/`. The tests below check both sides.
+//!
+//! # Provisional names
+//!
+//! `tauri.conf.json` uses the technical `productName` `resurrected-launcher` and the
+//! identifier `com.projectd2r.launcher` on purpose, so the provisional display name
+//! stays in one place, [`crate::contract::UMBRELLA_DISPLAY_NAME`]. The identifier
+//! follows the planned projectd2r.com domain and is equally provisional; changing it
+//! later moves the per-user data directory.
 
 use tauri::{ipc::Invoke, Runtime, WebviewUrl, WebviewWindowBuilder};
 
 use crate::contract::{PingResponse, Versioned, UMBRELLA_DISPLAY_NAME};
-
-/// Every command the frontend may invoke. Keep in step with [`invoke_handler`].
-pub const COMMANDS: &[&str] = &["ping"];
 
 /// `ping` command: contract version, launcher version and the umbrella display name.
 #[tauri::command]
@@ -49,13 +60,22 @@ pub fn run() {
 mod tests {
     use super::*;
     use crate::contract::CONTRACT_VERSION;
-    use tauri::ipc::{CallbackFn, InvokeBody};
-    use tauri::test::{get_ipc_response, mock_builder, INVOKE_KEY};
+    use tauri::ipc::{CallbackFn, InvokeBody, InvokeResponseBody};
+    use tauri::test::{get_ipc_response, mock_builder, MockRuntime, INVOKE_KEY};
     use tauri::webview::InvokeRequest;
 
-    fn invoke(cmd: &str) -> Result<tauri::ipc::InvokeResponseBody, serde_json::Value> {
+    /// Stands in for a command someone registers without listing it in build.rs.
+    #[tauri::command]
+    fn run_anything(cmd: String) -> String {
+        cmd
+    }
+
+    fn invoke_with(
+        handler: impl Fn(Invoke<MockRuntime>) -> bool + Send + Sync + 'static,
+        cmd: &str,
+    ) -> Result<InvokeResponseBody, serde_json::Value> {
         let app = mock_builder()
-            .invoke_handler(invoke_handler())
+            .invoke_handler(handler)
             .build(tauri::generate_context!())
             .unwrap();
         let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
@@ -68,7 +88,7 @@ mod tests {
                 callback: CallbackFn(0),
                 error: CallbackFn(1),
                 url: "http://tauri.localhost".parse().unwrap(),
-                body: InvokeBody::default(),
+                body: InvokeBody::Json(serde_json::json!({ "cmd": "whoami" })),
                 headers: Default::default(),
                 invoke_key: INVOKE_KEY.to_string(),
             },
@@ -77,33 +97,62 @@ mod tests {
 
     #[test]
     fn ping_over_ipc_reports_contract_version_and_display_name() {
-        let body = invoke("ping").unwrap();
+        let body = invoke_with(invoke_handler(), "ping").unwrap();
         let reply: Versioned<PingResponse> = body.deserialize().unwrap();
         assert_eq!(reply.contract_version, CONTRACT_VERSION);
         assert_eq!(reply.data.display_name, "Project Resurrected");
         assert_eq!(reply.data.app_version, env!("CARGO_PKG_VERSION"));
     }
 
+    fn handler_with_unlisted_command(
+    ) -> impl Fn(Invoke<MockRuntime>) -> bool + Send + Sync + 'static {
+        tauri::generate_handler![ping, run_anything]
+    }
+
     #[test]
-    fn unregistered_commands_are_refused() {
+    fn registered_but_unlisted_command_is_refused_by_the_acl() {
+        let err = invoke_with(handler_with_unlisted_command(), "run_anything").unwrap_err();
+        assert!(err.to_string().contains("not allowed"), "{err}");
+        // The same handler still serves the listed command.
+        assert!(invoke_with(handler_with_unlisted_command(), "ping").is_ok());
+    }
+
+    #[test]
+    fn plugin_and_unknown_commands_are_refused() {
         for cmd in ["read_file", "plugin:fs|read_file", "plugin:shell|execute"] {
-            assert!(invoke(cmd).is_err(), "{cmd} must not be invocable");
+            assert!(invoke_with(invoke_handler(), cmd).is_err(), "{cmd}");
         }
     }
 
     #[test]
-    fn capabilities_grant_no_permissions() {
-        // shortcut: allowlist is empty; #40 adds exactly what events need and the command allowlist test.
-        const ALLOWED: &[&str] = &[];
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/capabilities");
-        for entry in std::fs::read_dir(dir).unwrap() {
+    fn capabilities_grant_only_allow_ping() {
+        // #40 extends this list deliberately, together with build.rs.
+        const ALLOWED: &[&str] = &["allow-ping"];
+        let root = env!("CARGO_MANIFEST_DIR");
+        let mut granted = Vec::new();
+        for entry in std::fs::read_dir(format!("{root}/capabilities")).unwrap() {
             let text = std::fs::read_to_string(entry.unwrap().path()).unwrap();
             let cap: serde_json::Value = serde_json::from_str(&text).unwrap();
             for perm in cap["permissions"].as_array().unwrap() {
-                let id = perm.as_str().or(perm["identifier"].as_str()).unwrap();
-                assert!(ALLOWED.contains(&id), "capability grants {id}");
+                granted.push(
+                    perm.as_str()
+                        .or(perm["identifier"].as_str())
+                        .unwrap()
+                        .to_owned(),
+                );
             }
         }
-        assert_eq!(COMMANDS, ["ping"]);
+        assert_eq!(granted, ALLOWED);
+
+        // Capabilities may also be declared inline in tauri.conf.json; none are allowed there.
+        let conf: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(format!("{root}/tauri.conf.json")).unwrap(),
+        )
+        .unwrap();
+        let inline = &conf["app"]["security"]["capabilities"];
+        assert!(
+            inline.is_null() || inline.as_array().is_some_and(|a| a.is_empty()),
+            "inline capabilities in tauri.conf.json: {inline}"
+        );
     }
 }

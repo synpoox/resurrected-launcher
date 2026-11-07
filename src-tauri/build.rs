@@ -2,8 +2,13 @@ fn main() {
     // Embed the manifest ourselves for every linked target (tauri-build only covers the
     // bin), so test binaries get Common Controls v6 and asInvoker too.
     let windows = tauri_build::WindowsAttributes::new_without_app_manifest();
-    tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows))
-        .expect("tauri-build failed");
+    // The ACL's list of app commands: anything registered but not listed here is
+    // refused at IPC time. Each one also needs `allow-<name>` in capabilities/.
+    let commands = tauri_build::AppManifest::new().commands(&["ping"]);
+    let attributes = tauri_build::Attributes::new()
+        .windows_attributes(windows)
+        .app_manifest(commands);
+    tauri_build::try_build(attributes).expect("tauri-build failed");
     if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
         let manifest =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("windows-app-manifest.xml");
