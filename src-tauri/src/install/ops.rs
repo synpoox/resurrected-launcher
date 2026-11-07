@@ -45,7 +45,8 @@ pub struct Env<'a> {
 pub struct Report {
     pub kind: OperationKind,
     pub product_root: PathBuf,
-    /// Player-edited shipped defaults kept (or carried forward by clean install).
+    /// [`Inspection::preserved`]: player-edited shipped defaults kept or carried
+    /// forward, and changed files update and uninstall left in place.
     pub preserved: Vec<RelativePath>,
     /// Uninstall: every file still in the product root (player and unknown files).
     pub remaining: Vec<String>,

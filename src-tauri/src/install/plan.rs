@@ -7,6 +7,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::journal::io_error;
 use super::paths::under;
 use super::preflight::SpaceNeeds;
 use super::preserve::{self, at, fate, is, mandatory_settings, on_disk, Digest, Fate, OnDisk};
@@ -14,6 +15,7 @@ use super::transaction::{Plan, RecordChange};
 use crate::catalog::{Ownership, ReleaseManifest};
 use crate::contract::{
     ErrorCode, ExpectedFile, LauncherError, OperationKind, RelativePath, Sha256Digest,
+    DISPOSABLE_SENTINEL,
 };
 use crate::state::{InstalledRelease, StateStore};
 
@@ -42,7 +44,8 @@ pub struct Request<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Conflict {
     /// A kept (edited) shipped default does not hold a setting the release needs.
-    /// The player's file is never overwritten; they edit it, or clean install.
+    /// The player's file is never overwritten; they edit it, or clean install
+    /// (which leaves it in the labelled backup).
     Setting {
         file: RelativePath,
         key: String,
@@ -73,8 +76,12 @@ pub struct Inspection {
     /// Non-empty: the operation is refused until they are resolved.
     pub conflicts: Vec<Conflict>,
     /// Edited shipped defaults kept in place (uninstall: also changed managed
-    /// files it could not positively identify), or carried forward by clean install.
+    /// files it could not positively identify; update: also changed files the new
+    /// release drops), or carried forward by clean install.
     pub preserved: Vec<RelativePath>,
+    /// Clean install: files that stay only in the labelled backup (unknown files,
+    /// and edited defaults that fail a mandatory setting).
+    pub backup_only: Vec<RelativePath>,
     /// Shown, and acknowledged, before installing a save-breaking release.
     pub save_breaking_notice: Option<String>,
     /// `/`-separated path -> what `LiveVerified` requires.
@@ -173,6 +180,7 @@ pub fn inspect(
         },
         conflicts: Vec::new(),
         preserved: Vec::new(),
+        backup_only: Vec::new(),
         save_breaking_notice: new.saves.incompatibility_notice.clone(),
         expect: Vec::new(),
     };
@@ -241,13 +249,28 @@ pub fn inspect(
                     let OnDisk::File(d) = disk else {
                         unreachable!("only a file is edited")
                     };
-                    insp.preserved.push(f.path.clone());
-                    expect.push((f.path.to_string(), Want::File(d)));
-                    if kind == CleanInstall {
-                        plan.carry_forward.push(f.path.clone());
+                    let bad = if matches!(kind, Install | Update | CleanInstall) {
+                        setting_conflicts(new, root, &f.path)?
+                    } else {
+                        Vec::new()
+                    };
+                    if kind == CleanInstall && !bad.is_empty() {
+                        // The new default goes live; the player's file stays in the backup.
+                        insp.backup_only.push(f.path.clone());
+                        expect.push((f.path.to_string(), want));
+                    } else {
+                        insp.preserved.push(f.path.clone());
+                        expect.push((f.path.to_string(), Want::File(d)));
+                        if kind == CleanInstall {
+                            plan.carry_forward.push(f.path.clone());
+                        }
+                        insp.conflicts.extend(bad);
                     }
                 }
-                Fate::Conflict if kind == CleanInstall => expect.push((f.path.to_string(), want)),
+                Fate::Conflict if kind == CleanInstall => {
+                    insp.backup_only.push(f.path.clone());
+                    expect.push((f.path.to_string(), want));
+                }
                 Fate::Conflict => insp.conflicts.push(Conflict::UnknownFile {
                     path: f.path.clone(),
                 }),
@@ -285,6 +308,7 @@ pub fn inspect(
                             expect.push((f.path.to_string(), Want::Absent));
                             recovery += d.0;
                         } else {
+                            insp.preserved.push(f.path.clone());
                             expect.push((f.path.to_string(), Want::File(d)));
                         }
                     }
@@ -295,27 +319,6 @@ pub fn inspect(
                     .map(|d| RelativePath::new(d.as_str()))
                     .collect::<Result<_, _>>()
                     .map_err(|e| invalid(format!("release dir: {e}")))?;
-            }
-        }
-        if matches!(kind, Install | Update | CleanInstall) {
-            for s in mandatory_settings(new) {
-                let kept = insp
-                    .preserved
-                    .iter()
-                    .any(|p| fold(p.as_str()) == fold(s.file.as_str()));
-                if !kept {
-                    continue;
-                }
-                let text = std::fs::read_to_string(under(root, &s.file)).unwrap_or_default();
-                let found = preserve::setting_value(&text, &s.key);
-                if found != Some(s.value.as_str()) {
-                    insp.conflicts.push(Conflict::Setting {
-                        file: s.file.clone(),
-                        key: s.key.clone(),
-                        required: s.value.clone(),
-                        found: found.map(str::to_owned),
-                    });
-                }
             }
         }
         let secs = SystemTime::now()
@@ -346,15 +349,52 @@ pub fn inspect(
     plan.space.recovery_copy = recovery;
 
     // Unknown files (saves, plugins, anything unlisted) must still be there after.
-    // Clean install moves them into the labelled backup instead.
-    if kind != CleanInstall && std::fs::symlink_metadata(root).is_ok() {
+    // Clean install leaves them only in the labelled backup, and says so.
+    if std::fs::symlink_metadata(root).is_ok() {
+        let old = baseline.map(files_by_fold).unwrap_or_default();
         for (rel, size) in preserve::walk(root)? {
-            if !known.contains(&fold(&rel)) {
+            if known.contains(&fold(&rel)) {
+                continue;
+            }
+            if kind != CleanInstall {
                 expect.push((rel, Want::Size(size)));
+            } else if rel != DISPOSABLE_SENTINEL {
+                // An old-release file with its published bytes is not the player's.
+                if let Some(f) = old.get(&fold(&rel)) {
+                    if matches!(on_disk(&at(root, &rel))?, OnDisk::File(d) if is(&d, f)) {
+                        continue;
+                    }
+                }
+                let p =
+                    RelativePath::new(rel).map_err(|e| invalid(format!("unknown file: {e}")))?;
+                insp.backup_only.push(p);
             }
         }
     }
     Ok(insp)
+}
+
+/// Mandatory settings of `m` that the kept file `path` under `root` fails.
+fn setting_conflicts(
+    m: &ReleaseManifest,
+    root: &Path,
+    path: &RelativePath,
+) -> Result<Vec<Conflict>, LauncherError> {
+    let mut out = Vec::new();
+    for s in mandatory_settings(m).filter(|s| fold(s.file.as_str()) == fold(path.as_str())) {
+        let p = under(root, &s.file);
+        let text = std::fs::read_to_string(&p).map_err(|e| io_error("reading", &p, e))?;
+        let found = preserve::setting_value(&text, &s.key);
+        if found != Some(s.value.as_str()) {
+            out.push(Conflict::Setting {
+                file: s.file.clone(),
+                key: s.key.clone(),
+                required: s.value.clone(),
+                found: found.map(str::to_owned),
+            });
+        }
+    }
+    Ok(out)
 }
 
 /// Checks `root` against `expect` (the `LiveVerified` boundary).

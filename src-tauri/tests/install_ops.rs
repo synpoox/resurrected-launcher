@@ -302,6 +302,54 @@ fn update_with_edited_config_conflicting_with_mandatory_setting_pauses_with_conf
 }
 
 #[test]
+fn clean_install_resolves_a_mandatory_setting_conflict_leaving_the_edit_in_the_backup() {
+    let rig = Rig::new();
+    let (_, m1) = install_1(&rig);
+    let (r2, m2) = rig.served(PD2R_2);
+    let root = product_root(&rig, &m2);
+    let edited = b"[loader]
+default_mod=Other
+save_format=pd2r
+";
+    fs::write(root.join(CONFIG), edited).unwrap();
+    let before = tree(&root);
+    let update = rig.request(Update, &r2, &m2, Some(&m1));
+    assert_eq!(code(rig.run(&update)), ErrorCode::MandatorySettingConflict);
+
+    let mut clean = rig.request(CleanInstall, &r2, &m2, Some(&m1));
+    clean.consent_clean_install = true;
+    let insp = ops::inspect(&rig.env(&NoFaults), &clean).unwrap();
+    assert!(insp.conflicts.is_empty() && insp.preserved.is_empty());
+    assert_eq!(insp.backup_only, [rel(CONFIG)]);
+    let report = rig.run(&clean).unwrap();
+
+    // The new default is live; the player's edit is only in the labelled backup.
+    assert_eq!(tree(&root), release_tree(&r2));
+    assert!(report.preserved.is_empty());
+    let [backup] = &report.clean_install_backups[..] else {
+        panic!("one labelled backup: {:?}", report.clean_install_backups);
+    };
+    assert_eq!(tree(backup), before);
+    assert_eq!(rig.installed_release().as_deref(), Some(PD2R_2));
+}
+
+#[test]
+fn update_keeps_and_reports_a_changed_file_the_new_release_drops() {
+    let rig = Rig::new();
+    let (_, m1) = install_1(&rig);
+    let (r2, m2) = rig.served(PD2R_2);
+    let root = product_root(&rig, &m2);
+    let retired = "PD2R.mpq/data/global/excel/retired.txt";
+    fs::write(root.join(retired), b"player-changed retired file").unwrap();
+
+    let report = rig.run(&rig.request(Update, &r2, &m2, Some(&m1))).unwrap();
+
+    let want = with_file(release_tree(&r2), retired, b"player-changed retired file");
+    assert_eq!(tree(&root), want);
+    assert_eq!(report.preserved, [rel(retired)]);
+}
+
+#[test]
 fn save_breaking_release_is_refused_without_acknowledgement_and_saves_are_untouched() {
     let rig = Rig::new();
     let (r2, m2) = rig.served(PD2R_2);
@@ -462,6 +510,11 @@ fn unknown_file_conflict_offers_clean_install_which_keeps_a_labelled_backup() {
 
     let insp = ops::inspect(&rig.env(&NoFaults), &rig.request(Install, &r1, &m1, None)).unwrap();
     assert_eq!(insp.conflicts, [Conflict::UnknownFile { path: rel(armor) }]);
+    // Consent is informed: what stays only in the backup is listed up front.
+    let clean = rig.request(CleanInstall, &r1, &m1, None);
+    let insp = ops::inspect(&rig.env(&NoFaults), &clean).unwrap();
+    assert!(insp.conflicts.is_empty());
+    assert_eq!(insp.backup_only, [rel(armor), rel(UNKNOWN_PLUGIN)]);
     assert_eq!(
         code(rig.run(&rig.request(Install, &r1, &m1, None))),
         ErrorCode::InventoryMismatch
