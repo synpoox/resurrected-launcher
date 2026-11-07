@@ -1,0 +1,31 @@
+/* PROTOTYPE self-update styles for #28, layered on shell E. Square, no shadows. */
+.J .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.J .track { height: 4px; background: var(--line); }
+.J .track .fill { height: 100%; background: var(--button); }
+.J nav .alert { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+/* A: sidebar block above Settings */
+.sublock { margin: auto 16px 14px; padding: 12px 14px; background: var(--panel); border-left: 2px solid var(--muted); display: grid; gap: 6px; font-size: 12px; line-height: 1.45; color: var(--hero-copy); }
+.sublock.error { border-left-color: var(--accent); }
+.sublock b { color: var(--text); font-size: 13px; }
+.sublock .btn.small { padding: 0 12px; }
+.D nav .foot.after { margin-top: 0; }
+
+/* B: titlebar chip + popover */
+.suchip-wrap { position: relative; align-self: stretch; display: flex; align-items: center; }
+.suchip { height: 22px; padding: 0 10px; font-size: 11px; font-weight: 800; letter-spacing: .3px; color: var(--text); background: var(--line); margin-right: 6px; }
+.suchip:hover { background: var(--panel); }
+.suchip.error { background: var(--button); }
+.supop { position: absolute; right: 6px; top: 30px; width: 320px; background: var(--panel); border-top: 2px solid var(--muted); padding: 14px 16px; display: grid; gap: 8px; font-size: 13px; line-height: 1.5; color: var(--hero-copy); z-index: 8; }
+.supop.error { border-top-color: var(--accent); }
+.supop b { color: var(--text); }
+
+/* C: toast */
+.sutoast { max-width: 400px; }
+.sutoast b { color: var(--text); }
+.sutoast .row { margin-top: 10px; }
+
+/* restart overlay */
+.surestart { position: absolute; inset: 0; z-index: 9; background: var(--bg); display: grid; place-content: center; justify-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+.surestart .glyph { color: var(--accent); font-size: 56px; line-height: 1; }
+.surestart b { color: var(--text); font-size: 18px; }
