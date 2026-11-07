@@ -22,6 +22,7 @@ use std::time::Duration;
 
 use super::download::{hash_file, io_error, verify_file};
 use super::paths::{under, TransactionPaths};
+use crate::catalog::ArchiveFormat;
 use crate::contract::{ErrorCode, ExpectedInventory, LauncherError, RelativePath, Sha256Digest};
 
 /// Pinned 7-Zip Extra console (`x64/7za.exe`), see `docs/third-party.md`.
@@ -34,23 +35,34 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 #[cfg(windows)]
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 
-/// Archive formats a release manifest may name.
+/// The 7-Zip `-t` switch for an archive. Production only knows the manifest's
+/// [`ArchiveFormat`]; tests also feed hand-built zip and tar fixtures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ArchiveFormat {
-    Zip,
+enum Kind {
     SevenZ,
-    /// Test-only: the only fixture format that can express hard links.
+    #[cfg(test)]
+    Zip,
+    /// The only fixture format that can express hard links.
     #[cfg(test)]
     Tar,
 }
 
-impl ArchiveFormat {
+impl Kind {
     fn switch(self) -> &'static str {
         match self {
-            Self::Zip => "-tzip",
             Self::SevenZ => "-t7z",
             #[cfg(test)]
+            Self::Zip => "-tzip",
+            #[cfg(test)]
             Self::Tar => "-ttar",
+        }
+    }
+}
+
+impl From<ArchiveFormat> for Kind {
+    fn from(format: ArchiveFormat) -> Self {
+        match format {
+            ArchiveFormat::SevenZip => Self::SevenZ,
         }
     }
 }
@@ -67,7 +79,8 @@ fn internal(message: impl Into<String>) -> LauncherError {
     LauncherError::new(ErrorCode::Internal, message)
 }
 
-/// The bundled 7-Zip, checked against the pin.
+/// The bundled 7-Zip. Its size and SHA-256 are checked against the pin when it is
+/// located and again before every invocation.
 #[derive(Debug)]
 pub struct SevenZip {
     exe: PathBuf,
@@ -77,30 +90,42 @@ impl SevenZip {
     /// `exe` is the bundled `resources/7zip/7za.exe`; refused unless its size and
     /// SHA-256 match the pin.
     pub fn bundled(exe: &Path) -> Result<Self, LauncherError> {
-        let pin: Sha256Digest = SEVEN_ZIP_SHA256.parse().expect("pinned digest is hex");
-        if !verify_file(exe, SEVEN_ZIP_SIZE, &pin, &AtomicBool::new(false))? {
-            return Err(internal(format!(
-                "bundled 7-Zip at {} does not match the pinned {SEVEN_ZIP_VERSION}",
-                exe.display()
-            )));
-        }
-        Ok(Self {
+        let seven_zip = Self {
             exe: exe.to_owned(),
-        })
+        };
+        seven_zip.check_pin()?;
+        Ok(seven_zip)
     }
 
-    fn command(&self, op: &str, format: ArchiveFormat) -> Command {
+    fn check_pin(&self) -> Result<(), LauncherError> {
+        let pin: Sha256Digest = SEVEN_ZIP_SHA256.parse().expect("pinned digest is hex");
+        if verify_file(&self.exe, SEVEN_ZIP_SIZE, &pin, &AtomicBool::new(false))? {
+            Ok(())
+        } else {
+            Err(internal(format!(
+                "bundled 7-Zip at {} does not match the pinned {SEVEN_ZIP_VERSION}",
+                self.exe.display()
+            )))
+        }
+    }
+
+    /// The only way a 7-Zip process is built; re-checks the pin first.
+    fn command(&self, op: &str, kind: Kind) -> Result<Command, LauncherError> {
+        // shortcut: a same-user process could swap the file between this check and the
+        // spawn; out of scope for a normal-user launcher, revisit if 7-Zip moves to a
+        // writable location.
+        self.check_pin()?;
         let mut cmd = Command::new(&self.exe);
-        cmd.args([op, format.switch(), "-sccUTF-8", "-y"])
+        cmd.args([op, kind.switch(), "-sccUTF-8", "-y"])
             .stdin(Stdio::null());
         #[cfg(windows)]
         std::os::windows::process::CommandExt::creation_flags(&mut cmd, CREATE_NO_WINDOW);
-        cmd
+        Ok(cmd)
     }
 
-    fn list(&self, archive: &Path, format: ArchiveFormat) -> Result<Vec<Listed>, LauncherError> {
+    fn list(&self, archive: &Path, kind: Kind) -> Result<Vec<Listed>, LauncherError> {
         let out = self
-            .command("l", format)
+            .command("l", kind)?
             .args(["-slt", "--"])
             .arg(archive)
             .stdout(Stdio::piped())
@@ -122,7 +147,7 @@ impl SevenZip {
     fn extract_all(
         &self,
         archive: &Path,
-        format: ArchiveFormat,
+        kind: Kind,
         out: &Path,
         cancel: &AtomicBool,
     ) -> Result<(), LauncherError> {
@@ -131,7 +156,7 @@ impl SevenZip {
         // shortcut: output is discarded and only the exit code is reported; capture
         // stderr on a reader thread if diagnostics need 7-Zip's message.
         let mut child = self
-            .command("x", format)
+            .command("x", kind)?
             .args(["-bso0", "-bsp0"])
             .arg(out_switch)
             .arg("--")
@@ -293,13 +318,28 @@ fn validate(entries: &[Listed], inventory: &ExpectedInventory) -> Result<(), Lau
 
 /// Validates every entry of the verified archive, then extracts it with the pinned
 /// 7-Zip into fresh staging [`TransactionPaths::staging`] (a sibling of the
-/// product root, so on its filesystem). The live root is never touched. On any
-/// error nothing is left in staging. Call [`verify_staging`] next.
+/// product root, so on its filesystem). The live root is never touched. Call
+/// [`verify_staging`] next.
+///
+/// # Staging left behind (for the transaction, #36)
+///
+/// * Rejected entries or a failed list: staging is never created.
+/// * 7-Zip failure or cancel: `extract` removes staging itself, best effort. If that
+///   removal fails (a file held open by a scanner, say) staging stays.
+/// * Success, or [`verify_staging`] failing afterwards: staging stays; it is the
+///   transaction's to remove (rollback or [`crate::contract::Boundary::CleanedUp`]).
+/// * A crash at any point: staging may exist, partly written.
+///
+/// `extract` never reuses or merges into an existing staging directory: it fails
+/// with [`ErrorCode::Internal`] instead. So before extracting, the transaction must
+/// remove any staging its journal planned (staging only ever holds archive output,
+/// never player or unknown files, so deleting it whole is safe), and must not delete
+/// a staging path its journal does not own.
 ///
 /// Errors: [`ErrorCode::UnsafeArchiveEntry`] (nothing written),
 /// [`ErrorCode::InventoryMismatch`] (declared size differs; nothing written),
-/// [`ErrorCode::Cancelled`], [`ErrorCode::Internal`] (7-Zip failure, staging
-/// already exists).
+/// [`ErrorCode::Cancelled`], [`ErrorCode::Internal`] (7-Zip failure, pin mismatch,
+/// staging already exists).
 pub fn extract(
     seven_zip: &SevenZip,
     format: ArchiveFormat,
@@ -307,12 +347,22 @@ pub fn extract(
     paths: &TransactionPaths,
     cancel: &AtomicBool,
 ) -> Result<(), LauncherError> {
+    extract_kind(seven_zip, format.into(), inventory, paths, cancel)
+}
+
+fn extract_kind(
+    seven_zip: &SevenZip,
+    kind: Kind,
+    inventory: &ExpectedInventory,
+    paths: &TransactionPaths,
+    cancel: &AtomicBool,
+) -> Result<(), LauncherError> {
     let archive = paths.archive();
-    validate(&seven_zip.list(archive, format)?, inventory)?;
+    validate(&seven_zip.list(archive, kind)?, inventory)?;
     let staging = paths.staging();
     // create_dir, not create_dir_all: never extract into an existing directory.
     fs::create_dir(staging).map_err(|e| io_error("creating staging", staging, e))?;
-    let result = seven_zip.extract_all(archive, format, staging, cancel);
+    let result = seven_zip.extract_all(archive, kind, staging, cancel);
     if result.is_err() {
         // std's remove_dir_all does not follow links or junctions.
         let _ = fs::remove_dir_all(staging);
@@ -549,7 +599,7 @@ mod tests {
 
     fn run(
         archive: &[u8],
-        format: ArchiveFormat,
+        kind: Kind,
         inv: &ExpectedInventory,
     ) -> (
         tempfile::TempDir,
@@ -558,7 +608,7 @@ mod tests {
     ) {
         let (dir, _guard, paths) = disposable_root();
         fs::write(paths.archive(), archive).unwrap();
-        let result = extract(&bundled(), format, inv, &paths, &AtomicBool::new(false));
+        let result = extract_kind(&bundled(), kind, inv, &paths, &AtomicBool::new(false));
         (dir, paths, result)
     }
 
@@ -580,7 +630,7 @@ mod tests {
             file("top.dll", b""),
             dir("Saves/"),
         ]);
-        let (dir, paths, result) = run(&archive, ArchiveFormat::Zip, &inv);
+        let (dir, paths, result) = run(&archive, Kind::Zip, &inv);
         result.unwrap();
         verify_staging(&paths, &inv, &AtomicBool::new(false)).unwrap();
         let live: Vec<_> = fs::read_dir(dir.path().join("Product")).unwrap().collect();
@@ -604,7 +654,7 @@ mod tests {
         let inv = inventory(&[("mod/data/x.txt", b"seven")], &[]);
         extract(
             &bundled(),
-            ArchiveFormat::SevenZ,
+            ArchiveFormat::SevenZip,
             &inv,
             &paths,
             &AtomicBool::new(false),
@@ -699,7 +749,7 @@ mod tests {
         for (class, extra, why) in cases {
             let mut entries = vec![file("ok.txt", b"x")];
             entries.extend(extra);
-            let (_dir, paths, result) = run(&zip(&entries), ArchiveFormat::Zip, &inv);
+            let (_dir, paths, result) = run(&zip(&entries), Kind::Zip, &inv);
             let err = result.expect_err(class);
             assert_eq!(err.code, ErrorCode::UnsafeArchiveEntry, "{class}: {err}");
             assert!(err.message.contains(why), "{class}: {err}");
@@ -712,7 +762,7 @@ mod tests {
         let inv = inventory(&[("f.txt", b"x"), ("l.txt", b"")], &[]);
         for kind in [b'1', b'2'] {
             let archive = tar(&[("f.txt", b'0', "", b"x"), ("l.txt", kind, "f.txt", b"")]);
-            let (_dir, paths, result) = run(&archive, ArchiveFormat::Tar, &inv);
+            let (_dir, paths, result) = run(&archive, Kind::Tar, &inv);
             let err = result.unwrap_err();
             assert_eq!(err.code, ErrorCode::UnsafeArchiveEntry, "{err}");
             assert!(err.message.contains("link entry"), "{err}");
@@ -723,7 +773,7 @@ mod tests {
     #[test]
     fn release_archive_entry_with_wrong_declared_size_is_rejected() {
         let inv = inventory(&[("ok.txt", b"x")], &[]);
-        let (_dir, paths, result) = run(&zip(&[file("ok.txt", b"xx")]), ArchiveFormat::Zip, &inv);
+        let (_dir, paths, result) = run(&zip(&[file("ok.txt", b"xx")]), Kind::Zip, &inv);
         assert_eq!(result.unwrap_err().code, ErrorCode::InventoryMismatch);
         assert!(!paths.staging().exists());
     }
@@ -731,7 +781,7 @@ mod tests {
     #[test]
     fn missing_file_after_extraction_fails_inventory_verification() {
         let inv = inventory(&[("a.txt", b"a"), ("b.txt", b"b")], &["empty"]);
-        let (_dir, paths, result) = run(&zip(&[file("a.txt", b"a")]), ArchiveFormat::Zip, &inv);
+        let (_dir, paths, result) = run(&zip(&[file("a.txt", b"a")]), Kind::Zip, &inv);
         result.unwrap();
         let err = verify_staging(&paths, &inv, &AtomicBool::new(false)).unwrap_err();
         assert_eq!(err.code, ErrorCode::InventoryMismatch);
@@ -745,7 +795,7 @@ mod tests {
     #[test]
     fn extra_or_differing_files_after_extraction_fail_inventory_verification() {
         let inv = inventory(&[("a.txt", b"a")], &[]);
-        let (_dir, paths, result) = run(&zip(&[file("a.txt", b"a")]), ArchiveFormat::Zip, &inv);
+        let (_dir, paths, result) = run(&zip(&[file("a.txt", b"a")]), Kind::Zip, &inv);
         result.unwrap();
         let ok = || verify_staging(&paths, &inv, &AtomicBool::new(false));
         ok().unwrap();
@@ -782,14 +832,8 @@ mod tests {
         let inv = inventory(&[("a.txt", b"a")], &[]);
         let (_dir, _guard, paths) = disposable_root();
         fs::write(paths.archive(), zip(&[file("a.txt", b"a")])).unwrap();
-        let err = extract(
-            &bundled(),
-            ArchiveFormat::Zip,
-            &inv,
-            &paths,
-            &AtomicBool::new(true),
-        )
-        .unwrap_err();
+        let err =
+            extract_kind(&bundled(), Kind::Zip, &inv, &paths, &AtomicBool::new(true)).unwrap_err();
         assert_eq!(err.code, ErrorCode::Cancelled);
         assert!(!paths.staging().exists());
     }
@@ -801,14 +845,8 @@ mod tests {
         fs::write(paths.archive(), zip(&[file("a.txt", b"a")])).unwrap();
         fs::create_dir(paths.staging()).unwrap();
         fs::write(paths.staging().join("left.txt"), b"old").unwrap();
-        let err = extract(
-            &bundled(),
-            ArchiveFormat::Zip,
-            &inv,
-            &paths,
-            &AtomicBool::new(false),
-        )
-        .unwrap_err();
+        let err =
+            extract_kind(&bundled(), Kind::Zip, &inv, &paths, &AtomicBool::new(false)).unwrap_err();
         assert_eq!(err.code, ErrorCode::Internal);
         assert!(
             paths.staging().join("left.txt").exists(),
@@ -827,6 +865,54 @@ mod tests {
         assert_eq!(
             SevenZip::bundled(&copy).unwrap_err().code,
             ErrorCode::Internal
+        );
+    }
+
+    #[test]
+    fn bundled_7zip_changed_after_locating_is_refused_before_use() {
+        let exe = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/7zip/7za.exe");
+        let dir = tempfile::tempdir().unwrap();
+        let copy = dir.path().join("7za.exe");
+        fs::copy(exe, &copy).unwrap();
+        let seven_zip = SevenZip::bundled(&copy).unwrap();
+        let mut bytes = fs::read(&copy).unwrap();
+        bytes[5000] ^= 1;
+        fs::write(&copy, bytes).unwrap();
+
+        let inv = inventory(&[("a.txt", b"a")], &[]);
+        let (_root, _guard, paths) = disposable_root();
+        fs::write(paths.archive(), zip(&[file("a.txt", b"a")])).unwrap();
+        let err =
+            extract_kind(&seven_zip, Kind::Zip, &inv, &paths, &AtomicBool::new(false)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::Internal);
+        assert!(err.message.contains("does not match the pinned"), "{err}");
+        assert!(!paths.staging().exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn junction_in_staging_fails_inventory_verification() {
+        let inv = inventory(&[("a.txt", b"a")], &[]);
+        let (dir, paths, result) = run(&zip(&[file("a.txt", b"a")]), Kind::Zip, &inv);
+        result.unwrap();
+        // A junction needs no privilege, unlike a symlink. Its target is outside staging.
+        let outside = dir.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        let status = Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(paths.staging().join("j"))
+            .arg(&outside)
+            .stdout(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "mklink /J failed");
+        let err = verify_staging(&paths, &inv, &AtomicBool::new(false)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::UnsafeArchiveEntry, "{err}");
+        assert!(
+            err.message.contains("j is a link or reparse point"),
+            "{err}"
         );
     }
 }

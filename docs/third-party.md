@@ -2,7 +2,7 @@
 
 ## 7-Zip console (bundled)
 
-The launcher extracts release archives only with this pinned 7-Zip build (#35, architecture resolution in #8). Rust refuses to run any other file: `SevenZip::bundled` in `src-tauri/src/install/extract.rs` checks the size and SHA-256 below before every use.
+The launcher extracts release archives only with this pinned 7-Zip build (#35, architecture resolution in #8). Rust refuses to run any other file: `SevenZip` in `src-tauri/src/install/extract.rs` checks the size and SHA-256 below when it is located and again before every invocation.
 
 | | |
 | --- | --- |
@@ -28,7 +28,7 @@ Bundled files in `src-tauri/resources/7zip/`:
 
 Why 26.04: it was the newest release served from www.7-zip.org itself on 2026-11-07. Newer releases (26.05, 26.06) are linked from the download page but hosted only on GitHub. 26.04 includes the fixes for CVE-2026-14266 (26.02) and CVE-2026-58052 (26.03), but not the unnamed "bugs and vulnerabilities" fixes that 26.05 and 26.06 list. Re-pin once a newer release is served from www.7-zip.org.
 
-The launcher runs only two fixed invocations: `l -slt` (list) and `x` (extract into fresh staging). The archive format is always named (`-tzip` or `-t7z`), and nothing reaches them from the frontend.
+The launcher runs only two fixed invocations: `l -slt` (list) and `x` (extract into fresh staging). The archive format is always named: `-t7z`, the only format the release manifest allows. Nothing reaches these invocations from the frontend. Tests also use `-tzip` and `-ttar` fixtures.
 
 Not yet proven: compatibility with real PD2R release archives (slice 3 gate in #8).
 

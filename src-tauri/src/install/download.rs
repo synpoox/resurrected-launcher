@@ -16,19 +16,11 @@ use ureq::http::Uri;
 use ureq::tls::TlsConfig;
 
 use super::paths::TransactionPaths;
+use crate::catalog::Archive;
 use crate::contract::{ErrorCode, LauncherError, Sha256Digest};
 
 const MAX_REDIRECTS: usize = 10;
 const CHUNK: usize = 64 * 1024;
-
-/// Where a release archive comes from and what its bytes must be. Catalog (#33)
-/// fills it from a validated release manifest.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ArchiveSource {
-    pub url: String,
-    pub size: u64,
-    pub sha256: Sha256Digest,
-}
 
 /// How [`Downloader::fetch`] obtained the verified archive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,7 +132,7 @@ fn require_https(url: &str) -> Result<(), LauncherError> {
 }
 
 /// Downloads release archives. The only network client in Install; it takes no
-/// URL from the frontend, only an [`ArchiveSource`] from validated metadata.
+/// URL from the frontend, only the [`Archive`] of a validated release manifest.
 pub struct Downloader {
     agent: ureq::Agent,
 }
@@ -212,7 +204,7 @@ impl Downloader {
     /// for local I/O.
     pub fn fetch(
         &self,
-        source: &ArchiveSource,
+        source: &Archive,
         paths: &TransactionPaths,
         cancel: &AtomicBool,
         progress: &mut dyn FnMut(u64, u64),
@@ -236,7 +228,7 @@ impl Downloader {
 
     fn download_to(
         &self,
-        source: &ArchiveSource,
+        source: &Archive,
         partial: &Path,
         cancel: &AtomicBool,
         progress: &mut dyn FnMut(u64, u64),
@@ -290,6 +282,7 @@ pub(crate) mod tests {
     use ureq::tls::{Certificate, RootCerts};
 
     use super::*;
+    use crate::catalog::ArchiveFormat;
     use crate::contract::{WriteGuard, DISPOSABLE_SENTINEL};
 
     type Handler = dyn Fn(&str, &str, &mut dyn Write) + Send + Sync;
@@ -411,9 +404,10 @@ pub(crate) mod tests {
         (0..300_000u32).map(|i| (i % 251) as u8).collect()
     }
 
-    fn source(url: String, bytes: &[u8]) -> ArchiveSource {
-        ArchiveSource {
+    fn source(url: String, bytes: &[u8]) -> Archive {
+        Archive {
             url,
+            format: ArchiveFormat::SevenZip,
             size: bytes.len() as u64,
             sha256: sha256(bytes),
         }
@@ -431,7 +425,7 @@ pub(crate) mod tests {
 
     fn fetch(
         fixture: &Fixture,
-        source: &ArchiveSource,
+        source: &Archive,
         paths: &TransactionPaths,
     ) -> Result<Fetched, LauncherError> {
         fixture
