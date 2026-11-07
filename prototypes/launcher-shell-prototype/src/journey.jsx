@@ -190,7 +190,9 @@ function App() {
   const s = STATES[si];
   const p = s.product ?? PD2R;
   const [w, h] = SIZES[size];
-  const scale = Math.min(1, (vw[0] - 24) / w, (vw[1] - 110) / h);
+  const embed = param('embed', ''); // #27: tray.html shows this page as the launcher window
+  const scale = embed ? 1 : Math.min(1, (vw[0] - 24) / w, (vw[1] - 110) / h);
+  const tell = (m) => embed && parent.postMessage(m, '*');
   const goIdx = (n) => { setSi(n); setParam('state', STATES[n].key); };
   const go = (key) => goIdx(STATES.findIndex((x) => x.key === key));
   const cycle = (d) => setSi((i) => { const n = (i + d + STATES.length) % STATES.length; setParam('state', STATES[n].key); return n; });
@@ -213,12 +215,12 @@ function App() {
   return (
     <>
       <div className="stage">
-        <div className="window seamless" style={{ width: w, height: h, position: 'absolute', left: '50%', top: 'calc(50% - 44px)', transform: `translate(-50%,-50%) scale(${scale})` }}>
+        <div className="window seamless" style={{ width: w, height: h, position: 'absolute', left: '50%', top: embed ? '50%' : 'calc(50% - 44px)', transform: `translate(-50%,-50%) scale(${scale})` }}>
           <header className="titlebar">
             <div className="drag" />
-            <button className="win" aria-label="Minimise">&#8211;</button>
+            <button className="win" aria-label="Minimise" onClick={() => tell('minimise')}>&#8211;</button>
             <button className="win" aria-label="Maximise">&#9633;</button>
-            <button className="win close" aria-label="Close">&#10005;</button>
+            <button className="win close" aria-label="Close" onClick={() => tell('close')}>&#10005;</button>
           </header>
           <div className="D J T mid">
             <nav aria-label="Products">
@@ -273,7 +275,7 @@ function App() {
           </div>
         </div>
       </div>
-      {import.meta.env.DEV && (
+      {import.meta.env.DEV && !embed && (
         <div style={bar}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button style={pill} onClick={() => cycle(-1)} aria-label="Previous state">←</button>

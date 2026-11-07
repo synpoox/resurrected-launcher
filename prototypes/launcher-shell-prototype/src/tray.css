@@ -1,0 +1,80 @@
+/* PROTOTYPE for #27. Windows chrome (taskbar, context menu, notifications) imitates Windows 11 and is not ours to design;
+   only the icon, the menu contents and the C flyout are launcher design. */
+.desk { position: fixed; inset: 0; background: radial-gradient(circle at 30% 20%, #3b4a63, #1b2230 60%, #12161f); font-family: 'Segoe UI', system-ui, sans-serif; }
+.desk.light { background: radial-gradient(circle at 30% 20%, #cfe0f5, #8fb0d6 60%, #6b8fbc); }
+.gone { position: absolute; inset: 0 0 48px; display: grid; place-items: center; color: #ffffff55; font-size: 14px; }
+.winwrap { position: absolute; left: 50%; top: calc(50% + 40px); width: 1280px; height: 720px; transform-origin: center; box-shadow: 0 20px 60px #0009; }
+.winwrap iframe { width: 100%; height: 100%; border: 0; display: block; }
+.catch { position: fixed; inset: 0; z-index: 20; }
+
+.taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; background: #1c1c1cf2; border-top: 1px solid #ffffff14; display: flex; align-items: center; justify-content: flex-end; color: #fff; font-size: 12px; z-index: 30; }
+.light .taskbar { background: #f3f3f3f2; border-top-color: #0000001a; color: #111; }
+.tmid { position: absolute; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; }
+.tb { width: 40px; height: 40px; border-radius: 4px; display: grid; place-items: center; position: relative; }
+.tb.app:hover, .ticon:hover, .chev:hover { background: #ffffff14; }
+.light .tb.app:hover, .light .ticon:hover, .light .chev:hover { background: #0000000d; }
+.tb.app::after { content: ''; position: absolute; bottom: 2px; width: 6px; height: 3px; border-radius: 2px; background: #9a9a9a; }
+.tb.app.on { background: #ffffff0f; }
+.tb.app.on::after { width: 16px; background: #60cdff; }
+.tb.start { grid-template-columns: 9px 9px; gap: 2px; place-content: center; }
+.tb.start i { width: 9px; height: 9px; background: #4cc2ff; }
+.tb.search { font-size: 20px; }
+.tb.folder::before { content: ''; width: 20px; height: 15px; background: #f5c542; border-radius: 2px; }
+.tright { display: flex; align-items: center; gap: 2px; padding-right: 10px; }
+.chev { width: 28px; height: 40px; border-radius: 4px; font-size: 14px; }
+.ticon { width: 32px; height: 40px; border-radius: 4px; display: grid; place-items: center; position: relative; }
+.ticon svg { display: block; }
+.ttip { position: absolute; bottom: 46px; right: -40px; white-space: nowrap; background: #2b2b2b; color: #fff; border: 1px solid #ffffff1f; border-radius: 4px; padding: 6px 9px; font-size: 12px; text-align: left; line-height: 1.45; z-index: 40; }
+.light .ttip { background: #f9f9f9; color: #111; border-color: #0000001f; }
+.sys { padding: 0 10px; font-size: 12px; }
+.clock { text-align: right; font-size: 12px; line-height: 1.3; padding: 0 6px; }
+.ovf { position: absolute; right: 150px; bottom: 56px; display: flex; gap: 2px; padding: 6px; background: #2b2b2b; border: 1px solid #ffffff1f; border-radius: 8px; z-index: 31; }
+.ovf.light { background: #f9f9f9; border-color: #0000001f; }
+.ovf .fake { width: 32px; height: 40px; display: grid; place-items: center; }
+.ovf .fake::before { content: ''; width: 14px; height: 14px; border-radius: 3px; background: #7a7a7a; }
+
+.native { position: fixed; bottom: 56px; min-width: 240px; background: #2c2c2c; color: #fff; border: 1px solid #ffffff1f; border-radius: 8px; padding: 4px; box-shadow: 0 8px 24px #0007; z-index: 41; font-size: 14px; }
+.native.light { background: #f9f9f9; color: #111; border-color: #0000001f; }
+.native .mi { display: flex; align-items: center; width: 100%; height: 32px; padding: 0 12px 0 4px; border-radius: 4px; text-align: left; position: relative; white-space: nowrap; }
+.native .mi:hover:not(:disabled) { background: #ffffff14; }
+.native.light .mi:hover:not(:disabled) { background: #0000000d; }
+.native .mi:disabled { color: #ffffff73; cursor: default; }
+.native.light .mi:disabled { color: #0000005c; }
+.native .mi.bold { font-weight: 600; }
+.native .ck { width: 24px; text-align: center; }
+.native .arrow { margin-left: auto; padding-left: 16px; }
+.native hr { border: 0; border-top: 1px solid #ffffff1f; margin: 4px 0; }
+.native.light hr { border-top-color: #0000001a; }
+.native .sub { position: absolute; right: calc(100% + 8px); bottom: -4px; }
+.native.light .sub { background: #f9f9f9; color: #111; }
+
+.toasts { position: fixed; right: 12px; bottom: 60px; display: grid; gap: 8px; z-index: 35; }
+.wtoast { width: 364px; background: #2c2c2c; color: #fff; border: 1px solid #ffffff1f; border-radius: 8px; padding: 12px 16px 16px; box-shadow: 0 8px 24px #0007; font-size: 13px; cursor: pointer; display: grid; gap: 4px; }
+.wtoast.light { background: #f9f9f9; color: #111; border-color: #0000001f; }
+.wtoast .app { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 6px; }
+.wtoast .x { margin-left: auto; font-size: 12px; opacity: .7; }
+.wtoast p { opacity: .8; line-height: 1.4; }
+.wbtn { margin-top: 8px; height: 32px; border-radius: 4px; background: #ffffff14; border: 1px solid #ffffff1f !important; }
+.light .wbtn { background: #fff; border-color: #0000001f !important; }
+
+/* C: the one tray surface in launcher styling: square, --panel, 2px accent top, Arial. */
+.flyout { position: fixed; right: 12px; bottom: 60px; width: 340px; background: var(--bg); border: 1px solid var(--line); border-top: 2px solid var(--accent); font-family: var(--font); color: var(--text); z-index: 41; box-shadow: 0 8px 24px #0007; }
+.fhead { display: flex; align-items: center; gap: 8px; padding: 12px 16px; font-size: 12px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; border-bottom: 1px solid var(--line); }
+.fhead .glyph { color: var(--accent); font-size: 20px; line-height: 1; }
+.frow { padding: 14px 16px; display: grid; gap: 8px; background: var(--panel); border-left: 2px solid transparent; }
+.frow.error { border-left-color: var(--accent); }
+.frow b { font-size: 13px; }
+.fstat { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--hero-copy); }
+.frow .track { height: 6px; background: var(--line); }
+.frow .fill { height: 100%; background: var(--button); transition: width .3s; }
+.fact { display: flex; gap: 8px; flex-wrap: wrap; }
+.ffoot { display: flex; }
+.ffoot button { flex: 1; padding: 11px 0; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); border-top: 1px solid var(--line); }
+.ffoot button + button { border-left: 1px solid var(--line); }
+.ffoot button:hover { color: var(--text); background: var(--panel); }
+@media (prefers-reduced-motion: reduce) { .frow .fill { transition: none; } }
+
+.sheet { position: fixed; inset: 0; background: #000c; z-index: 60; display: grid; place-content: center; gap: 12px; color: #fff; font-size: 13px; }
+.strip { display: flex; gap: 24px; padding: 20px 24px; background: #1c1c1c; border-radius: 8px; }
+.strip.light { background: #f3f3f3; color: #111; }
+.cell { display: grid; justify-items: center; gap: 10px; font-size: 11px; }
