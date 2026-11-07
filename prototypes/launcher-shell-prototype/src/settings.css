@@ -1,0 +1,57 @@
+/* PROTOTYPE settings styles for #19, layered on variant D + journey.css. Square, no shadows. */
+.S { color: var(--hero-copy); font-size: 13px; line-height: 1.55; }
+.S .h1 { font-size: 34px; color: var(--text); margin-bottom: 8px; }
+.scroll { overflow: auto; min-height: 0; }
+.S .ssec { display: grid; padding-top: 22px; }
+.S .ssec > .label { padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.S .srow { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.S .srow b { display: block; color: var(--text); font-size: 14px; }
+.S .srow .hint { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; }
+.S .ctl { display: grid; justify-items: end; gap: 6px; }
+.S .why { font-size: 11px; color: var(--muted); }
+.S .fine { max-width: none; color: var(--muted); font-size: 12px; margin-top: 12px; }
+.S .notice { margin-top: 12px; max-width: none; }
+.S .btn.small { white-space: nowrap; }
+
+.switch { width: 44px; height: 24px; background: var(--line); position: relative; transition: background .15s; }
+.switch span { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; background: var(--muted); transition: transform .15s, background .15s; }
+.switch[aria-checked=true] { background: var(--button); }
+.switch[aria-checked=true] span { transform: translateX(20px); background: #fff; }
+@media (prefers-reduced-motion: reduce) { .switch, .switch span { transition: none; } }
+
+/* A: one scrolling page */
+.A1 { position: absolute; inset: 0; padding: 48px 56px 40px; }
+.A1 > * { max-width: 760px; }
+
+/* B: sub-tabs */
+.B1 { position: absolute; inset: 0; display: grid; grid-template-columns: 220px 1fr; }
+.B1 .subnav { border-right: 1px solid var(--line); padding: 48px 0 0; display: flex; flex-direction: column; }
+.B1 .subnav .h1 { padding: 0 28px 18px; font-size: 26px; }
+.B1 .subnav button { text-align: left; padding: 10px 28px; font-size: 14px; font-weight: 700; color: var(--muted); }
+.B1 .subnav button[aria-selected=true] { color: var(--text); box-shadow: inset 2px 0 var(--accent); background: #ffffff06; }
+.B1 .panel { padding: 30px 48px 40px; }
+.B1 .panel > * { max-width: 720px; }
+
+/* C: drawer over the product page */
+.dim { position: absolute; inset: 0; background: #000000a0; z-index: 3; }
+.drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(520px, 62%); background: var(--bg); border-left: 2px solid var(--accent); padding: 40px 28px 30px; z-index: 4; animation: slide .25s ease-out; }
+@keyframes slide { from { transform: translateX(24px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .drawer { animation: none; } }
+.drawer .dhead { display: flex; justify-content: space-between; align-items: center; }
+.drawer h2 { color: var(--text); font-size: 22px; font-weight: 900; }
+
+/* D: cards by owner */
+.D1 { position: absolute; inset: 0; padding: 48px 48px 40px; }
+.D1 .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; align-items: start; }
+.D1 .card { background: var(--panel); border-top: 2px solid var(--accent); padding: 18px 20px 6px; }
+.D1 .card h3 { color: var(--text); font-size: 15px; font-weight: 900; padding-bottom: 4px; }
+.D1 .card .srow:last-child { border-bottom: 0; }
+.D1 .card .srow { grid-template-columns: 1fr; gap: 10px; }
+.D1 .card .ctl { justify-items: start; }
+
+/* shared overlays */
+.J .report { max-height: 180px; overflow: auto; background: var(--bg); border: 1px solid var(--line); padding: 12px; font: 12px/1.6 var(--mono); color: var(--text); white-space: pre-wrap; word-break: break-all; }
+.J .dialog { max-height: calc(100% - 48px); overflow: auto; }
+.toast { position: absolute; right: 24px; bottom: 24px; max-width: 520px; z-index: 7; display: flex; gap: 16px; align-items: flex-start; background: var(--panel); border-left: 2px solid var(--muted); padding: 12px 16px; font-size: 13px; line-height: 1.5; color: var(--hero-copy); }
+.toast.error { border-left-color: var(--accent); }
+.toast .link { flex: none; }
