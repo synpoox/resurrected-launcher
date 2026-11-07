@@ -1,0 +1,5 @@
+# Pinned to the crate's rust-version (Tauri 2's current minimum) so CI checks it.
+[toolchain]
+channel = "1.90.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

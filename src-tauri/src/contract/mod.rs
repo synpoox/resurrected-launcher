@@ -20,7 +20,9 @@ pub use dto::{
 pub use error::{ErrorCode, LauncherError};
 pub use fault::{FailAt, FaultInjector, FaultPoint, InjectedFault, NoFaults};
 pub use guard::{WriteGuard, DISPOSABLE_SENTINEL};
-pub use inventory::{ExpectedFile, ExpectedInventory, RelativePath, Sha256Digest};
+pub use inventory::{
+    ExpectedFile, ExpectedInventory, InventoryError, PathError, RelativePath, Sha256Digest,
+};
 
 /// Version of the command/event/error contract carried by every [`Versioned`] payload.
 pub const CONTRACT_VERSION: u32 = 1;

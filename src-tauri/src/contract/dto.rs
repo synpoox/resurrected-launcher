@@ -9,6 +9,7 @@ use super::{Boundary, ErrorCode, LauncherError, OperationKind, CONTRACT_VERSION}
 
 /// Envelope carrying [`CONTRACT_VERSION`] with every request, response and event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Versioned<T> {
     pub contract_version: u32,
     pub data: T,
@@ -54,6 +55,7 @@ pub struct PingResponse {
 
 /// A user intent to run a journaled operation on one product.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OperationRequest {
     pub product_id: ProductId,
     pub kind: OperationKind,
@@ -69,6 +71,7 @@ pub struct OperationRequest {
 /// A user intent to cancel the running operation on one product. During final
 /// activation this finishes or rolls back safely before stopping.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CancelRequest {
     pub product_id: ProductId,
 }
@@ -141,6 +144,19 @@ mod tests {
         assert_eq!(req.kind, OperationKind::CleanInstall);
         assert!(!req.acknowledge_save_breaking);
         assert!(!req.consent_clean_install);
+    }
+
+    #[test]
+    fn operation_request_refuses_smuggled_paths_or_urls() {
+        for extra in ["path", "url", "args"] {
+            let wire = json!({
+                "contract_version": CONTRACT_VERSION,
+                "data": { "product_id": "pd2r", "kind": "install", extra: "C:/x" }
+            });
+            assert!(serde_json::from_value::<Versioned<OperationRequest>>(wire).is_err());
+        }
+        let wire = json!({ "contract_version": 1, "data": { "product_id": "pd2r" }, "x": 1 });
+        assert!(serde_json::from_value::<Versioned<CancelRequest>>(wire).is_err());
     }
 
     #[test]

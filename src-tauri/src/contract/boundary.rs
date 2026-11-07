@@ -4,31 +4,54 @@
 //!
 //! # Activation model
 //!
-//! Live root `L` is the product folder. Staging `S`, backup `B` and the downloaded
-//! archive live outside `L` on the same filesystem. Activation moves entries by
-//! rename, never by copying over live files:
+//! Live root `L` is the product folder. Staging `S`, backup `B`, the clean-install
+//! backup `K` and the downloaded archive are siblings of `L` (same parent, so the
+//! same filesystem), derived by Install from [`super::WriteGuard::root`]. Activation
+//! moves entries by rename, never by copying over live files:
 //!
 //! 1. every live managed entry the operation replaces or removes is renamed from `L`
 //!    into `B` ([`Boundary::LiveMovedToBackup`]); `B` is the recovery copy of the
 //!    previous installation, so the old bytes are kept without needing re-download;
 //! 2. every new entry is renamed from `S` into `L` ([`Boundary::StagedMovedToLive`]).
 //!
-//! Player files, edited configs and unknown/plugin files are not in either set: they
-//! stay in place and are never moved, renamed or deleted (clean install excepted,
-//! where the whole old folder becomes a labelled backup that is never deleted).
-//! A step that renames many entries is several Windows renames, not one atomic act;
-//! the journal records per-entry progress inside a step so rollback is exact.
+//! Player files, edited configs and unknown/plugin files (including the
+//! [`super::DISPOSABLE_SENTINEL`]) are in neither set: they stay in place and are
+//! never moved, renamed or deleted. Clean install is the exception: with consent,
+//! the whole old folder becomes `K`, a labelled backup that is never silently deleted.
 //!
-//! # Recovery rule
+//! # Multi-entry steps
 //!
-//! Before `LiveMovedToBackup` (or `CleanInstallBackupMade`) is reached, the live
-//! root is untouched: recovery discards staging/archive. From then until
-//! `LiveVerified`, recovery restores the previous installation from `B`. From
-//! `LiveVerified` onward, recovery rolls forward (commit the record, clean up).
+//! A step that renames, copies or deletes several entries is several Windows
+//! operations, not one atomic act. The journal records per-entry progress inside
+//! the step, entries are processed in the order the journal lists them, and the
+//! injector is consulted around every entry ([`super::FaultPoint::BeforeEntry`],
+//! [`super::FaultPoint::AfterEntry`]). Multi-entry steps: `LiveMovedToBackup`,
+//! `CleanInstallBackupMade`, `StagedMovedToLive`, `PlayerFilesCarriedForward`,
+//! `NewEntriesRemovedFromLive`, `BackupRestoredToLive`, `CleanedUp`. Every other
+//! boundary is a single step and is only consulted at `BeforeStep`/`AfterStep`.
 //!
-//! Every operation reports every boundary of [`Boundary::sequence`] in order, even
-//! when a step has nothing to do (a fresh install moves zero entries into `B`), so
-//! the failure matrix (#39) can inject a fault at each one.
+//! # Direction and recovery rule
+//!
+//! The journal records a direction: forward ([`Boundary::sequence`]) or rollback
+//! ([`Boundary::ROLLBACK`]). Startup recovery, and cancel or failure during a
+//! transaction, decide as follows:
+//!
+//! * forward, `LiveVerified` reached: roll forward through the remaining forward
+//!   boundaries (commit the record, clean up);
+//! * forward, `LiveVerified` not reached: switch the journal to rollback and run
+//!   [`Boundary::ROLLBACK`], whose steps undo exactly the entries the journal says
+//!   were moved (zero entries if the live root was never touched);
+//! * rollback: resume [`Boundary::ROLLBACK`] after the last boundary reached,
+//!   finishing a partly done step from its per-entry progress.
+//!
+//! Recovery is itself journaled and idempotent, so a crash during recovery is
+//! resolved by the next recovery. It never touches player or unknown files or dirs:
+//! it only moves entries the journal lists. The installed-release record is never
+//! changed during rollback, because it is only written after `LiveVerified`.
+//!
+//! Every operation reports every boundary of its sequence in order, even when a
+//! step has nothing to do (a fresh install moves zero entries into `B`), so the
+//! failure matrix (#39) can inject a fault at each one.
 
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +59,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OperationKind {
-    /// First installation of a release into an empty (or absent-content) product root.
+    /// First installation of a release into an existing product root that has no
+    /// managed content.
     Install,
     /// Recognise an existing installation that already matches a release inventory.
     /// Writes only the installed-release record.
@@ -56,13 +80,16 @@ pub enum OperationKind {
 /// reached; [`super::FaultInjector`] is consulted around each one.
 ///
 /// Wire/journal names are snake_case and must not change without bumping
-/// [`super::CONTRACT_VERSION`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+/// [`super::CONTRACT_VERSION`]. Variants are not ordered; use positions in
+/// [`Boundary::sequence`] or [`Boundary::ROLLBACK`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Boundary {
+    // ---- forward ----
     /// Inspect/plan and preflight (space, permissions, running processes, lock,
     /// compatibility, save-breaking acknowledgement, mandatory-setting conflicts)
-    /// passed, and the journal now exists on disk with the plan. Nothing outside the
+    /// passed, a [`super::WriteGuard`] was issued, and the journal now exists on disk
+    /// with the plan, the guarded root and the sibling paths. Nothing outside the
     /// journal has been written.
     TransactionOpened,
     /// The complete archive is on disk outside the live root, flushed, and its size
@@ -75,20 +102,21 @@ pub enum Boundary {
     /// Staging matches the release [`super::ExpectedInventory`] exactly (no extra,
     /// missing or differing files; required empty dirs present). Preservation and
     /// compatibility checks are rechecked here, immediately before the first live
-    /// mutation. Last point where cancel is free.
+    /// mutation. Last point where cancel needs no live-root rollback.
     StagedInventoryVerified,
     /// Activation step 1: each live managed entry being replaced or removed has been
-    /// renamed out of the live root into backup `B` (the recovery copy). From here
-    /// recovery must restore from `B` until [`Boundary::LiveVerified`].
+    /// renamed out of the live root into backup `B` (the recovery copy). Multi-entry.
     LiveMovedToBackup,
-    /// Clean install only, replacing step 1: the whole existing product folder has
-    /// been renamed to a labelled clean-install backup that is never silently deleted.
+    /// Clean install only, replacing step 1. Entry 0 copies the sentinel from `L`
+    /// into `S` (when `L` has one); entry 1 renames the whole of `L` to the labelled
+    /// clean-install backup `K`. So the sentinel is always in `L` or `K`, and in `S`
+    /// before `S` becomes `L`. `K` is never silently deleted. Multi-entry.
     CleanInstallBackupMade,
     /// Activation step 2: each new entry has been renamed from staging into the live
-    /// root.
+    /// root (for clean install: `S` itself is renamed to `L`). Multi-entry.
     StagedMovedToLive,
-    /// Clean install only: recognised player files have been copied from the
-    /// clean-install backup into the new live root (the backup keeps its copies).
+    /// Clean install only: recognised player files have been copied from `K` into
+    /// the new live root (`K` keeps its copies). Multi-entry.
     PlayerFilesCarriedForward,
     /// The live root has been re-read and matches the release inventory, with
     /// preserved player, edited-config and unknown files still present (for
@@ -98,14 +126,36 @@ pub enum Boundary {
     /// The installed-release record (State, #34) now names the new release, or is
     /// removed for uninstall. Only now is the result installed or playable.
     InstalledRecordCommitted,
-    /// Staging, backup `B` and the archive were removed. Never removes a clean-install
-    /// backup or the sole copy of any player or unknown file. The journal is closed
-    /// after this.
+
+    // ---- rollback (cancel during activation, failure, or restart recovery) ----
+    /// The journal durably switched direction to rollback, recording why. Nothing
+    /// else has been changed by the rollback yet.
+    RollbackStarted,
+    /// Each entry the journal says reached `L` from `S` has been renamed back out of
+    /// `L` into `S` (for clean install: the new `L` as a whole is renamed aside into
+    /// `S`; any carried-forward player copies go with it, since `K` keeps the
+    /// originals). Multi-entry; zero entries if activation never moved anything in.
+    NewEntriesRemovedFromLive,
+    /// Each entry the journal says reached `B` has been renamed back into `L` (for
+    /// clean install: `K` is renamed back to `L`). The previous complete
+    /// installation is in place again. Multi-entry.
+    BackupRestoredToLive,
+    /// The live root has been re-read and matches the previous installation's
+    /// inventory (or, for a first install, holds no managed content), with player
+    /// and unknown files intact. The installed-release record is unchanged.
+    RollbackVerified,
+
+    // ---- both directions ----
+    /// Transaction scratch has been removed: staging `S`, backup `B` and the archive.
+    /// After a committed uninstall it also removes managed dirs left empty; after a
+    /// committed update, required empty dirs the new release no longer lists if they
+    /// are still empty. It never removes `K`, a non-empty dir it did not create, or
+    /// any player or unknown file or dir. Multi-entry. The journal is closed after this.
     CleanedUp,
 }
 
 impl Boundary {
-    /// The ordered boundaries every run of `kind` reports.
+    /// The ordered forward boundaries every run of `kind` reports.
     pub const fn sequence(kind: OperationKind) -> &'static [Boundary] {
         use Boundary::*;
         match kind {
@@ -147,6 +197,32 @@ impl Boundary {
             ],
         }
     }
+
+    /// The ordered rollback boundaries, the same for every [`OperationKind`]. Entered
+    /// from any forward boundary before `LiveVerified`.
+    pub const ROLLBACK: &'static [Boundary] = &[
+        Boundary::RollbackStarted,
+        Boundary::NewEntriesRemovedFromLive,
+        Boundary::BackupRestoredToLive,
+        Boundary::RollbackVerified,
+        Boundary::CleanedUp,
+    ];
+
+    /// Whether the step behind this boundary processes several entries and so
+    /// consults [`super::FaultPoint::BeforeEntry`]/[`super::FaultPoint::AfterEntry`].
+    pub const fn is_multi_entry(self) -> bool {
+        use Boundary::*;
+        matches!(
+            self,
+            LiveMovedToBackup
+                | CleanInstallBackupMade
+                | StagedMovedToLive
+                | PlayerFilesCarriedForward
+                | NewEntriesRemovedFromLive
+                | BackupRestoredToLive
+                | CleanedUp
+        )
+    }
 }
 
 #[cfg(test)]
@@ -162,16 +238,23 @@ mod tests {
         OperationKind::CleanInstall,
     ];
 
+    fn pos(seq: &[Boundary], b: Boundary) -> usize {
+        seq.iter().position(|x| *x == b).unwrap()
+    }
+
     #[test]
     fn every_sequence_opens_first_commits_after_verification_and_cleans_up_last() {
         for kind in ALL_KINDS {
             let seq = Boundary::sequence(kind);
             assert_eq!(seq.first(), Some(&Boundary::TransactionOpened), "{kind:?}");
             assert_eq!(seq.last(), Some(&Boundary::CleanedUp), "{kind:?}");
-            let pos = |b| seq.iter().position(|x| *x == b).unwrap();
-            assert!(pos(Boundary::LiveVerified) < pos(Boundary::InstalledRecordCommitted));
-            // Declaration order is pipeline order.
-            assert!(seq.windows(2).all(|w| w[0] < w[1]), "{kind:?}");
+            assert_eq!(
+                pos(seq, Boundary::InstalledRecordCommitted),
+                pos(seq, Boundary::LiveVerified) + 1
+            );
+            let unique: std::collections::HashSet<_> = seq.iter().collect();
+            assert_eq!(unique.len(), seq.len(), "{kind:?}");
+            assert!(!seq.iter().any(|b| Boundary::ROLLBACK[..4].contains(b)));
         }
     }
 
@@ -184,10 +267,6 @@ mod tests {
             OperationKind::CleanInstall,
         ] {
             let seq = Boundary::sequence(kind);
-            let verified = seq
-                .iter()
-                .position(|b| *b == Boundary::StagedInventoryVerified)
-                .unwrap();
             let first_live = seq
                 .iter()
                 .position(|b| {
@@ -197,8 +276,36 @@ mod tests {
                     )
                 })
                 .unwrap();
-            assert_eq!(first_live, verified + 1, "{kind:?}");
+            assert_eq!(
+                first_live,
+                pos(seq, Boundary::StagedInventoryVerified) + 1,
+                "{kind:?}"
+            );
         }
+    }
+
+    #[test]
+    fn rollback_restores_before_verifying_and_never_commits() {
+        let rb = Boundary::ROLLBACK;
+        assert_eq!(rb.first(), Some(&Boundary::RollbackStarted));
+        assert_eq!(rb.last(), Some(&Boundary::CleanedUp));
+        assert!(
+            pos(rb, Boundary::NewEntriesRemovedFromLive) < pos(rb, Boundary::BackupRestoredToLive)
+        );
+        assert!(!rb.contains(&Boundary::InstalledRecordCommitted));
+    }
+
+    #[test]
+    fn every_live_moving_step_is_multi_entry() {
+        for b in [
+            Boundary::LiveMovedToBackup,
+            Boundary::StagedMovedToLive,
+            Boundary::NewEntriesRemovedFromLive,
+            Boundary::BackupRestoredToLive,
+        ] {
+            assert!(b.is_multi_entry(), "{b:?}");
+        }
+        assert!(!Boundary::LiveVerified.is_multi_entry());
     }
 
     #[test]
@@ -207,7 +314,7 @@ mod tests {
             serde_json::to_string(&Boundary::LiveMovedToBackup).unwrap(),
             "\"live_moved_to_backup\""
         );
-        let b: Boundary = serde_json::from_str("\"installed_record_committed\"").unwrap();
-        assert_eq!(b, Boundary::InstalledRecordCommitted);
+        let b: Boundary = serde_json::from_str("\"backup_restored_to_live\"").unwrap();
+        assert_eq!(b, Boundary::BackupRestoredToLive);
     }
 }

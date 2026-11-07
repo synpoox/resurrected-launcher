@@ -54,6 +54,8 @@ pub enum ErrorCode {
 }
 
 /// Error with a stable [`ErrorCode`] and a diagnostic message.
+/// `message` may contain local paths and user names; State (#34) redacts it before
+/// it reaches diagnostics.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LauncherError {
     pub code: ErrorCode,
