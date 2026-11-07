@@ -1,0 +1,2 @@
+name	code	level
+Quilted Armor	qui	1

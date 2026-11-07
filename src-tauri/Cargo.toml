@@ -25,5 +25,7 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 # Local TLS fixture server for download tests.
 rcgen = { version = "0.14", default-features = false, features = ["ring"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+# Connection-reset injection in the fixture HTTP server (tests/support).
+socket2 = "0.6"
 tauri = { version = "2", features = ["test"] }
 tempfile = "3"
