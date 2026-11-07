@@ -22,7 +22,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use super::journal::{
-    canonical_root, sibling, Direction, Entry, Journal, Paths, StepRecord, JOURNAL_VERSION,
+    canonical_root, clean_backup_path, confined, Direction, Entry, Journal, Paths, StepRecord,
+    JOURNAL_VERSION,
 };
 use super::lock::OperationLock;
 use super::preflight::{self, Host, SpaceNeeds};
@@ -185,14 +186,14 @@ impl Tx<'_> {
         match b {
             Boundary::LiveMovedToBackup => {
                 for x in &plan.to_backup {
-                    let from = under(&p.root, x);
+                    let from = confined(&p.root, x)?;
                     if !std::fs::symlink_metadata(&from).is_ok_and(|m| m.is_file()) {
                         return Err(LauncherError::new(
                             ErrorCode::InventoryMismatch,
                             format!("managed file {x} is not a regular file in the live root"),
                         ));
                     }
-                    let to = under(&p.backup, x);
+                    let to = confined(&p.backup, x)?;
                     entries.push(Entry::Rename(PlannedRename { from, to }));
                 }
             }
@@ -216,7 +217,7 @@ impl Tx<'_> {
             Boundary::StagedMovedToLive => {
                 let mut made = HashSet::new();
                 for x in &plan.to_live {
-                    let to = under(&p.root, x);
+                    let to = confined(&p.root, x)?;
                     // Live dirs this step creates are journaled so rollback removes them.
                     let mut missing: Vec<_> = to
                         .ancestors()
@@ -231,7 +232,7 @@ impl Tx<'_> {
                         }
                     }
                     entries.push(Entry::Rename(PlannedRename {
-                        from: under(&p.staging, x),
+                        from: confined(&p.staging, x)?,
                         to,
                     }));
                 }
@@ -239,7 +240,7 @@ impl Tx<'_> {
             Boundary::PlayerFilesCarriedForward => {
                 let keep = keep()?;
                 for x in &plan.carry_forward {
-                    let copy = PlannedCopy::plan(under(&keep, x), under(&p.root, x))?;
+                    let copy = PlannedCopy::plan(confined(&keep, x)?, confined(&p.root, x)?)?;
                     entries.push(Entry::Copy(copy));
                 }
             }
@@ -251,7 +252,9 @@ impl Tx<'_> {
                 entries.extend(self.reversed(Boundary::CleanInstallBackupMade));
             }
             Boundary::CleanedUp => {
-                for s in &self.j.steps {
+                // After rollback `L` is the old root again; stray temps went to `S` with the new tree.
+                let forward = self.j.direction == Direction::Forward;
+                for s in self.j.steps.iter().filter(|_| forward) {
                     for e in &s.entries {
                         if let Entry::Copy(c) = e {
                             if c.temp_is_reserved() {
@@ -269,8 +272,8 @@ impl Tx<'_> {
                     let mut prune: Vec<_> = plan
                         .prune_if_empty
                         .iter()
-                        .map(|x| under(&p.root, x))
-                        .collect();
+                        .map(|x| confined(&p.root, x))
+                        .collect::<Result<_, _>>()?;
                     prune.sort_by_key(|d| std::cmp::Reverse(d.components().count()));
                     entries.extend(prune.into_iter().map(|path| Entry::RemoveDir { path }));
                 }
@@ -452,7 +455,7 @@ pub fn run(
         let secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
-        paths.clean_backup = Some(sibling(root, &format!(".clean-install-backup-{secs}")));
+        paths.clean_backup = Some(clean_backup_path(root, secs));
     }
     let scratch = [&paths.staging, &paths.backup, &paths.archive];
     if let Some(left) = scratch

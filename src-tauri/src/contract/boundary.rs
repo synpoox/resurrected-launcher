@@ -178,6 +178,10 @@ pub enum Boundary {
     /// The live root has been re-read and matches the previous installation's
     /// inventory (or, for a first install, holds no managed content), with player
     /// and unknown files intact. The installed-release record is unchanged.
+    /// Install (#36) decides this from the journal and disk, without re-hashing:
+    /// every planned `L` -> `B` (or `L` -> `K`) entry is back in `L` and every
+    /// incoming entry is back in `S`. Activation only renames, never rewrites, so
+    /// this proves the previous bytes; restart recovery has no previous inventory.
     RollbackVerified,
 
     // ---- both directions ----

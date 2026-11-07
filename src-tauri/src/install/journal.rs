@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use super::transaction::Plan;
 use crate::contract::{
     Boundary, EntryOnDisk, ErrorCode, LauncherError, OperationKind, PlannedCopy, PlannedRename,
+    RelativePath,
 };
 
 /// Bumped when the journal format changes; an unknown version is never guessed at.
@@ -93,6 +94,72 @@ impl Paths {
     fn is_scratch(&self, p: &Path) -> bool {
         [&self.staging, &self.backup, &self.archive].contains(&&p.to_path_buf())
     }
+}
+
+/// A real directory: not a symlink, junction or any other reparse point.
+pub(crate) fn real_dir(m: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    let reparse = {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    };
+    #[cfg(not(windows))]
+    let reparse = false;
+    m.is_dir() && !m.file_type().is_symlink() && !reparse
+}
+
+/// `base` joined with `rel`, refusing when `base` or any existing dir between it
+/// and the entry is not a real directory, so a junction or link inside the root
+/// can never carry a planned move outside the guarded tree. Missing dirs are fine
+/// (the step creates them).
+pub(crate) fn confined(base: &Path, rel: &RelativePath) -> Result<PathBuf, LauncherError> {
+    let parts: Vec<_> = rel.as_str().split('/').collect();
+    // Ok(false): missing, so nothing below it exists either.
+    let real = |p: &Path| match fs::symlink_metadata(p) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Ok(m) if real_dir(&m) => Ok(true),
+        _ => Err(LauncherError::new(
+            ErrorCode::ProductRootNotDisposable,
+            format!(
+                "refusing to write through {}: not a real directory",
+                p.display()
+            ),
+        )),
+    };
+    let mut path = base.to_path_buf();
+    if real(&path)? {
+        for dir in &parts[..parts.len() - 1] {
+            path.push(dir);
+            if !real(&path)? {
+                break;
+            }
+        }
+    }
+    Ok(parts.iter().fold(base.to_path_buf(), |p, c| p.join(c)))
+}
+
+const CLEAN_BACKUP_INFIX: &str = ".clean-install-backup-";
+
+/// The labelled clean-install backup `K` for `root`, stamped with `secs`.
+pub(crate) fn clean_backup_path(root: &Path, secs: u64) -> PathBuf {
+    sibling(root, &format!("{CLEAN_BACKUP_INFIX}{secs}"))
+}
+
+/// Whether `keep` is `<root name>.clean-install-backup-<digits>` beside `root`.
+fn is_clean_backup_of(root: &Path, keep: &Option<PathBuf>) -> bool {
+    let Some(keep) = keep else { return false };
+    let prefix = sibling(root, CLEAN_BACKUP_INFIX);
+    let (Some(prefix), Some(name)) = (
+        prefix.file_name().and_then(|n| n.to_str()),
+        keep.file_name().and_then(|n| n.to_str()),
+    ) else {
+        return false;
+    };
+    keep.parent() == root.parent()
+        && name
+            .strip_prefix(prefix)
+            .is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()))
 }
 
 pub(crate) fn journal_path(root: &Path) -> PathBuf {
@@ -186,7 +253,7 @@ impl Entry {
                         fs::create_dir_all(parent)?;
                     }
                     fs::copy(&c.from, &c.temp)?;
-                    flush(&File::open(&c.temp)?)?;
+                    flush(&OpenOptions::new().write(true).open(&c.temp)?)?;
                     durable_rename(&c.temp, &c.to, true)
                 };
                 copy().map_err(|e| io_error("copying", &c.from, e))
@@ -265,8 +332,15 @@ impl Journal {
         if journal.version != JOURNAL_VERSION {
             return Err(unreadable(format!("version {}", journal.version)));
         }
-        if journal.paths.root != root {
-            return Err(unreadable("it names another product root".into()));
+        // Every path recovery acts on must be the one this root derives, so an
+        // edited journal cannot point deletes or renames elsewhere.
+        let mut want = Paths::for_root(root);
+        want.clean_backup = journal.paths.clean_backup.clone();
+        let clean = journal.kind == OperationKind::CleanInstall;
+        if journal.paths != want || clean != is_clean_backup_of(root, &want.clean_backup) {
+            return Err(unreadable(
+                "its paths do not belong to this product root".into(),
+            ));
         }
         Ok(Some(journal))
     }
@@ -299,12 +373,25 @@ impl Journal {
     }
 }
 
-/// Unit tests simulate crashes with the fault injector, never by power loss, so
-/// they skip the (slow) flushes; every release build flushes.
-const FLUSH: bool = !cfg!(test);
+thread_local! {
+    /// Unit tests simulate crashes with the fault injector, never by power loss, so
+    /// they skip the (slow) flushes unless a test turns them on for its thread;
+    /// every release build flushes.
+    static FLUSH: std::cell::Cell<bool> = const { std::cell::Cell::new(!cfg!(test)) };
+}
+
+fn flushing() -> bool {
+    FLUSH.with(|f| f.get())
+}
+
+/// Test-only: runs the real flush path on this thread.
+#[cfg(test)]
+pub(crate) fn flush_on_this_thread() {
+    FLUSH.with(|f| f.set(true));
+}
 
 fn flush(f: &File) -> io::Result<()> {
-    if FLUSH {
+    if flushing() {
         f.sync_all()?;
     }
     Ok(())
@@ -337,7 +424,11 @@ pub(crate) fn durable_rename(from: &Path, to: &Path, replace: bool) -> io::Resul
     const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
     const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
     let wide = |p: &Path| -> Vec<u16> { p.as_os_str().encode_wide().chain(Some(0)).collect() };
-    let through = if FLUSH { MOVEFILE_WRITE_THROUGH } else { 0 };
+    let through = if flushing() {
+        MOVEFILE_WRITE_THROUGH
+    } else {
+        0
+    };
     let flags = through
         | if replace {
             MOVEFILE_REPLACE_EXISTING
@@ -367,6 +458,90 @@ pub(crate) fn durable_rename(from: &Path, to: &Path, replace: bool) -> io::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The release path: real flushes, write-through renames and a flushed copy.
+    #[test]
+    fn durable_writes_copies_and_renames_flush_for_real() {
+        flush_on_this_thread();
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::for_root(&dir.path().join("PD2R"));
+        let journal = dir.path().join("j.json");
+        write_atomic(&journal, b"one").unwrap();
+        write_atomic(&journal, b"two").unwrap();
+        assert_eq!(fs::read(&journal).unwrap(), b"two");
+
+        let (from, to) = (
+            dir.path().join("edited.filter"),
+            dir.path().join("x/live.filter"),
+        );
+        fs::write(&from, b"player edit").unwrap();
+        let copy = Entry::Copy(PlannedCopy::plan(from, to.clone()).unwrap());
+        copy.apply(&paths).unwrap();
+        assert_eq!(copy.on_disk(), EntryOnDisk::Done);
+
+        let moved = dir.path().join("moved.filter");
+        durable_rename(&to, &moved, false).unwrap();
+        assert_eq!(fs::read(moved).unwrap(), b"player edit");
+    }
+
+    #[test]
+    fn confined_refuses_a_non_directory_between_root_and_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("data")).unwrap();
+        fs::write(dir.path().join("file"), b"").unwrap();
+        let rel = |s: &str| RelativePath::new(s).unwrap();
+        assert!(confined(dir.path(), &rel("data/missing/a.txt")).is_ok());
+        let err = confined(dir.path(), &rel("file/a.txt")).unwrap_err();
+        assert_eq!(err.code, ErrorCode::ProductRootNotDisposable);
+    }
+
+    #[test]
+    fn journal_naming_paths_of_another_root_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("PD2R");
+        let mut paths = Paths::for_root(&root);
+        let journal = |paths: Paths, kind| Journal {
+            version: JOURNAL_VERSION,
+            kind,
+            paths,
+            plan: serde_json::from_value(serde_json::json!({
+                "kind": "update", "to_backup": [], "to_live": [], "carry_forward": [],
+                "prune_if_empty": [], "record": "remove",
+                "space": {"download": 0, "staging": 0, "recovery_copy": 0}
+            }))
+            .unwrap(),
+            direction: Direction::Forward,
+            reached: None,
+            rollback_reason: None,
+            steps: vec![],
+        };
+        journal(paths.clone(), OperationKind::Update)
+            .save()
+            .unwrap();
+        assert!(Journal::load(&root).unwrap().is_some());
+
+        paths.staging = dir.path().join("saves");
+        journal(paths.clone(), OperationKind::Update)
+            .save()
+            .unwrap();
+        assert_eq!(
+            Journal::load(&root).unwrap_err().code,
+            ErrorCode::RecoveryRequired
+        );
+
+        let mut clean = Paths::for_root(&root);
+        clean.clean_backup = Some(dir.path().join("saves"));
+        journal(clean.clone(), OperationKind::CleanInstall)
+            .save()
+            .unwrap();
+        assert_eq!(
+            Journal::load(&root).unwrap_err().code,
+            ErrorCode::RecoveryRequired
+        );
+        clean.clean_backup = Some(clean_backup_path(&root, 42));
+        journal(clean, OperationKind::CleanInstall).save().unwrap();
+        assert!(Journal::load(&root).unwrap().is_some());
+    }
 
     #[test]
     fn journal_write_replaces_atomically_and_leaves_no_temp() {

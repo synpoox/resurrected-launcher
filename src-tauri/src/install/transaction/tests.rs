@@ -816,3 +816,91 @@ fn product_root_without_sentinel_is_never_recovered() {
         ErrorCode::ProductRootNotDisposable
     );
 }
+
+/// Release builds flush every write; run a clean install (copies included) and a
+/// crashed-then-recovered update on that path.
+#[test]
+fn clean_install_and_recovery_succeed_with_real_flushes() {
+    crate::install::journal::flush_on_this_thread();
+    let case = clean_install_case();
+    let fx = Fixture::new(&case);
+    fx.run(&case, &NoFaults).unwrap();
+    assert_eq!(fx.record.get(), Some(json!("new release")));
+
+    let case = update_case();
+    let ends = ends(&case);
+    let fx = Fixture::new(&case);
+    let crash = FailAt {
+        boundary: Boundary::StagedMovedToLive,
+        point: FaultPoint::AfterEntry(1),
+    };
+    fx.run(&case, &crash).unwrap_err();
+    assert_eq!(fx.recover(&NoFaults), Ok(Recovery::RolledBack));
+    assert_whole(&fx, &ends, false, "flushed recovery");
+}
+
+/// A player file in the old root named like a carry-forward temp must survive the
+/// rollback that puts the old root back at `L`.
+#[test]
+fn clean_install_rollback_keeps_player_file_named_like_a_copy_temp() {
+    let mut case = clean_install_case();
+    let lookalike = ("save/hero.d2s.resurrected-tmp", "player's own file");
+    case.before.push(lookalike);
+    let fx = Fixture::new(&case);
+    let crash = FailAt {
+        boundary: Boundary::PlayerFilesCarriedForward,
+        point: FaultPoint::AfterEntry(0),
+    };
+    fx.run(&case, &crash).unwrap_err();
+    assert_eq!(fx.recover(&NoFaults), Ok(Recovery::RolledBack));
+    assert_eq!(
+        fs::read(fx.root.join(lookalike.0)).unwrap(),
+        lookalike.1.as_bytes()
+    );
+}
+
+/// `L/data` is a junction to a folder outside the root: no planned move may go
+/// through it, so that folder and the installation stay untouched.
+#[cfg(windows)]
+#[test]
+fn junction_inside_the_product_root_is_never_written_through() {
+    for case in [update_case(), install_case()] {
+        let fx = Fixture::new(&case);
+        let outside = fx.dir.path().join("elsewhere");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("a.txt"), b"not ours").unwrap();
+        if fx.root.join("data").exists() {
+            fs::remove_dir_all(fx.root.join("data")).unwrap();
+        }
+        let made = std::process::Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(fx.root.join("data"))
+            .arg(&outside)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if !made {
+            eprintln!("SKIPPED junction_inside_the_product_root_is_never_written_through: mklink /J failed");
+            return;
+        }
+        let err = fx.run(&case, &NoFaults).unwrap_err();
+        assert_eq!(
+            err.code,
+            ErrorCode::ProductRootNotDisposable,
+            "{:?}: {err}",
+            case.kind
+        );
+        assert_eq!(fs::read(outside.join("a.txt")).unwrap(), b"not ours");
+        assert_eq!(
+            fs::read_dir(&outside).unwrap().count(),
+            1,
+            "{:?}",
+            case.kind
+        );
+        let paths = Paths::for_root(WriteGuard::check(&fx.root).unwrap().root());
+        assert!(!paths.journal().exists(), "rolled back and closed");
+        assert!(!paths.backup.exists() && !paths.staging.exists());
+        fs::remove_dir(fx.root.join("data")).unwrap(); // the junction, not its target
+    }
+}
