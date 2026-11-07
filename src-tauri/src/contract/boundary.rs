@@ -72,7 +72,10 @@
 //! while the new file still occupies its live path.
 //! Deletes in `CleanedUp` are decided the same way (target absent = done), and
 //! recovery and `CleanedUp` delete any planned copy `temp` file left by a crash
-//! between writing it and renaming it into place.
+//! between writing it and renaming it into place. A `temp` is always `to` plus the
+//! reserved [`super::COPY_TEMP_SUFFIX`] and must be absent when planned
+//! ([`super::PlannedCopy::plan`]), so that deletion never removes a player file. A
+//! copy whose source is not a regular file (a link or dir) reads `Conflict`.
 //!
 //! Recovery is itself journaled, so a crash during recovery is resolved by the next
 //! recovery. It never touches player or unknown files or dirs: it only acts on

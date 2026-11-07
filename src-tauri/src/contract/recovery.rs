@@ -4,6 +4,14 @@
 
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
+use super::{ErrorCode, LauncherError};
+
+/// Reserved suffix of a [`PlannedCopy::temp`]. Recovery only deletes temps with
+/// this suffix, so it can never remove a player file named like another's temp.
+pub const COPY_TEMP_SUFFIX: &str = ".resurrected-tmp";
+
 /// What disk says about one planned entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryOnDisk {
@@ -24,7 +32,7 @@ fn present(p: &Path) -> bool {
 /// One rename the journal planned for a multi-entry step (file, directory or a
 /// whole root, such as `L` -> `K`). The journal writes the complete planned list at
 /// [`super::FaultPoint::BeforeStep`], before the first entry is done.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlannedRename {
     pub from: PathBuf,
     pub to: PathBuf,
@@ -60,12 +68,17 @@ impl PlannedRename {
 /// Copies are never reversed one by one: their destinations live in `S` or the new
 /// `L`, which rollback discards as a whole. A crash between writing `temp` and the
 /// rename leaves `temp` behind; recovery and `CleanedUp` delete any planned `temp`
-/// that is present.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// that is present. Build it with [`PlannedCopy::plan`], which derives a reserved
+/// `temp` name ([`COPY_TEMP_SUFFIX`]) and requires it absent when planned.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlannedCopy {
     pub from: PathBuf,
     pub to: PathBuf,
     pub temp: PathBuf,
+}
+
+fn regular_file(p: &Path) -> bool {
+    std::fs::symlink_metadata(p).is_ok_and(|m| m.is_file())
 }
 
 /// Byte-for-byte equality of two regular files (stronger than comparing hashes).
@@ -90,15 +103,42 @@ fn same_file_contents(a: &Path, b: &Path) -> std::io::Result<bool> {
 }
 
 impl PlannedCopy {
+    /// Plans copying `from` to `to` via `to` + [`COPY_TEMP_SUFFIX`]. Refuses with
+    /// [`ErrorCode::InvalidRequest`] when that temp already exists, since it would be
+    /// someone else's file and recovery deletes temps.
+    pub fn plan(from: PathBuf, to: PathBuf) -> Result<Self, LauncherError> {
+        let mut temp = to.clone().into_os_string();
+        temp.push(COPY_TEMP_SUFFIX);
+        let temp = PathBuf::from(temp);
+        if present(&temp) {
+            return Err(LauncherError::new(
+                ErrorCode::InvalidRequest,
+                format!("copy temp {} already exists", temp.display()),
+            ));
+        }
+        Ok(Self { from, to, temp })
+    }
+
+    /// Whether `temp` is `to` + [`COPY_TEMP_SUFFIX`], so deleting it is safe.
+    pub fn temp_is_reserved(&self) -> bool {
+        let mut expected = self.to.clone().into_os_string();
+        expected.push(COPY_TEMP_SUFFIX);
+        self.temp.as_os_str() == expected
+    }
+
     /// `to` has exactly `from`'s bytes: done. Otherwise (absent, or holding other
     /// content such as a shipped default): not done, and performing it replaces
-    /// `to`. `from` missing, or an I/O error while comparing: conflict.
+    /// `to`. `from` missing or not a regular file (a link or dir), `to` present but
+    /// not a regular file, or an I/O error while comparing: conflict.
     pub fn on_disk(&self) -> EntryOnDisk {
-        if !present(&self.from) {
+        if !regular_file(&self.from) {
             return EntryOnDisk::Conflict;
         }
         if !present(&self.to) {
             return EntryOnDisk::NotDone;
+        }
+        if !regular_file(&self.to) {
+            return EntryOnDisk::Conflict;
         }
         match same_file_contents(&self.from, &self.to) {
             Ok(true) => EntryOnDisk::Done,
@@ -186,11 +226,63 @@ mod tests {
     }
 
     fn copy_in(dir: &Path, from: &str, to: &str) -> PlannedCopy {
-        PlannedCopy {
-            from: dir.join(from),
-            to: dir.join(to),
-            temp: dir.join(format!("{to}.resurrected-tmp")),
+        PlannedCopy::plan(dir.join(from), dir.join(to)).unwrap()
+    }
+
+    #[test]
+    fn copy_whose_source_or_destination_is_a_dir_is_a_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        let copy = copy_in(dir.path(), "src", "dst");
+        assert_eq!(copy.on_disk(), EntryOnDisk::Conflict, "source is a dir");
+
+        std::fs::write(dir.path().join("f"), b"x").unwrap();
+        std::fs::create_dir(dir.path().join("d")).unwrap();
+        assert_eq!(
+            copy_in(dir.path(), "f", "d").on_disk(),
+            EntryOnDisk::Conflict
+        );
+    }
+
+    #[test]
+    fn copy_whose_source_is_a_symlink_is_a_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        let (target, link) = (dir.path().join("target"), dir.path().join("link"));
+        std::fs::write(&target, b"x").unwrap();
+        #[cfg(windows)]
+        let made = std::os::windows::fs::symlink_file(&target, &link);
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(&target, &link);
+        if made.is_err() {
+            eprintln!(
+                "SKIPPED copy_whose_source_is_a_symlink_is_a_conflict: cannot create symlinks"
+            );
+            return;
         }
+        std::fs::write(dir.path().join("dst"), b"x").unwrap();
+        assert_eq!(
+            copy_in(dir.path(), "link", "dst").on_disk(),
+            EntryOnDisk::Conflict
+        );
+    }
+
+    /// A player file named like another file's temp is never claimed as a temp.
+    #[test]
+    fn copy_temp_is_reserved_and_must_be_absent_when_planned() {
+        let dir = tempfile::tempdir().unwrap();
+        let copy = copy_in(dir.path(), "a", "b");
+        assert_eq!(copy.temp, dir.path().join("b.resurrected-tmp"));
+        assert!(copy.temp_is_reserved());
+
+        std::fs::write(dir.path().join("b.resurrected-tmp"), b"player file").unwrap();
+        let err = PlannedCopy::plan(dir.path().join("a"), dir.path().join("b")).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidRequest);
+
+        let forged = PlannedCopy {
+            temp: dir.path().join("player.txt"),
+            ..copy
+        };
+        assert!(!forged.temp_is_reserved());
     }
 
     /// Clean install carries the player's edited filter from `K` into the new `L`,

@@ -12,3 +12,7 @@
 pub mod download;
 pub mod extract;
 pub mod paths;
+pub mod journal;
+pub mod lock;
+pub mod preflight;
+pub mod transaction;
