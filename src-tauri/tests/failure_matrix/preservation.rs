@@ -133,7 +133,6 @@ fn clean_install_backup_is_retained_through_later_operations_and_recovery() {
 /// recheck but before it is moved to backup `B`; `CleanedUp` must not delete the
 /// edit with `B`.
 #[test]
-#[ignore = "defect: #50 item 1, an edit to an untouched shipped default after the StagedInventoryVerified recheck goes to backup and is deleted at CleanedUp"]
 fn update_keeps_a_loot_filter_edited_between_the_staging_recheck_and_activation() {
     let rig = Rig::new();
     let m1 = rig.install_1();
@@ -159,7 +158,6 @@ fn update_keeps_a_loot_filter_edited_between_the_staging_recheck_and_activation(
 /// #50 item 2: a kept settings file that is not UTF-8 (an ANSI INI with an
 /// accented comment) must not block clean install, the way out of a conflict.
 #[test]
-#[ignore = "defect: #50 item 2, a non-UTF-8 settings file makes inspect fail with Internal, blocking clean install"]
 fn clean_install_proceeds_when_the_kept_config_is_not_utf8() {
     let rig = Rig::new();
     let m1 = rig.install_1();

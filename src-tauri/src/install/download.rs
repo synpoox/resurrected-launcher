@@ -38,14 +38,7 @@ fn mismatch(message: impl Into<String>) -> LauncherError {
     LauncherError::new(ErrorCode::VerificationFailed, message)
 }
 
-pub(crate) fn io_error(what: &str, path: &Path, e: std::io::Error) -> LauncherError {
-    let code = if e.kind() == std::io::ErrorKind::PermissionDenied {
-        ErrorCode::AccessDenied
-    } else {
-        ErrorCode::Internal
-    };
-    LauncherError::new(code, format!("{what} {}: {e}", path.display()))
-}
+pub(crate) use super::journal::io_error;
 
 fn cancelled() -> LauncherError {
     LauncherError::new(ErrorCode::Cancelled, "cancelled by the user")

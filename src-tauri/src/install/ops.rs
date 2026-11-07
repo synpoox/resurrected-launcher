@@ -181,7 +181,16 @@ impl Steps for OpSteps<'_> {
                 self.insp = fresh;
                 Ok(())
             }
-            Boundary::LiveVerified => plan::verify_live(&paths.root, &self.insp.expect),
+            Boundary::LiveVerified => {
+                // What moved to `B` is what was inspected; else roll back, putting it back.
+                plan::verify_live(&paths.backup, &self.insp.expect_backup).map_err(|_| {
+                    LauncherError::new(
+                        ErrorCode::InventoryMismatch,
+                        "the product folder changed during the operation",
+                    )
+                })?;
+                plan::verify_live(&paths.root, &self.insp.expect)
+            }
             _ => Err(LauncherError::new(
                 ErrorCode::Internal,
                 format!("{b:?} is not a caller step"),

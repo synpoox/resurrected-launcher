@@ -86,6 +86,9 @@ pub struct Inspection {
     pub save_breaking_notice: Option<String>,
     /// `/`-separated path -> what `LiveVerified` requires.
     pub(crate) expect: Vec<(String, Want)>,
+    /// `to_backup` path -> the bytes inspection found; `LiveVerified` requires them
+    /// in backup `B`, so a player edit made after the recheck rolls back, not lost.
+    pub(crate) expect_backup: Vec<(String, Want)>,
 }
 
 fn invalid(why: impl Into<String>) -> LauncherError {
@@ -183,6 +186,7 @@ pub fn inspect(
         backup_only: Vec::new(),
         save_breaking_notice: new.saves.incompatibility_notice.clone(),
         expect: Vec::new(),
+        expect_backup: Vec::new(),
     };
     let (plan, expect) = (&mut insp.plan, &mut insp.expect);
     let mut recovery = 0u64;
@@ -199,6 +203,7 @@ pub fn inspect(
             match on_disk(&under(root, &f.path))? {
                 OnDisk::File(d) if is(&d, f) => {
                     plan.to_backup.push(f.path.clone());
+                    insp.expect_backup.push((f.path.to_string(), Want::File(d)));
                     expect.push((f.path.to_string(), Want::Absent));
                     recovery += d.0;
                 }
@@ -240,7 +245,11 @@ pub fn inspect(
                     expect.push((f.path.to_string(), want));
                 }
                 Fate::Replace => {
+                    let OnDisk::File(d) = disk else {
+                        unreachable!("only a file is replaced")
+                    };
                     plan.to_backup.push(f.path.clone());
+                    insp.expect_backup.push((f.path.to_string(), Want::File(d)));
                     plan.to_live.push(f.path.clone());
                     expect.push((f.path.to_string(), want));
                     recovery += f.size;
@@ -305,6 +314,7 @@ pub fn inspect(
                     if let OnDisk::File(d) = on_disk(&under(root, &f.path))? {
                         if is(&d, f) {
                             plan.to_backup.push(f.path.clone());
+                            insp.expect_backup.push((f.path.to_string(), Want::File(d)));
                             expect.push((f.path.to_string(), Want::Absent));
                             recovery += d.0;
                         } else {
@@ -343,6 +353,7 @@ pub fn inspect(
     if kind == CleanInstall {
         // The whole old root becomes the labelled backup; nothing moves file by file.
         plan.to_backup.clear();
+        insp.expect_backup.clear();
         plan.to_live.clear();
         recovery = 0;
     }
@@ -383,7 +394,9 @@ fn setting_conflicts(
     let mut out = Vec::new();
     for s in mandatory_settings(m).filter(|s| fold(s.file.as_str()) == fold(path.as_str())) {
         let p = under(root, &s.file);
-        let text = std::fs::read_to_string(&p).map_err(|e| io_error("reading", &p, e))?;
+        let bytes = std::fs::read(&p).map_err(|e| io_error("reading", &p, e))?;
+        // Lossy: an ANSI INI (a non-UTF-8 comment) still has its ASCII keys read.
+        let text = String::from_utf8_lossy(&bytes);
         let found = preserve::setting_value(&text, &s.key);
         if found != Some(s.value.as_str()) {
             out.push(Conflict::Setting {

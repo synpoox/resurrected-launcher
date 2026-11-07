@@ -26,7 +26,9 @@ pub const JOURNAL_VERSION: u32 = 1;
 
 /// Maps an I/O failure to the contract error a player can act on.
 pub(crate) fn io_error(what: &str, path: &Path, e: io::Error) -> LauncherError {
+    // Windows sharing/lock violation: a running game holds the file open (as in preflight).
     let code = match e.kind() {
+        _ if cfg!(windows) && matches!(e.raw_os_error(), Some(32 | 33)) => ErrorCode::GameRunning,
         io::ErrorKind::PermissionDenied => ErrorCode::AccessDenied,
         io::ErrorKind::StorageFull => ErrorCode::InsufficientSpace,
         _ => ErrorCode::Internal,
