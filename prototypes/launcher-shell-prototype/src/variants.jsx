@@ -1,10 +1,10 @@
 // PROTOTYPE variants for #17. Each variant owns its layout; only data and the title bar are shared.
 import { useState } from 'react';
-import { PRODUCTS, NEWS, CREDIT } from './data.js';
+import { PRODUCTS, NEWS, CREDIT, UMBRELLA } from './data.js';
 
 const Art = ({ p, className = '' }) => (
   <div key={p.id} className={'art ' + className} role="img" aria-label={p.credit + ' (official D2R promotional art)'}
-    style={{ backgroundImage: `url("${p.art}")`, backgroundPosition: p.artPos }} />
+    style={{ backgroundImage: `url("${p.art}")`, backgroundPosition: p.artPos, backgroundSize: p.artSize }} />
 );
 const Headline = ({ p }) => <>{p.headline[0]}<br />{p.headline[1]}</>;
 
@@ -75,6 +75,13 @@ export function VariantB({ product, setProduct }) {
         ))}
         <button className="tile foot" aria-label="Settings">{'⚙'}</button>
       </nav>
+      <VariantBMain p={p} />
+    </div>
+  );
+}
+
+function VariantBMain({ p }) {
+  return (
       <main>
         <Art p={p} /><div className="shade" />
         <div className="credit">{CREDIT}</div>
@@ -100,7 +107,6 @@ export function VariantB({ product, setProduct }) {
           </div>
         </div>
       </main>
-    </div>
   );
 }
 
@@ -175,8 +181,27 @@ export function VariantC({ product, setProduct }) {
   );
 }
 
+// D: owner's pick after round 1 - B's cinematic main with A's text sidebar, branding in the sidebar,
+// seamless title bar (window controls float over the art), wider Play.
+export function VariantD({ product, setProduct }) {
+  const p = product;
+  return (
+    <div className="D">
+      <nav aria-label="Products">
+        <div className="brand"><span className="glyph" aria-hidden>/</span><span className="name">{UMBRELLA}</span></div>
+        {PRODUCTS.map((x) => (
+          <button key={x.id} className="item" aria-current={x.id === p.id || undefined} onClick={() => setProduct(x.id)}>{x.name}</button>
+        ))}
+        <button className="item foot">Settings</button>
+      </nav>
+      <VariantBMain p={p} />
+    </div>
+  );
+}
+
 export const VARIANTS = [
   { key: 'A', name: 'Riot skeleton', C: VariantA, mark: 'glyph' },
   { key: 'B', name: 'Cinematic full-bleed', C: VariantB, mark: 'svg' },
   { key: 'C', name: 'Home + tabs', C: VariantC, mark: 'svg' },
+  { key: 'D', name: 'B + A sidebar (round 2)', C: VariantD, mark: 'none' },
 ];

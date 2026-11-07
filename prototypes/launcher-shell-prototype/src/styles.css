@@ -39,11 +39,11 @@ a { color: inherit; }
 
 /* ===== A: Riot skeleton ===== */
 .A { display: grid; grid-template-columns: 220px 1fr 260px; min-height: 0; }
-.A nav { background: var(--rail); display: flex; flex-direction: column; padding: 28px 0 18px; border-right: 1px solid var(--line); }
-.A nav .item { text-align: left; padding: 11px 24px; font-size: 14px; font-weight: 700; color: var(--muted); line-height: 1.3; }
-.A nav .item[aria-current] { color: var(--text); box-shadow: inset 2px 0 var(--accent); }
-.A nav .item:hover { color: var(--text); }
-.A nav .foot { margin-top: auto; }
+.A nav , .D nav { background: var(--rail); display: flex; flex-direction: column; padding: 28px 0 18px; border-right: 1px solid var(--line); }
+.A nav .item , .D nav .item { text-align: left; padding: 11px 24px; font-size: 14px; font-weight: 700; color: var(--muted); line-height: 1.3; }
+.A nav .item[aria-current] , .D nav .item[aria-current] { color: var(--text); box-shadow: inset 2px 0 var(--accent); }
+.A nav .item:hover , .D nav .item:hover { color: var(--text); }
+.A nav .foot , .D nav .foot { margin-top: auto; }
 .A main { position: relative; display: grid; grid-template-rows: 1fr auto; min-height: 0; }
 .A .hero { position: relative; overflow: hidden; }
 .A .hero .art { left: 25%; }
@@ -74,21 +74,21 @@ a { color: inherit; }
 .B nav .tile .tip { position: absolute; left: 60px; top: 50%; transform: translateY(-50%); white-space: nowrap; background: var(--panel); border: 1px solid var(--line); padding: 6px 10px; font-size: 12px; font-weight: 700; display: none; }
 .B nav .tile:hover .tip, .B nav .tile:focus-visible .tip { display: block; }
 .B nav .foot { margin-top: auto; }
-.B main { position: relative; overflow: hidden; }
-.B .shade { position: absolute; inset: 0; background: linear-gradient(0deg,var(--bg) 4%,#101011cc 30%,#10101100 62%), linear-gradient(90deg,#101011cc 0%,#10101100 50%); }
-.B .bottom { position: absolute; left: 44px; right: 44px; bottom: 34px; display: grid; grid-template-columns: 1fr 300px; gap: 40px; align-items: end; }
-.B .h1 { font-size: 56px; margin: 14px 0 10px; }
-.B p { color: var(--hero-copy); font-size: 14px; max-width: 440px; line-height: 1.6; }
-.B .act { display: flex; align-items: center; gap: 18px; margin-top: 24px; }
-.B .act .btn.primary { min-height: 56px; padding: 0 48px; font-size: 15px; }
-.B .ready { font-size: 12px; color: var(--muted); display: flex; gap: 10px; align-items: center; }
-.B .ready .dot { width: 7px; height: 7px; background: var(--detail); border-radius: 50%; }
-.B .feed { display: grid; border-top: 1px solid var(--rule); }
-.B .feed a { display: grid; gap: 3px; padding: 12px 0; border-bottom: 1px solid var(--rule); text-decoration: none; }
-.B .feed a:hover .t { text-decoration: underline; }
-.B .feed .t { font-weight: 700; font-size: 13px; }
-.B .feed .m { font-size: var(--label); color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
-.B .credit { position: absolute; top: 14px; right: 18px; }
+.B main , .D main { position: relative; overflow: hidden; }
+.B .shade , .D .shade { position: absolute; inset: 0; background: linear-gradient(0deg,var(--bg) 4%,#101011cc 30%,#10101100 62%), linear-gradient(90deg,#101011cc 0%,#10101100 50%); }
+.B .bottom , .D .bottom { position: absolute; left: 44px; right: 44px; bottom: 34px; display: grid; grid-template-columns: 1fr 300px; gap: 40px; align-items: end; }
+.B .h1 , .D .h1 { font-size: 56px; margin: 14px 0 10px; }
+.B p , .D p { color: var(--hero-copy); font-size: 14px; max-width: 440px; line-height: 1.6; }
+.B .act , .D .act { display: flex; align-items: center; gap: 18px; margin-top: 24px; }
+.B .act .btn.primary , .D .act .btn.primary { min-height: 56px; padding: 0 48px; font-size: 15px; }
+.B .ready , .D .ready { font-size: 12px; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+.B .ready .dot , .D .ready .dot { width: 7px; height: 7px; background: var(--detail); border-radius: 50%; }
+.B .feed , .D .feed { display: grid; border-top: 1px solid var(--rule); }
+.B .feed a , .D .feed a { display: grid; gap: 3px; padding: 12px 0; border-bottom: 1px solid var(--rule); text-decoration: none; }
+.B .feed a:hover .t , .D .feed a:hover .t { text-decoration: underline; }
+.B .feed .t , .D .feed .t { font-weight: 700; font-size: 13px; }
+.B .feed .m , .D .feed .m { font-size: var(--label); color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+.B .credit , .D .credit { position: absolute; top: 14px; right: 18px; }
 
 /* ===== C: Home + product tabs ===== */
 .C { display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
@@ -126,3 +126,17 @@ a { color: inherit; }
 .C .tile .shade { position: absolute; inset: 0; background: linear-gradient(0deg,var(--bg) 15%,#10101100 70%); }
 .C .tile .in { position: relative; padding: 18px; display: grid; gap: 8px; }
 .C .tile .in b { font-size: 18px; font-weight: 900; }
+
+/* ===== D: B's cinematic main + A's text sidebar, seamless title bar ===== */
+.window.seamless { grid-template-rows: 1fr; }
+.window.seamless .titlebar { position: absolute; top: 0; left: 0; right: 0; z-index: 5; height: 32px; background: transparent; border: 0; padding: 0; }
+.D { display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
+.D nav { padding-top: 22px; }
+.D nav .brand { display: flex; align-items: center; gap: 10px; padding: 0 24px 26px; }
+.D nav .brand .glyph { color: var(--accent); font-size: 30px; line-height: 1; }
+.D nav .brand .name { font-size: 12px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; line-height: 1.25; }
+.D .credit { top: 42px; }
+.D .act .btn.primary { min-width: 320px; min-height: 60px; font-size: 16px; }
+.D .bottom { grid-template-columns: 1fr 250px; gap: 32px; }
+.D .h1 { font-size: 50px; }
+.D .act { flex-wrap: wrap; row-gap: 12px; }

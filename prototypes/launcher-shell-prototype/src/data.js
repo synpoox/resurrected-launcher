@@ -30,7 +30,9 @@ export const PRODUCTS = [
     headline: ['A different future.', 'A resurrected world.'],
     blurb: 'Class changes, legacy items, league mechanics and a reworked endgame.',
     art: CDN + 'blt9c12f249ac15c7ec/blt06acc1f47b6156a8/6962c5865a1d2cc3f390a43b/necromancer_background_2600.webp',
-    artPos: 'center',
+    // Class strips are 2600x906 with the character at ~70% across: zoom in and pull them toward centre.
+    artPos: '74% 22%',
+    artSize: 'auto 135%',
     credit: 'Necromancer class art',
     playable: false,
   },
@@ -41,9 +43,11 @@ export const PRODUCTS = [
     tag: 'Coming soon',
     headline: ['An earlier era.', 'A world revisited.'],
     blurb: 'Lord of Destruction 1.09d, ported to Diablo II: Resurrected 3.3.',
-    art: CDN + 'blt9c12f249ac15c7ec/bltfd9b9787e5da59f1/6962c68bf4fa3fe6a301a2f3/paladin_background_2600.webp',
-    artPos: 'center',
-    credit: 'Paladin class art',
+    // Owner, round 2: Sorceress instead of Paladin (diablo2.blizzard.com class art).
+    art: CDN + 'blt9c12f249ac15c7ec/blt0d46a551b84f5c65/6962c6e16abeed2776871844/sorceress_background_2600.webp',
+    artPos: '74% 22%',
+    artSize: 'auto 135%',
+    credit: 'Sorceress class art',
     playable: false,
   },
 ];

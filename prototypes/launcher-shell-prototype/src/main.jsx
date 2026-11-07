@@ -1,4 +1,4 @@
-// PROTOTYPE for #17: three launcher shell compositions in the ready state, switchable via ?variant=A|B|C
+// PROTOTYPE for #17: launcher shell compositions in the ready state, switchable via ?variant=A|B|C|D
 // and ?size=1280|1024 (window 1280x720 default, 1024x640 minimum). Throwaway: never merge into main.
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -14,8 +14,9 @@ const setParam = (k, v) => { const u = new URL(location.href); u.searchParams.se
 function TitleBar({ mark }) {
   return (
     <header className="titlebar">
-      {mark === 'glyph' ? <span className="glyph" aria-hidden>/</span> : <img src="/mark.svg" alt="" />}
-      <span className="name">{UMBRELLA}</span>
+      {mark === 'glyph' && <span className="glyph" aria-hidden>/</span>}
+      {mark === 'svg' && <img src="/mark.svg" alt="" />}
+      {mark !== 'none' && <span className="name">{UMBRELLA}</span>}
       <div className="drag" />
       <button className="win" aria-label="Minimise">&#8211;</button>
       <button className="win" aria-label="Maximise">&#9633;</button>
@@ -50,7 +51,7 @@ function App() {
   return (
     <>
       <div className="stage">
-        <div className="window" style={{ width: w, height: h, position: 'absolute', left: '50%', top: 'calc(50% - 28px)', transform: `translate(-50%,-50%) scale(${scale})` }}>
+        <div className={'window' + (v.mark === 'none' ? ' seamless' : '')} style={{ width: w, height: h, position: 'absolute', left: '50%', top: 'calc(50% - 28px)', transform: `translate(-50%,-50%) scale(${scale})` }}>
           <TitleBar mark={v.mark} />
           <v.C product={PRODUCTS.find((p) => p.id === pid) ?? PRODUCTS[0]} setProduct={pick} />
         </div>
