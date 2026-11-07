@@ -1,0 +1,100 @@
+{
+  "schema_version": 3,
+  "product_id": "pd2r",
+  "release_id": "pd2r-0.4.0-alpha.1",
+  "display_version": "0.4.0 alpha 1",
+  "release_date": "2026-11-01",
+  "status": "alpha",
+  "release_notes": "Fixture release notes for tests. Not a real release.",
+  "min_launcher_version": "999.0.0",
+  "install_root": "mods/PD2R",
+  "archive": {
+    "url": "https://github.com/synpoox/pd2-resurrected/releases/download/v0.4.0-alpha.1/PD2R-0.4.0-alpha.1.7z",
+    "format": "7z",
+    "size": 98304,
+    "sha256": "0eb3e36bfb24dcd9bb1d1bece1531216b59539a8fde17ee80224af0653c92aa3",
+    "file_count": 6,
+    "total_size": 156221
+  },
+  "files": [
+    {
+      "path": "PD2R.mpq/modinfo.json",
+      "size": 61,
+      "sha256": "82fb467c1d73afacd77f5a20397feac7667171a6943047cc16fde6e9ed55adb6",
+      "ownership": "managed"
+    },
+    {
+      "path": "PD2R.mpq/data/global/excel/armor.txt",
+      "size": 20480,
+      "sha256": "d81ea1595a0453780e68c2988980d28cccabbe2a774e77725c4e66a56f073fd4",
+      "ownership": "managed"
+    },
+    {
+      "path": "PD2R.mpq/data/local/lng/strings/empty.json",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "ownership": "managed"
+    },
+    {
+      "path": "d2rloader/plugins/pd2r-core.dll",
+      "size": 131072,
+      "sha256": "0343b13708cd52d33ecbb1043b5ae145e73a532bdccf7de6925db5cce6054fd3",
+      "ownership": "managed"
+    },
+    {
+      "path": "d2rloader/config.ini",
+      "size": 512,
+      "sha256": "f00dfa45865acd7e6780a1c71f80a7b00b8f95c2e77826a6291d10fc17d98365",
+      "ownership": "shipped_default"
+    },
+    {
+      "path": "lootfilter/default.filter",
+      "size": 4096,
+      "sha256": "dfc3376b8266c66e8c24736645128a5f93ccf1df6f381286ffbda654fec8f21c",
+      "ownership": "shipped_default"
+    }
+  ],
+  "empty_dirs": [
+    "d2rloader/patches"
+  ],
+  "compatibility": {
+    "game_builds": [
+      {
+        "build": "fixture-build-1",
+        "platform": "windows_x64",
+        "executable": "D2R.exe",
+        "size": 41943040,
+        "sha256": "9095bdb859308b62acf04036ffd4adfe366d7f737d276eb6c46ae434f3816c9b"
+      }
+    ],
+    "loader_versions": [
+      "1.3.0",
+      "1.3.1-beta"
+    ],
+    "required_settings": [
+      {
+        "file": "d2rloader/config.ini",
+        "key": "default_mod",
+        "value": "PD2R"
+      }
+    ]
+  },
+  "saves": {
+    "folder": "PD2R",
+    "save_breaking": false,
+    "incompatibility_notice": null,
+    "loader_save_format": {
+      "file": "d2rloader/config.ini",
+      "key": "save_format",
+      "value": "pd2r"
+    }
+  },
+  "loader": {
+    "installer_version": "v0.1.0",
+    "installs_loader_version": "1.3.1-beta",
+    "url": "https://github.com/D2RLoader/Installer/releases/download/v0.1.0/D2RLoaderInstaller.exe",
+    "size": 2097152,
+    "sha256": "64faa4f99198c36b1d9946e057533bd71ab062d432d48e27150b0596f095cf11",
+    "signed": false
+  }
+}
