@@ -22,10 +22,12 @@
 //! # Multi-entry steps
 //!
 //! A step that renames, copies or deletes several entries is several Windows
-//! operations, not one atomic act. The journal records per-entry progress inside
-//! the step, entries are processed in the order the journal lists them, and the
-//! injector is consulted around every entry ([`super::FaultPoint::BeforeEntry`],
-//! [`super::FaultPoint::AfterEntry`]). Multi-entry steps: `LiveMovedToBackup`,
+//! operations, not one atomic act. The journal writes the step's complete planned
+//! entry list ([`super::PlannedRename`], [`super::PlannedCopy`]) at `BeforeStep`,
+//! processes entries in that order, records per-entry progress, and the injector
+//! is consulted around every entry ([`super::FaultPoint::BeforeEntry`],
+//! [`super::FaultPoint::AfterEntry`]). Per-entry progress may lag disk by one
+//! entry, so it is a hint, never the source of truth. Multi-entry steps: `LiveMovedToBackup`,
 //! `CleanInstallBackupMade`, `StagedMovedToLive`, `PlayerFilesCarriedForward`,
 //! `NewEntriesRemovedFromLive`, `BackupRestoredToLive`, `CleanedUp`. Every other
 //! boundary is a single step and is only consulted at `BeforeStep`/`AfterStep`.
@@ -39,15 +41,34 @@
 //! * forward, `LiveVerified` reached: roll forward through the remaining forward
 //!   boundaries (commit the record, clean up);
 //! * forward, `LiveVerified` not reached: switch the journal to rollback and run
-//!   [`Boundary::ROLLBACK`], whose steps undo exactly the entries the journal says
-//!   were moved (zero entries if the live root was never touched);
-//! * rollback: resume [`Boundary::ROLLBACK`] after the last boundary reached,
-//!   finishing a partly done step from its per-entry progress.
+//!   [`Boundary::ROLLBACK`];
+//! * rollback: resume [`Boundary::ROLLBACK`] after the last boundary reached.
 //!
-//! Recovery is itself journaled and idempotent, so a crash during recovery is
-//! resolved by the next recovery. It never touches player or unknown files or dirs:
-//! it only moves entries the journal lists. The installed-release record is never
-//! changed during rollback, because it is only written after `LiveVerified`.
+//! **Per-entry decisions come from disk.** Whenever recovery undoes, redoes or
+//! finishes a multi-entry step (including the step that was in progress at the
+//! crash, whose boundary the journal has not recorded), it examines *every* entry
+//! the journal planned for that step, not only those recorded as done, and decides
+//! each one with [`super::PlannedRename::on_disk`] / [`super::PlannedCopy::on_disk`]:
+//! `Done` entries are reversed by rollback (or skipped by roll-forward), `NotDone`
+//! entries are left (or performed), `Conflict` stops recovery with
+//! [`super::ErrorCode::RecoveryRequired`] without further changes. Examples:
+//!
+//! * crash at `LiveMovedToBackup` `AfterEntry(k)`: entry `k` is in `B` but
+//!   unjournaled; `BackupRestoredToLive` still finds it `Done` and moves it back;
+//! * crash at `CleanInstallBackupMade` `AfterEntry(1)`: `L` is already `K`;
+//!   the `L -> K` entry reads `Done`, so `BackupRestoredToLive` renames `K` back;
+//! * crash at `StagedMovedToLive` `AfterEntry(k)`: `NewEntriesRemovedFromLive`
+//!   finds entry `k` in `L` and returns it to `S`.
+//!
+//! Rollback steps plan their entries as the reverses of the forward step's planned
+//! entries, so they are covered by the same rule and are idempotent: re-running a
+//! rollback step after a crash finds finished entries `NotDone` (already reversed).
+//! Deletes in `CleanedUp` are decided the same way (target absent = done).
+//!
+//! Recovery is itself journaled, so a crash during recovery is resolved by the next
+//! recovery. It never touches player or unknown files or dirs: it only acts on
+//! entries the journal planned. The installed-release record is never changed
+//! during rollback, because it is only written after `LiveVerified`.
 //!
 //! Every operation reports every boundary of its sequence in order, even when a
 //! step has nothing to do (a fresh install moves zero entries into `B`), so the
@@ -131,12 +152,12 @@ pub enum Boundary {
     /// The journal durably switched direction to rollback, recording why. Nothing
     /// else has been changed by the rollback yet.
     RollbackStarted,
-    /// Each entry the journal says reached `L` from `S` has been renamed back out of
+    /// Each planned `S` -> `L` entry that disk shows done has been renamed back out of
     /// `L` into `S` (for clean install: the new `L` as a whole is renamed aside into
     /// `S`; any carried-forward player copies go with it, since `K` keeps the
     /// originals). Multi-entry; zero entries if activation never moved anything in.
     NewEntriesRemovedFromLive,
-    /// Each entry the journal says reached `B` has been renamed back into `L` (for
+    /// Each planned `L` -> `B` entry that disk shows done has been renamed back into `L` (for
     /// clean install: `K` is renamed back to `L`). The previous complete
     /// installation is in place again. Multi-entry.
     BackupRestoredToLive,

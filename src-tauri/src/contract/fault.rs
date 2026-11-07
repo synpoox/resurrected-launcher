@@ -17,7 +17,7 @@ pub enum FaultPoint {
     /// entries `0..i` as done; entry `i` (0-based) has not been started.
     BeforeEntry(usize),
     /// Multi-entry steps only: entry `i` has been done and flushed, but the journal
-    /// does not yet record it (journal lags disk by one entry).
+    /// does not yet record it (journal lags disk by one entry; recovery decides entries from disk, see [`super::PlannedRename::on_disk`]).
     AfterEntry(usize),
     /// The step's filesystem effect is complete and flushed, but the journal does not
     /// yet record the boundary as reached (journal lags disk).

@@ -23,4 +23,5 @@ jobs:
           workspaces: src-tauri
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo test --locked
+      # --show-output makes SKIPPED lines from link tests visible.
+      - run: cargo test --locked -- --show-output

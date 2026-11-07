@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{ErrorCode, LauncherError};
+use super::{ErrorCode, LauncherError, RelativePath};
 
 /// File that marks a product root as a disposable test installation.
 pub const DISPOSABLE_SENTINEL: &str = ".resurrected-disposable";
@@ -43,6 +43,14 @@ fn canonical_root(root: &Path) -> Result<PathBuf, LauncherError> {
     let (Some(parent), Some(name)) = (root.parent(), root.file_name()) else {
         return Err(invalid("product root has no parent or name"));
     };
+    // The root's own name obeys the same Windows rules as release paths.
+    if name
+        .to_str()
+        .map(RelativePath::new)
+        .is_none_or(|r| r.is_err())
+    {
+        return Err(invalid("product root name is not a safe Windows name"));
+    }
     let parent = std::fs::canonicalize(parent).map_err(|e| {
         refuse(
             ErrorCode::ProductRootNotDisposable,
@@ -82,6 +90,7 @@ impl WriteGuard {
         }
     }
 
+    /// **Recovery only**; ordinary operations use [`WriteGuard::check`].
     /// For recovery of a clean install, where the root may be absent between
     /// `CleanInstallBackupMade` and `StagedMovedToLive`: passes if the root holds
     /// the sentinel, or if the root is absent and `backup` (the journal-recorded
@@ -97,7 +106,8 @@ impl WriteGuard {
                 "backup is not a sibling of the product root",
             ));
         }
-        if has_sentinel(&root) || (!root.exists() && has_sentinel(&backup)) {
+        let root_absent = std::fs::symlink_metadata(&root).is_err();
+        if has_sentinel(&root) || (root_absent && has_sentinel(&backup)) {
             Ok(Self { root })
         } else {
             Err(refuse(
@@ -108,7 +118,12 @@ impl WriteGuard {
         }
     }
 
-    /// The absolute product root this guard permits writing.
+    /// The absolute product root this guard permits writing, with its parent
+    /// canonicalized (on Windows a verbatim `\\?\C:\...` path). Derive staging and
+    /// backup paths by joining onto `root().parent()`. Never compare it with a path
+    /// that did not come from a guard or the same canonicalization, since spelling
+    /// differs (`C:\` vs `\\?\C:\`, case, `..`); strip the `\\?\` prefix only for
+    /// display.
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -164,6 +179,49 @@ mod tests {
         );
     }
 
+    #[test]
+    fn write_guard_refuses_unsafe_root_names() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["CON", "PD2R.", "PD2R ", "aux.txt"] {
+            assert_eq!(
+                code(WriteGuard::check(&dir.path().join(name))),
+                ErrorCode::InvalidRequest,
+                "{name:?}"
+            );
+        }
+    }
+
+    /// Skipped tests are loud: visible with `--nocapture` and in CI logs.
+    fn skip(why: &str) {
+        eprintln!(
+            "SKIPPED {}: {why}",
+            std::thread::current().name().unwrap_or("?")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn write_guard_refuses_junctioned_product_root() {
+        let (dir, real) = disposable_root();
+        let link = dir.path().join("junction");
+        let made = std::process::Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&link)
+            .arg(&real)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if !made {
+            skip("mklink /J failed");
+            return;
+        }
+        assert_eq!(
+            code(WriteGuard::check(&link)),
+            ErrorCode::ProductRootNotDisposable
+        );
+    }
+
     #[cfg(unix)]
     use std::os::unix::fs::{symlink as symlink_file, symlink as symlink_dir};
     #[cfg(windows)]
@@ -177,7 +235,7 @@ mod tests {
         let root = dir.path().join("PD2R");
         std::fs::create_dir(&root).unwrap();
         if symlink_file(&target, root.join(DISPOSABLE_SENTINEL)).is_err() {
-            eprintln!("skipped: this account cannot create symlinks");
+            skip("this account cannot create symlinks");
             return;
         }
         assert_eq!(
@@ -191,7 +249,7 @@ mod tests {
         let (dir, real) = disposable_root();
         let link = dir.path().join("link");
         if symlink_dir(&real, &link).is_err() {
-            eprintln!("skipped: this account cannot create symlinks");
+            skip("this account cannot create symlinks");
             return;
         }
         assert_eq!(

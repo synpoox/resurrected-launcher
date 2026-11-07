@@ -26,7 +26,7 @@ pub enum PathError {
     ForbiddenChar,
     /// Component ends with `.` or space, which Windows silently strips.
     TrailingDotOrSpace,
-    /// Windows device name (CON, PRN, AUX, NUL, COM0-9, LPT0-9), with or without extension.
+    /// Windows device name (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-9, LPT0-9), with or without extension.
     ReservedName,
     /// `~` followed by a digit, which can alias another file's 8.3 short name.
     ShortNameAlias,
@@ -48,7 +48,7 @@ impl std::error::Error for PathError {}
 #[serde(try_from = "String", into = "String")]
 pub struct RelativePath(String);
 
-const RESERVED: [&str; 4] = ["CON", "PRN", "AUX", "NUL"];
+const RESERVED: [&str; 6] = ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"];
 
 fn check_component(c: &str) -> Result<(), PathError> {
     if c.is_empty() {
@@ -140,7 +140,18 @@ impl fmt::Display for RelativePath {
 /// A SHA-256 digest. Serialized as 64 lowercase hex characters; parsing accepts
 /// either case and rejects the all-zero placeholder.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Sha256Digest(pub [u8; 32]);
+pub struct Sha256Digest([u8; 32]);
+
+impl Sha256Digest {
+    /// `None` for the all-zero placeholder, which is never a real digest.
+    pub fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
+        (bytes != [0; 32]).then_some(Self(bytes))
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
 
 impl fmt::Display for Sha256Digest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -173,10 +184,7 @@ impl FromStr for Sha256Digest {
                 _ => return Err(format!("SHA-256 has a non-hex character: {s:?}")),
             }
         }
-        if out == [0; 32] {
-            return Err("SHA-256 is the all-zero placeholder".to_owned());
-        }
-        Ok(Self(out))
+        Self::from_bytes(out).ok_or_else(|| "SHA-256 is the all-zero placeholder".to_owned())
     }
 }
 
@@ -328,6 +336,11 @@ mod tests {
             .is_err());
         assert!(format!("{}é", &HASH[..62]).parse::<Sha256Digest>().is_err());
         assert!("0".repeat(64).parse::<Sha256Digest>().is_err());
+        assert!(Sha256Digest::from_bytes([0; 32]).is_none());
+        assert_eq!(
+            Sha256Digest::from_bytes([1; 32]).unwrap().as_bytes(),
+            &[1; 32]
+        );
     }
 
     #[test]
@@ -383,6 +396,8 @@ mod tests {
             ("Nul.tar.gz", ReservedName),
             ("com1", ReservedName),
             ("LPT9.log", ReservedName),
+            ("conin$", ReservedName),
+            ("CONOUT$.txt", ReservedName),
             ("COM¹", ReservedName),
             ("CON .txt", ReservedName),
             ("PROGRA~1/x", ShortNameAlias),

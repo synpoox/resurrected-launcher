@@ -11,6 +11,7 @@ mod error;
 mod fault;
 mod guard;
 mod inventory;
+mod recovery;
 
 pub use boundary::{Boundary, OperationKind};
 pub use dto::{
@@ -23,6 +24,7 @@ pub use guard::{WriteGuard, DISPOSABLE_SENTINEL};
 pub use inventory::{
     ExpectedFile, ExpectedInventory, InventoryError, PathError, RelativePath, Sha256Digest,
 };
+pub use recovery::{EntryOnDisk, PlannedCopy, PlannedRename};
 
 /// Version of the command/event/error contract carried by every [`Versioned`] payload.
 pub const CONTRACT_VERSION: u32 = 1;
