@@ -72,7 +72,10 @@
 //! while the new file still occupies its live path.
 //! Deletes in `CleanedUp` are decided the same way (target absent = done), and
 //! recovery and `CleanedUp` delete any planned copy `temp` file left by a crash
-//! between writing it and renaming it into place.
+//! between writing it and renaming it into place. A `temp` is always `to` plus the
+//! reserved [`super::COPY_TEMP_SUFFIX`] and must be absent when planned
+//! ([`super::PlannedCopy::plan`]), so that deletion never removes a player file. A
+//! copy whose source is not a regular file (a link or dir) reads `Conflict`.
 //!
 //! Recovery is itself journaled, so a crash during recovery is resolved by the next
 //! recovery. It never touches player or unknown files or dirs: it only acts on
@@ -175,6 +178,10 @@ pub enum Boundary {
     /// The live root has been re-read and matches the previous installation's
     /// inventory (or, for a first install, holds no managed content), with player
     /// and unknown files intact. The installed-release record is unchanged.
+    /// Install (#36) decides this from the journal and disk, without re-hashing:
+    /// every planned `L` -> `B` (or `L` -> `K`) entry is back in `L` and every
+    /// incoming entry is back in `S`. Activation only renames, never rewrites, so
+    /// this proves the previous bytes; restart recovery has no previous inventory.
     RollbackVerified,
 
     // ---- both directions ----

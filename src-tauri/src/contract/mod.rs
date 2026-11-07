@@ -24,7 +24,7 @@ pub use guard::{WriteGuard, DISPOSABLE_SENTINEL};
 pub use inventory::{
     ExpectedFile, ExpectedInventory, InventoryError, PathError, RelativePath, Sha256Digest,
 };
-pub use recovery::{EntryOnDisk, PlannedCopy, PlannedRename};
+pub use recovery::{EntryOnDisk, PlannedCopy, PlannedRename, COPY_TEMP_SUFFIX};
 
 /// Version of the command/event/error contract carried by every [`Versioned`] payload.
 pub const CONTRACT_VERSION: u32 = 1;
