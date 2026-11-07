@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "launcher-shell-prototype",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "prototypes/launcher-shell-prototype"],
+      "port": 5317
+    }
+  ]
+}

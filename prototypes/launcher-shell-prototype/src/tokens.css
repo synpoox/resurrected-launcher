@@ -1,0 +1,25 @@
+/* PROTOTYPE token set for #17.
+   First nine: copied verbatim from resurrected-web site/themes.css `launcher` preset @ 155eceed55ba424477f4316a8ffddb0844d5445d.
+   Below the rule: CANDIDATES promoted from styles.css literals, for the owner to approve or drop. */
+:root {
+  --bg: #101011;
+  --panel: #1d1d1e;
+  --text: #f4f1ed;
+  --muted: #b1adac;
+  --accent: #e3353d;
+  --line: #353233;
+  --button: #c72d37;
+  --button-hover: #e13742;
+  --detail: #eb626b;
+  /* ---- candidates ---- */
+  --rail: #0b0b0c;        /* styles.css rail #0b0b0cf5, made opaque: sidebar + title bar */
+  --ribbon: #b52b35;      /* slanted tag background */
+  --focus: #fff;          /* 3px focus ring */
+  --rule: #ffffff24;      /* hairline over art */
+  --hero-copy: #cbc3c2;   /* one hero grey instead of five */
+  /* type: system Arial, no bundled font. Minimum label 10px (web uses 7-9px). */
+  --font: Arial, Helvetica, sans-serif;
+  --mono: Consolas, 'Courier New', monospace;
+  --label: 10px;
+  color-scheme: dark;
+}
