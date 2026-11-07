@@ -59,12 +59,35 @@ impl Default for Preferences {
     }
 }
 
+fn check_d2r_location(p: &Path) -> Result<(), String> {
+    let s = p.to_string_lossy();
+    // Allow `\\?\X:\` and `\\?\UNC\`; refuse the device namespace (`\\.\`, `\\?\GLOBALROOT`, ...).
+    let device = s.starts_with(r"\\.\")
+        || s.starts_with("//./")
+        || s.starts_with("//?/")
+        || (s.starts_with(r"\\?\") && {
+            let rest = s[4..].as_bytes();
+            let drive = rest.len() >= 3 && rest[0].is_ascii_alphabetic() && &rest[1..3] == br":\";
+            !(drive || s[4..].to_ascii_uppercase().starts_with(r"UNC\"))
+        });
+    // On the string: `Path::components` silently drops inner `.` components.
+    let dots = s.split(['\\', '/']).any(|c| c == "." || c == "..");
+    if !p.is_absolute() || s.contains('\0') || device || dots {
+        Err("D2R location must be an absolute folder path".into())
+    } else {
+        Ok(())
+    }
+}
+
 impl Preferences {
     fn validate(&self) -> Result<(), String> {
-        match &self.d2r_location {
-            Some(p) if !p.is_absolute() => Err("D2R location must be an absolute path".into()),
-            _ => Ok(()),
+        if let Some(p) = &self.d2r_location {
+            check_d2r_location(p)?;
         }
+        if let Some(id) = &self.last_product {
+            check_text("last product", &id.0)?;
+        }
+        Ok(())
     }
 }
 
@@ -79,7 +102,9 @@ pub struct InstalledRelease {
     pub manifest_sha256: Sha256Digest,
     /// Seconds since the Unix epoch.
     pub installed_at: u64,
-    /// The installed files last matched the release manifest's inventory.
+    /// The installed files matched the release manifest's inventory when the record
+    /// was written. [`StateStore::mark_installed`] only accepts `true` (the record is
+    /// written after `LiveVerified`); `false` is reserved for a later Repair check.
     pub verified: bool,
 }
 
@@ -154,6 +179,19 @@ pub struct StateStore {
     installed: Vec<InstalledRelease>,
     cache: Vec<CacheEntry>,
     issues: Vec<StateIssue>,
+    /// State files that could not be trusted and are still in place (unreadable, or
+    /// the quarantine rename failed). They are rechecked before any write to them,
+    /// and the write is refused while they stay, so their bytes are never overwritten.
+    blocked: Vec<&'static str>,
+}
+
+type Found = (Vec<StateIssue>, Vec<&'static str>);
+
+fn note_issue(issue: StateIssue, name: &'static str, found: &mut Found) {
+    if issue.quarantined_as.is_none() && !found.1.contains(&name) {
+        found.1.push(name);
+    }
+    found.0.push(issue);
 }
 
 impl StateStore {
@@ -161,33 +199,37 @@ impl StateStore {
     /// and untrusted files are quarantined and listed in [`Self::issues`].
     pub fn open(dir: &Path) -> Self {
         fn load<T: serde::de::DeserializeOwned + Default>(
-            path: PathBuf,
+            dir: &Path,
+            name: &'static str,
             schema: u32,
             validate: fn(&T) -> Result<(), String>,
-            issues: &mut Vec<StateIssue>,
+            found: &mut Found,
         ) -> T {
-            file::load(&path, schema, validate)
+            file::load(&dir.join(name), schema, validate)
                 .unwrap_or_else(|issue| {
-                    issues.push(issue);
+                    note_issue(issue, name, found);
                     None
                 })
                 .unwrap_or_default()
         }
-        let mut issues = Vec::new();
+        let mut issues = (Vec::new(), Vec::new());
         let preferences = load(
-            dir.join(PREFERENCES_FILE),
+            dir,
+            PREFERENCES_FILE,
             PREFERENCES_SCHEMA,
             Preferences::validate,
             &mut issues,
         );
         let installed = load(
-            dir.join(INSTALLED_FILE),
+            dir,
+            INSTALLED_FILE,
             INSTALLED_SCHEMA,
             |r: &Vec<_>| validate_installed(r),
             &mut issues,
         );
         let cache = load(
-            dir.join(CACHE_INDEX_FILE),
+            dir,
+            CACHE_INDEX_FILE,
             CACHE_INDEX_SCHEMA,
             |c: &Vec<_>| validate_cache_index(c),
             &mut issues,
@@ -197,7 +239,43 @@ impl StateStore {
             preferences,
             installed,
             cache,
-            issues,
+            issues: issues.0,
+            blocked: issues.1,
+        }
+    }
+
+    /// Before writing a blocked file: re-reads it. `Ok(Some(data))` when it is now
+    /// readable (the caller adopts `data` before applying its change), `Ok(None)` when
+    /// there is nothing to adopt, and an error, with nothing written, while the
+    /// untrusted bytes are still in place.
+    fn recheck<T: serde::de::DeserializeOwned>(
+        &mut self,
+        name: &'static str,
+        schema: u32,
+        validate: fn(&T) -> Result<(), String>,
+    ) -> Result<Option<T>, LauncherError> {
+        if !self.blocked.contains(&name) {
+            return Ok(None);
+        }
+        self.blocked.retain(|n| *n != name);
+        let issue = match file::load(&self.dir.join(name), schema, validate) {
+            Ok(data) => return Ok(data),
+            Err(issue) => issue,
+        };
+        let detail = issue.detail.clone();
+        let mut found = (
+            std::mem::take(&mut self.issues),
+            std::mem::take(&mut self.blocked),
+        );
+        note_issue(issue, name, &mut found);
+        (self.issues, self.blocked) = found;
+        if self.blocked.contains(&name) {
+            Err(LauncherError::new(
+                ErrorCode::AccessDenied,
+                format!("state file {name} cannot be read or moved aside, so nothing was written: {detail}"),
+            ))
+        } else {
+            Ok(None)
         }
     }
 
@@ -212,6 +290,7 @@ impl StateStore {
 
     pub fn set_preferences(&mut self, preferences: Preferences) -> Result<(), LauncherError> {
         preferences.validate().map_err(invalid)?;
+        self.recheck::<Preferences>(PREFERENCES_FILE, PREFERENCES_SCHEMA, Preferences::validate)?;
         let path = self.dir.join(PREFERENCES_FILE);
         file::save(&path, PREFERENCES_SCHEMA, &preferences)?;
         self.preferences = preferences;
@@ -226,6 +305,14 @@ impl StateStore {
         &self.installed
     }
 
+    fn installed_for_write(&mut self) -> Result<Vec<InstalledRelease>, LauncherError> {
+        let validate = |r: &Vec<_>| validate_installed(r);
+        if let Some(fresh) = self.recheck(INSTALLED_FILE, INSTALLED_SCHEMA, validate)? {
+            self.installed = fresh;
+        }
+        Ok(self.installed.clone())
+    }
+
     fn save_installed(&mut self, installed: Vec<InstalledRelease>) -> Result<(), LauncherError> {
         file::save(&self.dir.join(INSTALLED_FILE), INSTALLED_SCHEMA, &installed)?;
         self.installed = installed;
@@ -236,7 +323,12 @@ impl StateStore {
     /// Install calls this only after verified activation, never during rollback.
     pub fn mark_installed(&mut self, record: InstalledRelease) -> Result<(), LauncherError> {
         record.validate().map_err(invalid)?;
-        let mut installed = self.installed.clone();
+        if !record.verified {
+            return Err(invalid(
+                "a release is recorded installed only after verified activation".into(),
+            ));
+        }
+        let mut installed = self.installed_for_write()?;
         installed.retain(|r| r.product_id != record.product_id);
         installed.push(record);
         self.save_installed(installed)
@@ -244,13 +336,21 @@ impl StateStore {
 
     /// Forgets the product's installed release (after uninstall).
     pub fn remove_installed(&mut self, product: &ProductId) -> Result<(), LauncherError> {
-        let mut installed = self.installed.clone();
+        let mut installed = self.installed_for_write()?;
         installed.retain(|r| &r.product_id != product);
         self.save_installed(installed)
     }
 
     fn blob_path(&self, sha256: &Sha256Digest) -> PathBuf {
         self.dir.join(CACHE_DIR).join(format!("{sha256}.bin"))
+    }
+
+    fn cache_for_write(&mut self) -> Result<Vec<CacheEntry>, LauncherError> {
+        let validate = |c: &Vec<_>| validate_cache_index(c);
+        if let Some(fresh) = self.recheck(CACHE_INDEX_FILE, CACHE_INDEX_SCHEMA, validate)? {
+            self.cache = fresh;
+        }
+        Ok(self.cache.clone())
     }
 
     fn save_cache(&mut self, cache: Vec<CacheEntry>) -> Result<(), LauncherError> {
@@ -274,10 +374,10 @@ impl StateStore {
     ) -> Result<Sha256Digest, LauncherError> {
         check_text("cache identity", identity).map_err(invalid)?;
         let digest = sha256(bytes);
+        let mut cache = self.cache_for_write()?;
         // Blob first, then the index that points at it: a crash between leaves an
         // unreferenced blob, never an index entry without its bytes.
         file::write_atomic(&self.blob_path(&digest), bytes)?;
-        let mut cache = self.cache.clone();
         cache.retain(|e| e.identity != identity);
         cache.push(CacheEntry {
             identity: identity.to_owned(),
@@ -289,35 +389,46 @@ impl StateStore {
     }
 
     /// The cached bytes for `identity`, if present and still matching their
-    /// SHA-256. A damaged blob is quarantined, dropped from the index and reported.
+    /// SHA-256. A damaged blob is quarantined, a missing one forgotten, and both
+    /// reported; a blob that cannot be read right now is reported and kept.
     pub fn cached(&mut self, identity: &str) -> Option<CachedMetadata> {
         let entry = self.cache.iter().find(|e| e.identity == identity)?.clone();
         let path = self.blob_path(&entry.sha256);
-        let detail = match fs::read(&path) {
+        let file = format!("{}.bin", entry.sha256);
+        let issue = match fs::read(&path) {
             Ok(bytes) if bytes.len() as u64 == entry.size && sha256(&bytes) == entry.sha256 => {
                 return Some(CachedMetadata {
                     bytes,
                     sha256: entry.sha256,
                 })
             }
-            Ok(_) => "cached bytes do not match their SHA-256".to_owned(),
-            Err(e) => format!("cached bytes unreadable: {e}"),
-        };
-        let issue = if path.exists() {
-            file::quarantine(&path, StateProblem::Corrupt, detail)
-        } else {
-            StateIssue {
-                file: format!("{}.bin", entry.sha256),
+            Ok(_) => file::quarantine(
+                &path,
+                StateProblem::Corrupt,
+                "cached bytes do not match their SHA-256".into(),
+            ),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => StateIssue {
+                file,
                 problem: StateProblem::Corrupt,
-                detail,
+                detail: "cached bytes are missing".into(),
                 quarantined_as: None,
+            },
+            Err(e) => {
+                self.issues.push(StateIssue {
+                    file,
+                    problem: StateProblem::Unreadable,
+                    detail: e.to_string(),
+                    quarantined_as: None,
+                });
+                return None;
             }
         };
         self.issues.push(issue);
-        let mut cache = self.cache.clone();
-        cache.retain(|e| e.identity != identity);
         // If the index cannot be saved the entry stays; the next read fails the same way.
-        let _ = self.save_cache(cache);
+        if let Ok(mut cache) = self.cache_for_write() {
+            cache.retain(|e| e.identity != identity);
+            let _ = self.save_cache(cache);
+        }
         None
     }
 
@@ -379,16 +490,157 @@ mod tests {
     }
 
     #[test]
-    fn relative_d2r_location_is_refused() {
+    fn unsafe_d2r_location_or_last_product_is_refused() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = StateStore::open(dir.path());
-        let prefs = Preferences {
-            d2r_location: Some("Games/D2R".into()),
+        let bad_locations = [
+            "Games/D2R",
+            r"C:\Games\..\Windows",
+            r"C:\Games\.\D2R",
+            "C:\\Games\0D2R",
+            r"\\.\PhysicalDrive0",
+            r"\\?\GLOBALROOT\Device\HarddiskVolume1",
+            "//./C:/Games",
+        ];
+        for bad in bad_locations {
+            let prefs = Preferences {
+                d2r_location: Some(bad.into()),
+                ..Preferences::default()
+            };
+            let err = store.set_preferences(prefs).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidRequest, "{bad}");
+        }
+        let forged = Preferences {
+            last_product: Some(ProductId("pd2r\nInstalled: yes".into())),
             ..Preferences::default()
         };
-        let err = store.set_preferences(prefs).unwrap_err();
-        assert_eq!(err.code, ErrorCode::InvalidRequest);
+        assert!(store.set_preferences(forged).is_err());
         assert!(!dir.path().join(PREFERENCES_FILE).exists());
+        for good in [
+            r"C:\Games\D2R",
+            r"\\?\C:\Games\D2R",
+            r"\\?\UNC\nas\games\D2R",
+            r"\\nas\games\D2R",
+        ] {
+            let prefs = Preferences {
+                d2r_location: Some(good.into()),
+                ..Preferences::default()
+            };
+            store.set_preferences(prefs).unwrap();
+        }
+    }
+
+    #[test]
+    fn unverified_installed_release_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = StateStore::open(dir.path());
+        let unverified = InstalledRelease {
+            verified: false,
+            ..record("0.4.2")
+        };
+        assert_eq!(
+            store.mark_installed(unverified).unwrap_err().code,
+            ErrorCode::InvalidRequest
+        );
+        assert!(!dir.path().join(INSTALLED_FILE).exists());
+    }
+
+    /// Opens `path` the way antivirus or another process might hold it.
+    #[cfg(windows)]
+    fn hold(path: &Path, share: u32) -> fs::File {
+        use std::os::windows::fs::OpenOptionsExt;
+        fs::OpenOptions::new()
+            .read(true)
+            .share_mode(share)
+            .open(path)
+            .unwrap()
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn locked_installed_release_records_are_never_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(INSTALLED_FILE);
+        let forever = InstalledRelease {
+            product_id: ProductId("forever".into()),
+            ..record("1.0")
+        };
+        let mut store = StateStore::open(dir.path());
+        store.mark_installed(record("0.4.1")).unwrap();
+        store.mark_installed(forever.clone()).unwrap();
+        let original = fs::read(&path).unwrap();
+
+        let lock = hold(&path, 0);
+        let mut store = StateStore::open(dir.path());
+        assert_eq!(store.issues()[0].problem, StateProblem::Unreadable);
+        assert!(store.installed_release(&pd2r()).is_none());
+        let err = store.mark_installed(record("0.4.2")).unwrap_err();
+        assert_eq!(err.code, ErrorCode::AccessDenied);
+        assert!(store.remove_installed(&pd2r()).is_err());
+        drop(lock);
+        assert_eq!(fs::read(&path).unwrap(), original, "original bytes survive");
+
+        // Once readable, the write applies on top of the records on disk.
+        store.mark_installed(record("0.4.2")).unwrap();
+        let reopened = StateStore::open(dir.path());
+        assert_eq!(reopened.installed_release(&pd2r()), Some(&record("0.4.2")));
+        assert_eq!(
+            reopened.installed_release(&ProductId("forever".into())),
+            Some(&forever)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn corrupt_preferences_that_cannot_be_quarantined_are_never_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(PREFERENCES_FILE);
+        fs::write(&path, b"{ newer launcher, half-parsed").unwrap();
+        // Readable, but no FILE_SHARE_DELETE, so the quarantine rename fails.
+        let lock = hold(&path, 1);
+        let mut store = StateStore::open(dir.path());
+        assert_eq!(store.issues()[0].quarantined_as, None);
+        assert!(store.set_preferences(Preferences::default()).is_err());
+        drop(lock);
+        assert_eq!(fs::read(&path).unwrap(), b"{ newer launcher, half-parsed");
+        // Unlocked: the next write quarantines it first, then writes.
+        store.set_preferences(Preferences::default()).unwrap();
+        let aside = store
+            .issues()
+            .last()
+            .unwrap()
+            .quarantined_as
+            .clone()
+            .unwrap();
+        assert_eq!(
+            fs::read(dir.path().join(aside)).unwrap(),
+            b"{ newer launcher, half-parsed"
+        );
+    }
+
+    #[test]
+    fn directory_at_preferences_path_refuses_the_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(PREFERENCES_FILE);
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("keep"), b"x").unwrap();
+        let mut store = StateStore::open(dir.path());
+        assert_eq!(store.issues().len(), 1);
+        assert!(store.set_preferences(Preferences::default()).is_err());
+        assert!(path.join("keep").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn transiently_unreadable_cached_metadata_is_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = StateStore::open(dir.path());
+        let digest = store.put_cached("feed", b"validated").unwrap();
+        let lock = hold(&store.blob_path(&digest), 0);
+        assert!(store.cached("feed").is_none());
+        assert_eq!(store.issues()[0].problem, StateProblem::Unreadable);
+        drop(lock);
+        assert_eq!(store.cached("feed").unwrap().bytes, b"validated");
     }
 
     #[test]

@@ -75,7 +75,32 @@ fn write_atomic_inner(path: &Path, bytes: &[u8], crash_after: Option<usize>) -> 
         fs::create_dir_all(parent)?;
     }
     let tmp = temp_path(path);
-    let mut file = File::create(&tmp)?;
+    write_then_rename(File::create(&tmp)?, &tmp, path, bytes, crash_after)
+}
+
+/// Atomic write to a path the player chose: the folder must exist, and the temp file
+/// gets a unique name so a neighbouring file is never truncated.
+pub(super) fn write_export(path: &Path, bytes: &[u8]) -> Result<(), LauncherError> {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let mut name = path.file_name().unwrap_or_default().to_owned();
+    name.push(format!(".{}-{nanos}.tmp", std::process::id()));
+    let tmp = path.with_file_name(name);
+    let result = File::create_new(&tmp).and_then(|f| write_then_rename(f, &tmp, path, bytes, None));
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result.map_err(|e| io_error(path, e))
+}
+
+fn write_then_rename(
+    mut file: File,
+    tmp: &Path,
+    path: &Path,
+    bytes: &[u8],
+    crash_after: Option<usize>,
+) -> io::Result<()> {
     if let Some(n) = crash_after {
         // Simulated crash: part of the new content is on disk, nothing renamed.
         file.write_all(&bytes[..n.min(bytes.len())])?;
@@ -87,7 +112,7 @@ fn write_atomic_inner(path: &Path, bytes: &[u8], crash_after: Option<usize>) -> 
     // std uses MoveFileExW(MOVEFILE_REPLACE_EXISTING), which replaces atomically on NTFS.
     // shortcut: the directory entry is not flushed (no MOVEFILE_WRITE_THROUGH); a power
     // loss right after rename may roll back to the old file, never to a torn one.
-    fs::rename(&tmp, path)
+    fs::rename(tmp, path)
 }
 
 /// Test hook: dies after writing `n` bytes of the temp file, as a killed process would.
@@ -156,8 +181,8 @@ pub(super) fn load<T: DeserializeOwned>(
     };
     let value: serde_json::Value = serde_json::from_slice(&bytes)
         .map_err(|e| quarantine(path, StateProblem::Corrupt, e.to_string()))?;
-    match value.get("schema_version").and_then(|v| v.as_u64()) {
-        Some(v) if v == u64::from(version) => {}
+    match value.get("schema_version") {
+        Some(v) if v.as_u64() == Some(u64::from(version)) => {}
         Some(v) => {
             let detail = format!("schema version {v}, this launcher reads {version}");
             return Err(quarantine(path, StateProblem::UnknownVersion, detail));
@@ -211,7 +236,7 @@ mod tests {
     fn corrupt_and_unknown_version_state_files_are_quarantined() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.json");
-        let cases: [(&[u8], StateProblem); 5] = [
+        let cases: [(&[u8], StateProblem); 7] = [
             (b"{\"schema_version\":1,\"data\":[1,", StateProblem::Corrupt),
             (b"{\"data\":[1]}", StateProblem::Corrupt),
             (
@@ -224,6 +249,14 @@ mod tests {
             ),
             (
                 b"{\"schema_version\":2,\"data\":[1]}",
+                StateProblem::UnknownVersion,
+            ),
+            (
+                b"{\"schema_version\":-1,\"data\":[1]}",
+                StateProblem::UnknownVersion,
+            ),
+            (
+                b"{\"schema_version\":1.5,\"data\":[1]}",
                 StateProblem::UnknownVersion,
             ),
         ];
@@ -239,6 +272,12 @@ mod tests {
                 "quarantine keeps the bytes"
             );
         }
+        let kept = fs::read_dir(dir.path()).unwrap().count();
+        assert_eq!(
+            kept,
+            cases.len(),
+            "repeated quarantines keep every earlier copy"
+        );
     }
 
     #[test]
@@ -251,5 +290,30 @@ mod tests {
             (issue.problem, issue.detail.as_str()),
             (StateProblem::Corrupt, "bad")
         );
+    }
+
+    #[test]
+    fn export_write_keeps_neighbouring_tmp_and_needs_an_existing_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("diagnostics.txt");
+        fs::write(dir.path().join("diagnostics.txt.tmp"), b"mine").unwrap();
+        write_export(&out, b"report").unwrap();
+        assert_eq!(fs::read(&out).unwrap(), b"report");
+        assert_eq!(
+            fs::read(dir.path().join("diagnostics.txt.tmp")).unwrap(),
+            b"mine"
+        );
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2, "no temp left");
+        assert!(write_export(&dir.path().join("missing").join("d.txt"), b"x").is_err());
+        assert!(!dir.path().join("missing").exists());
+    }
+
+    #[test]
+    fn failing_rename_onto_a_directory_leaves_it_and_reports_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.json");
+        fs::create_dir(&path).unwrap();
+        assert!(save(&path, 1, &vec![1u32]).is_err());
+        assert!(path.is_dir());
     }
 }
