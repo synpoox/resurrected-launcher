@@ -131,12 +131,12 @@ a { color: inherit; }
 .window.seamless { grid-template-rows: 1fr; }
 .window.seamless .titlebar { position: absolute; top: 0; left: 0; right: 0; z-index: 5; height: 32px; background: transparent; border: 0; padding: 0; }
 .D { display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
-.D nav { padding-top: 22px; }
-.D nav .brand { display: flex; align-items: center; gap: 10px; padding: 0 24px 26px; }
-.D nav .brand .glyph { color: var(--accent); font-size: 30px; line-height: 1; }
-.D nav .brand .name { font-size: 12px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; line-height: 1.25; }
+.D nav { padding-top: 40px; }
+.D nav .brand { display: flex; align-items: center; gap: 12px; padding: 0 24px 34px; }
+.D nav .brand .glyph { color: var(--accent); font-size: 44px; line-height: 1; }
+.D nav .brand .name { font-size: 16px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; line-height: 1.25; }
 .D .credit { top: 42px; }
-.D .act .btn.primary { min-width: 320px; min-height: 60px; font-size: 16px; }
+.D .act .btn.primary { min-width: 260px; min-height: 60px; font-size: 16px; }
 .D .bottom { grid-template-columns: 1fr 250px; gap: 32px; }
 .D .h1 { font-size: 50px; }
 .D .act { flex-wrap: wrap; row-gap: 12px; }

@@ -80,7 +80,7 @@ export function VariantB({ product, setProduct }) {
   );
 }
 
-function VariantBMain({ p }) {
+function VariantBMain({ p, brief }) {
   return (
       <main>
         <Art p={p} /><div className="shade" />
@@ -94,7 +94,7 @@ function VariantBMain({ p }) {
               {p.playable ? (
                 <>
                   <button className="btn primary">Play</button>
-                  <span className="ready"><span className="dot" />Ready · {p.readiness.map((r) => r[1]).join(' · ')}</span>
+                  <span className="ready"><span className="dot" />Ready · {brief ? p.readiness[0][1] : p.readiness.map((r) => r[1]).join(' · ')}</span>
                 </>
               ) : <button className="btn ghost">About {p.short}</button>}
             </div>
@@ -194,7 +194,7 @@ export function VariantD({ product, setProduct }) {
         ))}
         <button className="item foot">Settings</button>
       </nav>
-      <VariantBMain p={p} />
+      <VariantBMain p={p} brief />
     </div>
   );
 }
