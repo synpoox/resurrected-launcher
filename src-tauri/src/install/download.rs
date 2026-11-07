@@ -149,7 +149,10 @@ impl Downloader {
         Self::with_tls(TlsConfig::default())
     }
 
-    fn with_tls(tls: TlsConfig) -> Self {
+    /// A downloader with its own TLS trust; integration tests pass the fixture
+    /// server's certificate. Not for production use.
+    #[doc(hidden)]
+    pub fn with_tls(tls: TlsConfig) -> Self {
         // shortcut: cancel is checked between reads, so a stalled read waits for the
         // server or the connection to drop; add an idle-read timeout if that bites.
         let agent = ureq::Agent::config_builder()
