@@ -193,13 +193,12 @@ fn cached(name: &str, malice: Option<Malice>) -> FixtureRelease {
     type Cache = Mutex<HashMap<(String, Option<Malice>), FixtureRelease>>;
     static CACHE: OnceLock<Cache> = OnceLock::new();
     let key = (name.to_owned(), malice);
-    let cache = CACHE.get_or_init(Default::default);
-    if let Some(hit) = cache.lock().unwrap().get(&key) {
-        return hit.clone();
-    }
-    let built = build(name, malice);
-    cache.lock().unwrap().insert(key, built.clone());
-    built
+    // Built under the lock: racing cold-cache builds would give one release two archives.
+    let mut cache = CACHE.get_or_init(Default::default).lock().unwrap();
+    cache
+        .entry(key)
+        .or_insert_with(|| build(name, malice))
+        .clone()
 }
 
 fn read_json(path: &Path) -> Value {

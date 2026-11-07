@@ -348,13 +348,11 @@ fn refused_while_a_game_holds_a_managed_file_open(kind: OperationKind) {
 }
 
 #[test]
-#[ignore = "defect: plan::inspect hashes a managed file a running game holds open and fails with Internal (os error 32) before preflight can report GameRunning"]
 fn update_is_refused_while_a_game_holds_a_managed_file_open() {
     refused_while_a_game_holds_a_managed_file_open(Update);
 }
 
 #[test]
-#[ignore = "defect: plan::inspect hashes a managed file a running game holds open and fails with Internal (os error 32) before preflight can report GameRunning"]
 fn uninstall_is_refused_while_a_game_holds_a_managed_file_open() {
     refused_while_a_game_holds_a_managed_file_open(Uninstall);
 }

@@ -38,14 +38,7 @@ fn mismatch(message: impl Into<String>) -> LauncherError {
     LauncherError::new(ErrorCode::VerificationFailed, message)
 }
 
-pub(crate) fn io_error(what: &str, path: &Path, e: std::io::Error) -> LauncherError {
-    let code = if e.kind() == std::io::ErrorKind::PermissionDenied {
-        ErrorCode::AccessDenied
-    } else {
-        ErrorCode::Internal
-    };
-    LauncherError::new(code, format!("{what} {}: {e}", path.display()))
-}
+pub(crate) use super::journal::io_error;
 
 fn cancelled() -> LauncherError {
     LauncherError::new(ErrorCode::Cancelled, "cancelled by the user")
@@ -203,8 +196,9 @@ impl Downloader {
     ///
     /// Errors: [`ErrorCode::DownloadFailed`] (network, HTTP status, non-HTTPS URL or
     /// redirect, truncated body), [`ErrorCode::VerificationFailed`] (size or SHA-256),
-    /// [`ErrorCode::Cancelled`], [`ErrorCode::AccessDenied`] / [`ErrorCode::Internal`]
-    /// for local I/O.
+    /// [`ErrorCode::Cancelled`], and for local I/O [`ErrorCode::AccessDenied`],
+    /// [`ErrorCode::GameRunning`] (a sharing violation), [`ErrorCode::InsufficientSpace`]
+    /// or [`ErrorCode::Internal`].
     pub fn fetch(
         &self,
         source: &Archive,

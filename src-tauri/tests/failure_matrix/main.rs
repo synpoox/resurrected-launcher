@@ -225,19 +225,8 @@ pub struct Rig {
     pub cancel: AtomicBool,
 }
 
-/// Builds every fixture release once, one at a time, before any rig serves one.
-/// shortcut: `support::release` builds outside its cache lock, so two tests racing
-/// on a cold cache get different 7z bytes for one release ID (and one overwrites
-/// the other's route on the shared server); remove once support/mod.rs builds
-/// under the lock.
-fn warm_fixture_cache() {
-    static WARM: OnceLock<()> = OnceLock::new();
-    WARM.get_or_init(|| ALL_RELEASES.iter().for_each(|r| drop(release(r))));
-}
-
 impl Rig {
     fn on(server: &'static FixtureServer) -> Self {
-        warm_fixture_cache();
         let state_dir = tempfile::tempdir().unwrap();
         Self {
             game: DisposableGame::new(),
