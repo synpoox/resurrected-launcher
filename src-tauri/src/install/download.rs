@@ -214,7 +214,11 @@ impl Downloader {
             fs::remove_file(dest).map_err(|e| io_error("removing unverified", dest, e))?;
         }
         let partial = paths.download_partial();
-        let result = self.download_to(source, partial, cancel, progress);
+        let expect = Expect::Exact {
+            size: source.size,
+            sha256: &source.sha256,
+        };
+        let result = self.download_to(&source.url, partial, expect, cancel, progress);
         if result.is_err() {
             let _ = fs::remove_file(partial);
         }
@@ -223,24 +227,65 @@ impl Downloader {
         Ok(Fetched::Downloaded)
     }
 
-    fn download_to(
+    /// Downloads `url` (HTTPS only, every redirect hop too) to `dest`, through
+    /// `<dest>.partial`, which replaces any existing `dest` only after `expect` held.
+    /// For metadata and the loader installer, which have no [`TransactionPaths`].
+    ///
+    /// No [`crate::contract::WriteGuard`] covers `dest`: the caller must pass a path
+    /// under the launcher's local data dir, never one inside a game folder.
+    ///
+    /// Returns the size and SHA-256 of the bytes now at `dest`. Progress, cancel and
+    /// errors are as for [`Downloader::fetch`]; on any error the partial file is
+    /// removed and `dest` is unchanged.
+    pub fn fetch_to(
         &self,
-        source: &Archive,
-        partial: &Path,
+        url: &str,
+        dest: &Path,
+        expect: Expect<'_>,
         cancel: &AtomicBool,
         progress: &mut dyn FnMut(u64, u64),
-    ) -> Result<(), LauncherError> {
-        let response = self.get(&source.url)?;
+    ) -> Result<(u64, Sha256Digest), LauncherError> {
+        let mut partial = dest.as_os_str().to_owned();
+        partial.push(".partial");
+        let partial = Path::new(&partial);
+        let result = self
+            .download_to(url, partial, expect, cancel, progress)
+            .and_then(|(n, digest)| {
+                let digest = Sha256Digest::from_bytes(digest)
+                    .ok_or_else(|| mismatch("download hashed to the all-zero placeholder"))?;
+                fs::rename(partial, dest).map_err(|e| io_error("renaming download to", dest, e))?;
+                Ok((n, digest))
+            });
+        if result.is_err() {
+            let _ = fs::remove_file(partial);
+        }
+        result
+    }
+
+    fn download_to(
+        &self,
+        url: &str,
+        partial: &Path,
+        expect: Expect<'_>,
+        cancel: &AtomicBool,
+        progress: &mut dyn FnMut(u64, u64),
+    ) -> Result<(u64, [u8; 32]), LauncherError> {
+        let (limit, sha256) = match expect {
+            Expect::Exact { size, sha256 } => (size, Some(sha256)),
+            Expect::AtMost(max) => (max, None),
+        };
+        let response = self.get(url)?;
         let announced = response
             .headers()
             .get("content-length")
             .and_then(|v| v.to_str().ok()?.parse::<u64>().ok());
-        if announced.is_some_and(|len| len != source.size) {
-            return Err(mismatch(format!(
-                "server announces {} bytes, expected {}",
-                announced.unwrap_or_default(),
-                source.size
-            )));
+        if let Some(len) = announced {
+            if len > limit || (sha256.is_some() && len != limit) {
+                return Err(mismatch(format!(
+                    "server announces {len} bytes, expected {}{limit}",
+                    if sha256.is_some() { "" } else { "at most " }
+                )));
+            }
         }
         // create truncates: an incomplete earlier download restarts from zero.
         let mut file = File::create(partial).map_err(|e| io_error("creating", partial, e))?;
@@ -249,24 +294,32 @@ impl Downloader {
         let (n, digest) = pump(
             &mut body,
             Some(&mut file),
-            source.size,
+            limit,
             &read_failed,
             cancel,
             progress,
         )?;
-        if n != source.size {
-            return Err(mismatch(format!(
-                "received {n} bytes, expected {}",
-                source.size
-            )));
-        }
-        if &digest != source.sha256.as_bytes() {
-            return Err(mismatch("SHA-256 does not match the release manifest"));
+        if let Some(sha256) = sha256 {
+            if n != limit {
+                return Err(mismatch(format!("received {n} bytes, expected {limit}")));
+            }
+            if &digest != sha256.as_bytes() {
+                return Err(mismatch("SHA-256 does not match the release manifest"));
+            }
         }
         file.sync_all()
             .map_err(|e| io_error("flushing", partial, e))?;
-        Ok(())
+        Ok((n, digest))
     }
+}
+
+/// What [`Downloader::fetch_to`] requires of the downloaded bytes.
+#[derive(Debug, Clone, Copy)]
+pub enum Expect<'a> {
+    /// Exactly `size` bytes with this SHA-256 (a manifest, the loader installer).
+    Exact { size: u64, sha256: &'a Sha256Digest },
+    /// Size and hash unknown (the feed); fails as soon as more than this many bytes arrive.
+    AtMost(u64),
 }
 
 #[cfg(test)]
@@ -594,5 +647,66 @@ pub(crate) mod tests {
         assert_eq!(err.code, ErrorCode::Cancelled, "{err}");
         assert!(reported > 0 && reported < bytes.len() as u64);
         assert_nothing_left(&paths);
+    }
+
+    #[test]
+    fn fetch_to_downloads_into_a_data_dir_file_without_transaction_paths() {
+        let bytes = archive_bytes();
+        let fixture = serve_archive(bytes.clone());
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("installer.exe");
+        let partial = dir.path().join("installer.exe.partial");
+        let fetch_to = |expect| {
+            fixture.downloader().fetch_to(
+                &fixture.url("/moved"),
+                &dest,
+                expect,
+                &AtomicBool::new(false),
+                &mut |_, _| {},
+            )
+        };
+        let digest = sha256(&bytes);
+        let exact = Expect::Exact {
+            size: bytes.len() as u64,
+            sha256: &digest,
+        };
+
+        fs::write(&dest, b"older copy").unwrap();
+        assert_eq!(fetch_to(exact).unwrap(), (bytes.len() as u64, digest));
+        assert_eq!(fs::read(&dest).unwrap(), bytes);
+        assert!(!partial.exists());
+
+        // Unknown size (the feed): accepted up to the cap, refused beyond it.
+        fs::remove_file(&dest).unwrap();
+        let cap = bytes.len() as u64;
+        assert_eq!(fetch_to(Expect::AtMost(cap)).unwrap(), (cap, digest));
+        fs::write(&dest, b"kept").unwrap();
+        let err = fetch_to(Expect::AtMost(cap - 1)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::VerificationFailed, "{err}");
+
+        // A hash mismatch leaves no partial file and the old dest untouched.
+        let other = sha256(b"some other installer");
+        let err = fetch_to(Expect::Exact {
+            size: bytes.len() as u64,
+            sha256: &other,
+        })
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::VerificationFailed, "{err}");
+        assert_eq!(fs::read(&dest).unwrap(), b"kept");
+        assert!(!partial.exists());
+
+        let plain = fixture.url("/archive").replace("https:", "http:");
+        let err = fixture
+            .downloader()
+            .fetch_to(
+                &plain,
+                &dest,
+                Expect::AtMost(cap),
+                &AtomicBool::new(false),
+                &mut |_, _| {},
+            )
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::DownloadFailed, "{err}");
+        assert!(!partial.exists());
     }
 }

@@ -26,7 +26,7 @@ pub fn offer(pin: &LoaderPin) -> LoaderSetupOffer {
     todo!("#59")
 }
 
-/// Downloads `pin.url` with `downloader` (HTTPS only) to a file under `data_dir`
+/// Downloads `pin.url` with [`Downloader::fetch_to`] (HTTPS only) to a file under `data_dir`
 /// and verifies its size and SHA-256. On a mismatch the file is deleted.
 ///
 /// Errors: [`crate::contract::ErrorCode::DownloadFailed`],
