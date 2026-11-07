@@ -8,8 +8,9 @@ use crate::contract::{ProductId, RelativePath, Sha256Digest};
 
 use super::{CatalogError, SCHEMA_VERSION};
 
-/// Key fragments that mean "run something". Unknown keys are rejected anyway; this
-/// gives commands and scripts their own error. `execute` does not match `executable`.
+/// Key fragments that mean "run something". The boundary is `deny_unknown_fields` on
+/// every wire struct; this list only gives commands and scripts their own error.
+/// `execute` does not match `executable`.
 const EXECUTABLE_KEYS: [&str; 7] = [
     "command", "cmd", "script", "execute", "shell", "hook", "argument",
 ];
@@ -31,7 +32,9 @@ pub(super) fn parse<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, CatalogError
     if let Some(key) = executable_key(&value) {
         return Err(CatalogError::ExecutableMetadata { key });
     }
-    serde_json::from_value(value).map_err(|e| CatalogError::Malformed(e.to_string()))
+    // Typed parse from the bytes, not the Value: derived structs reject duplicate keys,
+    // which a Value would silently collapse to the last one.
+    serde_json::from_slice(bytes).map_err(|e| CatalogError::Malformed(e.to_string()))
 }
 
 fn executable_key(v: &Value) -> Option<String> {
@@ -71,19 +74,41 @@ pub(super) fn size(field: &str, v: Option<u64>) -> Result<u64, CatalogError> {
         })
 }
 
+/// `https://` with a public DNS host name: no user info, port, IP literal, localhost
+/// or single-label host, no whitespace or control characters, and no `.`/`..` path
+/// segment (literal or `%2e`-encoded). Redirects are checked by download (#35).
 pub(super) fn https(field: &str, url: String) -> Result<String, CatalogError> {
-    let host = url
-        .strip_prefix("https://")
-        .map(|rest| rest.split(['/', '?', '#']).next().unwrap_or(""));
-    // `@` would let `https://github.com@evil.example/` pass as a github.com URL.
-    match host {
-        Some(h) if !h.is_empty() && !h.contains('@') && !url.chars().any(char::is_whitespace) => {
-            Ok(url)
-        }
-        _ => Err(CatalogError::NotHttps {
-            field: field.to_owned(),
-        }),
+    let not_https = || CatalogError::NotHttps {
+        field: field.to_owned(),
+    };
+    let rest = url.strip_prefix("https://").ok_or_else(not_https)?;
+    let (host, path) = rest
+        .find(['/', '?', '#'])
+        .map_or((rest, ""), |i| rest.split_at(i));
+    let host = host.to_ascii_lowercase();
+    // `@` would let `https://github.com@evil.example/` pass as a github.com URL; `:` is
+    // a port or an IPv6 literal.
+    let bad_host = host.is_empty()
+        || host.contains(['@', ':', '[', ']'])
+        || !host.contains('.')
+        || host.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+        || host == "localhost"
+        || host.ends_with(".localhost")
+        || !host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-.".contains(&b));
+    if bad_host || url.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(not_https());
     }
+    let path = path.split(['?', '#']).next().unwrap_or("");
+    let lower = path.to_ascii_lowercase();
+    if lower.contains("%2e") || path.split('/').any(|seg| seg == "." || seg == "..") {
+        return Err(CatalogError::InvalidField {
+            field: field.to_owned(),
+            reason: "URL path must not contain dot segments",
+        });
+    }
+    Ok(url)
 }
 
 pub(super) fn path(field: &str, p: String) -> Result<RelativePath, CatalogError> {
@@ -144,6 +169,30 @@ pub(super) fn version(field: &str, s: &str) -> Result<[u64; 3], CatalogError> {
     Ok(out)
 }
 
+/// `MAJOR.MINOR.PATCH` with an optional `-prerelease` of `0-9 A-Z a-z . -`
+/// (e.g. `1.3.1-beta`). Versions are compared as exact strings.
+pub(super) fn semver(field: &str, s: &str) -> Result<(), CatalogError> {
+    let (core, pre) = s.split_once('-').map_or((s, None), |(c, p)| (c, Some(p)));
+    version(field, core).map_err(|_| CatalogError::InvalidField {
+        field: field.to_owned(),
+        reason: "must be MAJOR.MINOR.PATCH[-prerelease]",
+    })?;
+    match pre {
+        Some(p)
+            if p.is_empty()
+                || !p
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-.".contains(&b)) =>
+        {
+            Err(CatalogError::InvalidField {
+                field: field.to_owned(),
+                reason: "must be MAJOR.MINOR.PATCH[-prerelease]",
+            })
+        }
+        _ => Ok(()),
+    }
+}
+
 /// `YYYY-MM-DD`.
 pub(super) fn date(field: &str, s: String) -> Result<String, CatalogError> {
     let b = s.as_bytes();
@@ -188,6 +237,13 @@ mod tests {
     #[test]
     fn https_rejects_other_schemes_userinfo_and_empty_hosts() {
         for bad in [
+            "https://github.com:8443/x",
+            "https://127.0.0.1/x",
+            "https://[::1]/x",
+            "https://localhost/x",
+            "https://a.localhost/x",
+            "https://intranet/x",
+            "https://github.com/a	b",
             "http://github.com/x",
             "HTTPS://github.com/x",
             "https://",
@@ -206,6 +262,21 @@ mod tests {
             );
         }
         assert!(https("u", "https://github.com/x?y#z".to_owned()).is_ok());
+        assert!(https("u", "https://github.com/a/../b?x=..".to_owned()).is_err());
+        for bad in [
+            "https://github.com/a/../b",
+            "https://github.com/a/./b",
+            "https://github.com/a/%2e%2e/b",
+            "https://github.com/a/%2E%2E/b",
+        ] {
+            assert!(
+                matches!(
+                    https("u", bad.to_owned()),
+                    Err(CatalogError::InvalidField { .. })
+                ),
+                "{bad}"
+            );
+        }
     }
 
     #[test]
@@ -227,6 +298,12 @@ mod tests {
         assert_eq!(version("v", "1.20.3"), Ok([1, 20, 3]));
         for bad in ["1.2", "1.2.3.4", "1.+2.3", "a.b.c", "1..3", ""] {
             assert!(version("v", bad).is_err(), "{bad}");
+        }
+        for ok in ["1.3.1", "1.3.1-beta", "1.3.1-rc.2"] {
+            assert_eq!(semver("v", ok), Ok(()), "{ok}");
+        }
+        for bad in ["1.3", "1.3.1-", "1.3.1-be ta", "1.3.1+x", "v1.3.1"] {
+            assert!(semver("v", bad).is_err(), "{bad}");
         }
         assert!(date("d", "2026-11-01".to_owned()).is_ok());
         for bad in [

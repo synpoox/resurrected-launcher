@@ -99,7 +99,10 @@ pub struct Saves {
 /// Pinned official D2RLoader installer. Never rehosted or bundled.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoaderPin {
-    pub version: String,
+    /// The exact upstream release tag of the installer (e.g. `v0.1.0`).
+    pub installer_version: String,
+    /// The loader version that installer installs; one of `loader_versions`.
+    pub installs_loader_version: String,
     pub url: String,
     pub size: u64,
     pub sha256: Sha256Digest,
@@ -253,7 +256,8 @@ struct RawSaves {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawLoader {
-    version: String,
+    installer_version: String,
+    installs_loader_version: String,
     url: String,
     size: Option<u64>,
     sha256: Option<String>,
@@ -283,6 +287,9 @@ impl RawManifest {
             _ => return Err(invalid("install_root", "must be mods/<folder>")),
         }
 
+        if self.files.is_empty() {
+            return Err(invalid("files", "must not be empty"));
+        }
         let mut shipped_defaults = Vec::new();
         let files = each("files", self.files, |field, f| {
             let file = ExpectedFile {
@@ -324,7 +331,11 @@ impl RawManifest {
                 field: "archive.file_count".to_owned(),
             });
         }
-        if raw.total_size != files.iter().map(|f| f.size).sum::<u64>() {
+        // checked: a wrapping sum would let a crafted total_size pass.
+        let sum = files
+            .iter()
+            .try_fold(0u64, |acc, f| acc.checked_add(f.size));
+        if sum != Some(raw.total_size) {
             return Err(CatalogError::ArchiveInconsistent {
                 field: "archive.total_size".to_owned(),
             });
@@ -338,7 +349,11 @@ impl RawManifest {
 
         let setting = |field: &str, s: RawSetting| -> Result<Setting, CatalogError> {
             let file = check::path(&format!("{field}.file"), s.file)?;
-            if !shipped_defaults.contains(&file) {
+            let key = file.as_str().to_uppercase();
+            if !shipped_defaults
+                .iter()
+                .any(|d: &RelativePath| d.as_str().to_uppercase() == key)
+            {
                 return Err(invalid(
                     format!("{field}.file"),
                     "must be a shipped_default file of this release",
@@ -375,7 +390,7 @@ impl RawManifest {
                 "compatibility.loader_versions",
                 c.loader_versions,
                 |f, v| {
-                    check::version(f, &v)?;
+                    check::semver(f, &v)?;
                     Ok(v)
                 },
             )?,
@@ -412,18 +427,40 @@ impl RawManifest {
 
         let l = self.loader;
         let url = check::https("loader.url", l.url)?;
-        if !url.starts_with(LOADER_SOURCE) {
+        // Exactly <source><installer_version>/<file name>: no extra segments, dots,
+        // percent-encoding, query or fragment, so the prefix cannot be escaped.
+        let safe = |s: &str| {
+            !s.is_empty()
+                && !s.starts_with('.')
+                && s.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b))
+        };
+        if !safe(&l.installer_version) {
+            return Err(invalid(
+                "loader.installer_version",
+                "must be the exact upstream release tag",
+            ));
+        }
+        let official = url
+            .strip_prefix(LOADER_SOURCE)
+            .and_then(|rest| rest.split_once('/'))
+            .is_some_and(|(tag, file)| tag == l.installer_version && safe(file));
+        if !official {
             return Err(CatalogError::LoaderSourceNotOfficial { url });
         }
-        check::version("loader.version", &l.version)?;
-        if !compatibility.loader_versions.contains(&l.version) {
+        check::semver("loader.installs_loader_version", &l.installs_loader_version)?;
+        if !compatibility
+            .loader_versions
+            .contains(&l.installs_loader_version)
+        {
             return Err(invalid(
-                "loader.version",
+                "loader.installs_loader_version",
                 "must be one of compatibility.loader_versions",
             ));
         }
         let loader = LoaderPin {
-            version: l.version,
+            installer_version: l.installer_version,
+            installs_loader_version: l.installs_loader_version,
             url,
             size: check::size("loader.size", l.size)?,
             sha256: check::digest("loader.sha256", l.sha256)?,

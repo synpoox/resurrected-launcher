@@ -48,9 +48,90 @@ fn unsafe_path(f: &str, error: PathError) -> CatalogError {
     }
 }
 
+fn invalid(f: &str, reason: &'static str) -> CatalogError {
+    CatalogError::InvalidField {
+        field: field(f),
+        reason,
+    }
+}
+
+fn unofficial(url: &str) -> CatalogError {
+    CatalogError::LoaderSourceNotOfficial { url: field(url) }
+}
+
+const SRC: &str = "https://github.com/D2RLoader/Installer/releases/download/";
+const DOT_SEGMENTS: &str = "URL path must not contain dot segments";
+
 fn manifest_rejections() -> Vec<(&'static str, CatalogError)> {
     use CatalogError::*;
     vec![
+        ("loader-path-traversal", invalid("loader.url", DOT_SEGMENTS)),
+        (
+            "loader-encoded-traversal",
+            invalid("loader.url", DOT_SEGMENTS),
+        ),
+        (
+            "loader-extra-segment",
+            unofficial(&format!("{SRC}v0.1.0/sub/e.exe")),
+        ),
+        (
+            "loader-query",
+            unofficial(&format!("{SRC}v0.1.0/e.exe?x=1")),
+        ),
+        (
+            "loader-tag-mismatch",
+            unofficial(&format!("{SRC}v9.9.9/D2RLoaderInstaller.exe")),
+        ),
+        (
+            "loader-version-not-allowed",
+            invalid(
+                "loader.installs_loader_version",
+                "must be one of compatibility.loader_versions",
+            ),
+        ),
+        ("url-port", not_https("archive.url")),
+        ("url-ip-literal", not_https("archive.url")),
+        ("url-localhost", not_https("archive.url")),
+        (
+            "total-size-overflow",
+            ArchiveInconsistent {
+                field: field("archive.total_size"),
+            },
+        ),
+        (
+            "install-root-not-mods",
+            invalid("install_root", "must be mods/<folder>"),
+        ),
+        (
+            "install-root-nested",
+            invalid("install_root", "must be mods/<folder>"),
+        ),
+        (
+            "setting-not-shipped-default",
+            invalid(
+                "compatibility.required_settings[0].file",
+                "must be a shipped_default file of this release",
+            ),
+        ),
+        (
+            "ownership-unknown",
+            invalid(
+                "files[0].ownership",
+                "listed files are managed or shipped_default",
+            ),
+        ),
+        (
+            "notice-without-save-breaking",
+            invalid(
+                "saves.incompatibility_notice",
+                "required exactly when save_breaking is true",
+            ),
+        ),
+        (
+            "saves-folder-nested",
+            invalid("saves.folder", "must be one folder name"),
+        ),
+        ("empty-files", invalid("files", "must not be empty")),
         ("zero-hash", placeholder("archive.sha256")),
         ("missing-hash", placeholder("files[1].sha256")),
         ("missing-size", placeholder("archive.size")),
@@ -152,6 +233,17 @@ fn feed_rejections() -> Vec<(&'static str, CatalogError)> {
     use CatalogError::*;
     vec![
         (
+            "available-without-recommended",
+            invalid(
+                "products[0].recommended",
+                "required for an available product",
+            ),
+        ),
+        (
+            "duplicate-product",
+            invalid("products[3].product_id", "duplicate product"),
+        ),
+        (
             "not-https",
             not_https("products[0].recommended.manifest_url"),
         ),
@@ -191,6 +283,8 @@ fn valid_release_manifest_describes_the_release() {
     assert_eq!(m.mod_folder(), "PD2R");
     assert!(!m.is_save_breaking());
     assert!(!m.loader.signed);
+    assert_eq!(m.loader.installer_version, "v0.1.0");
+    assert_eq!(m.loader.installs_loader_version, "1.3.1-beta");
     assert_eq!(
         m.compatibility.game_builds[0].platform,
         Platform::WindowsX64
@@ -241,6 +335,11 @@ fn release_manifest_with_unknown_fields_is_malformed() {
     let got = ReleaseManifest::parse(&fixture("invalid/manifest-unknown-field.json"));
     assert!(
         matches!(&got, Err(CatalogError::Malformed(m)) if m.contains("unknown field `launch`")),
+        "{got:?}"
+    );
+    let got = ReleaseManifest::parse(&fixture("invalid/manifest-duplicate-key.json"));
+    assert!(
+        matches!(&got, Err(CatalogError::Malformed(m)) if m.contains("duplicate field `release_id`")),
         "{got:?}"
     );
     assert!(matches!(
@@ -346,6 +445,7 @@ fn every_invalid_fixture_is_asserted() {
     covered.extend(
         [
             "manifest-unknown-field.json",
+            "manifest-duplicate-key.json",
             "manifest-changed-hash.json",
             "feed-changed-pointer.json",
         ]
@@ -359,4 +459,13 @@ fn every_invalid_fixture_is_asserted() {
         .collect();
     on_disk.sort();
     assert_eq!(on_disk, covered);
+}
+
+#[test]
+fn release_manifest_matches_setting_files_case_insensitively() {
+    let m = ReleaseManifest::parse(&fixture("valid/release-manifest-setting-case.json")).unwrap();
+    assert_eq!(
+        m.compatibility.required_settings[0].file,
+        path("D2RLOADER/Config.ini")
+    );
 }

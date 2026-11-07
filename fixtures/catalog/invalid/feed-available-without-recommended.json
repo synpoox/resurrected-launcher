@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "products": [
+    {
+      "product_id": "pd2r",
+      "availability": "available"
+    },
+    {
+      "product_id": "project-09",
+      "availability": "upcoming"
+    },
+    {
+      "product_id": "project-forever",
+      "availability": "upcoming"
+    }
+  ]
+}

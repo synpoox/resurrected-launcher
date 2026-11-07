@@ -16,14 +16,18 @@ Compared with today's `schemaVersion: 2` output (reviewed at [707f9df](https://g
 6. Replace `d2r` with `compatibility.game_builds`: `{build, platform: "windows_x64", executable, size, sha256}` per verified D2R build, from the real executable. A version label alone is rejected.
 7. Add `compatibility.loader_versions` and move the loader settings from `launch` into `compatibility.required_settings` as `{file, key, value}` pointing at a `shipped_default` file. Remove `launch` and any launch arguments: metadata may not carry commands or arguments.
 8. Replace `saveFolder` with `saves: {folder, save_breaking, incompatibility_notice, loader_save_format}`. Require the notice exactly when the release is save-breaking.
-9. Replace `d2rloader` with `loader: {version, url, size, sha256, signed}` for the official `https://github.com/D2RLoader/Installer/releases/download/...` installer. Fill size and hash from the real upstream file and record whether it is signed. Never rehost or bundle it.
+9. Replace `d2rloader` with `loader: {installer_version, installs_loader_version, url, size, sha256, signed}`.
+   - `installer_version` is the upstream installer's release tag, such as `v0.1.0`.
+   - `installs_loader_version` is the loader version that installer installs, such as `1.3.1-beta`. It must be in `compatibility.loader_versions`. Today's pin mixes the two versions.
+   - `url` is exactly `https://github.com/D2RLoader/Installer/releases/download/<installer_version>/<file>`.
+   Fill size and hash from the real upstream file and record whether it is signed. Never rehost or bundle it.
 
 ## Validation before anything is written
 
 The packager must refuse to produce or publish a manifest that the launcher would reject:
 
 - No missing, zero, empty or all-zero sizes/hashes (today's loader pin has zero placeholders; those must go).
-- Only `https://` URLs.
+- Only `https://` URLs on public DNS host names, with no port, no IP literal and no dot segments.
 - No absolute, drive, `..`, Windows-reserved, trailing dot/space or case-duplicate paths; nothing under a file.
 - `archive.file_count`/`total_size` match `files`, and the 7z's actual entry list matches `files` + `empty_dirs` exactly.
 - No command, script, hook or argument keys.

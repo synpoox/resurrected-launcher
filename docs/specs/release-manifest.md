@@ -2,7 +2,7 @@
 
 Status: implemented by the Catalog module (`src-tauri/src/catalog/`, [#33](https://github.com/synpoox/resurrected-launcher/issues/33)). Semantics come from the [release manifest and safe-update contract](https://github.com/synpoox/resurrected-launcher/issues/6) and the [architecture resolution](https://github.com/synpoox/resurrected-launcher/issues/8); this page fixes the wire format. Fixtures: `fixtures/catalog/valid/` (a complete example of each document) and `fixtures/catalog/invalid/` (one file per rejection class).
 
-Both documents are UTF-8 JSON with snake_case keys. Every object rejects unknown keys. Metadata is declarative: no commands, scripts, hooks or launch arguments. Schema 3 is new; the toolkit packager's current `schemaVersion: 2` output is rejected, not read as complete.
+Both documents are UTF-8 JSON with snake_case keys. Every object rejects unknown and duplicate keys. Metadata is declarative: no commands, scripts, hooks or launch arguments. The boundary that enforces this is the rejection of unknown keys. A key containing `command`, `cmd`, `script`, `execute`, `shell`, `hook` or `argument` (case-insensitive, at any depth) is reported as `ExecutableMetadata` instead of `Malformed`; that list only selects the error, it is not the guard. Schema 3 is new; the toolkit packager's current `schemaVersion: 2` output is rejected, not read as complete.
 
 ## Release feed
 
@@ -26,8 +26,10 @@ A public static file, initially a GitHub release asset. It says which products e
 | `product_id` | Stable machine ID: 1-64 of `a-z 0-9 . _ -`, starting with a letter or digit. Unique in the feed. Never a display name. |
 | `availability` | `available` requires `recommended`. `upcoming` must not carry `recommended` (no artifacts). |
 | `recommended.release_id` | Immutable release identity, same character rules as `product_id`. |
-| `recommended.manifest_url` | `https://` with a plain host (no user info, no whitespace). |
+| `recommended.manifest_url` | An HTTPS URL as defined below. |
 | `recommended.manifest_size`, `manifest_sha256` | Required, non-zero, not a placeholder. The downloader verifies the manifest bytes against them. |
+
+**HTTPS URLs** (every URL in both documents): `https://` followed by a public DNS host name, meaning at least one dot and only letters, digits, `-` and `.`. User info, explicit ports, IP literals, `localhost`/`*.localhost`, whitespace and control characters are rejected. The path may not contain a `.` or `..` segment or `%2e` in any case.
 
 The recommendation is the publisher's choice. The launcher never infers it from GitHub Latest or prerelease flags.
 
@@ -51,9 +53,9 @@ One per release, published as a durable public asset next to the archive. See `f
 
 | Field | Rule |
 | --- | --- |
-| `install_root` | `mods/<folder>`, relative to the selected D2R installation. `<folder>` is also the mod the game is launched with. No absolute or publisher-chosen destinations. |
-| `archive` | `{url, format, size, sha256, file_count, total_size}`. One complete archive; repairs and updates download all of it, no deltas. `url` is HTTPS; `format` is `7z`; `size` and `sha256` are required and real. `file_count` and `total_size` must equal the count and size sum of `files`. |
-| `files` | Every file the archive unpacks into `install_root`: `{path, size, sha256, ownership}`. |
+| `install_root` | `mods/<folder>`, relative to the selected D2R installation. No absolute or publisher-chosen destinations. Launch selects the product only as `-mod <folder>`. The schema-2 `launch.launch_arguments` are dropped on purpose: publisher-supplied arguments are not allowed. |
+| `archive` | `{url, format, size, sha256, file_count, total_size}`. One complete archive; repairs and updates download all of it, no deltas. `url` is HTTPS; `format` is `7z`; `size` and `sha256` are required and real. `file_count` and `total_size` must equal the count and size sum of `files`, and a sum that overflows 64 bits is inconsistent. |
+| `files` | Every file the archive unpacks into `install_root`: `{path, size, sha256, ownership}`. Must not be empty. |
 | `empty_dirs` | Directories that must exist although they hold no file. |
 
 Paths use `/`, are relative to `install_root`, and must pass the contract's `RelativePath` rules (no absolute, drive, `..`, `.`, stream, device name, trailing dot/space, forbidden character or 8.3 alias). The list must have no duplicates ignoring case and nothing may lie under a file or an empty dir (`ExpectedInventory`). Extraction later checks the unpacked tree against exactly this inventory.
@@ -74,8 +76,8 @@ Anything on disk that the manifest does not list is unknown (player files, optio
 | Field | Rule |
 | --- | --- |
 | `compatibility.game_builds` | Non-empty. Each `{build, platform, executable, size, sha256}`: `platform` is `windows_x64`; `executable` is relative to the D2R installation; size and hash are real fingerprints of that file. A marketing label alone is not enough. |
-| `compatibility.loader_versions` | Non-empty list of `MAJOR.MINOR.PATCH` loader versions. |
-| `compatibility.required_settings` | `{file, key, value}` settings the product needs. `file` must be a `shipped_default` of this release. An edited conflicting value pauses the update instead of being overwritten. |
+| `compatibility.loader_versions` | Non-empty list of allowed loader versions: `MAJOR.MINOR.PATCH` with an optional `-prerelease` (`1.3.1-beta`), compared as exact strings. |
+| `compatibility.required_settings` | `{file, key, value}` settings the product needs. `file` must be a `shipped_default` of this release, compared ignoring case as Windows does. An edited conflicting value pauses the update instead of being overwritten. |
 
 Unknown game/loader combinations block Play.
 
@@ -90,7 +92,13 @@ Unknown game/loader combinations block Play.
 
 ### Loader pin
 
-`loader: {version, url, size, sha256, signed}`. `url` must start with `https://github.com/D2RLoader/Installer/releases/download/` (the official upstream installer; never rehosted or bundled). `version` must be in `compatibility.loader_versions`. `size` and `sha256` are real values of the upstream file. `signed` states whether that installer is Authenticode-signed and is disclosed to the player when false.
+`loader: {installer_version, installs_loader_version, url, size, sha256, signed}`. The installer and the loader it installs are versioned separately.
+
+- `installer_version` is the exact upstream release tag, such as `v0.1.0`.
+- `url` must be exactly `https://github.com/D2RLoader/Installer/releases/download/<installer_version>/<file>`, where `<file>` uses only `A-Z a-z 0-9 . _ + -` and does not start with `.`. No extra segments, percent-encoding, query or fragment are allowed, so the official prefix cannot be escaped. The installer is never rehosted or bundled.
+- `installs_loader_version` is the loader version that installer installs. It must be in `compatibility.loader_versions`.
+
+ `size` and `sha256` are real values of the upstream file. `signed` states whether that installer is Authenticode-signed and is disclosed to the player when false.
 
 ## Immutability
 
@@ -119,7 +127,7 @@ Each maps to a `CatalogError` variant and, over IPC, to an `ErrorCode`.
 
 ## Not covered here
 
-- Byte verification of downloaded manifests and archives and the extracted-tree check (download/extract, #35).
+- Byte verification of downloaded manifests and archives, HTTPS enforcement on redirects, and the extracted-tree check (download/extract, #35).
 - Caching validated metadata and offline reuse (State, #34).
 - Publisher signatures on game-release metadata: deferred by the owner (#6). HTTPS and hashes detect mismatches, not a malicious publisher.
 - Open question: if D2RLoader reads a required or save-format setting from a file outside the product's `install_root`, the setting needs a scope field in a later schema.
