@@ -4,7 +4,14 @@ fn main() {
     let windows = tauri_build::WindowsAttributes::new_without_app_manifest();
     // The ACL's list of app commands: anything registered but not listed here is
     // refused at IPC time. Each one also needs `allow-<name>` in capabilities/.
-    let commands = tauri_build::AppManifest::new().commands(&["ping"]);
+    let commands = tauri_build::AppManifest::new().commands(&[
+        "ping",
+        "get_product_state",
+        "inspect_operation",
+        "start_operation",
+        "cancel_operation",
+        "recover_product",
+    ]);
     let attributes = tauri_build::Attributes::new()
         .windows_attributes(windows)
         .app_manifest(commands);

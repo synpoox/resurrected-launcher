@@ -1,16 +1,19 @@
 //! App/Tauri module: narrow typed commands, progress/error events and the
 //! window/tray/single-instance lifecycle.
 //!
-//! The only command is [`ping`]. There is no generic shell, filesystem, download or
-//! execute command, and there must never be one: arguments from the frontend are
-//! product IDs and intents only, and Rust validates every request. Operation
-//! commands arrive with #40; tray and single instance with slice 4.
+//! Commands are [`ping`] and the install operation commands in [`operations`]
+//! (#40). There is no generic shell, filesystem, download or execute command, and
+//! there must never be one: arguments from the frontend are product IDs, intents,
+//! consents and inspection tokens only, and Rust validates every request. Tray and
+//! single instance arrive with slice 4.
 //!
 //! # Adding a command
 //!
 //! Registering a command in [`invoke_handler`] is not enough: the ACL refuses every
 //! app command that is not also listed in `build.rs` (`AppManifest::commands`) and
-//! granted as `allow-<name>` in `capabilities/`. The tests below check both sides.
+//! granted as `allow-<name>` in `capabilities/`. The tests below compare all three
+//! with the reviewed `COMMANDS` list; `src/ipc.test.ts` compares the frontend
+//! bindings with build.rs.
 //!
 //! # Provisional names
 //!
@@ -20,9 +23,23 @@
 //! follows the planned projectd2r.com domain and is equally provisional; changing it
 //! later moves the per-user data directory.
 
-use tauri::{ipc::Invoke, Runtime, WebviewUrl, WebviewWindowBuilder};
+mod operations;
+
+use std::sync::Arc;
+
+use tauri::path::BaseDirectory;
+use tauri::{ipc::Invoke, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
 
 use crate::contract::{PingResponse, Versioned, UMBRELLA_DISPLAY_NAME};
+use crate::install::download::Downloader;
+use crate::install::extract::SevenZip;
+use crate::install::preflight::SystemHost;
+use crate::state::StateStore;
+
+pub use operations::{
+    CachedReleases, ConflictView, InspectionView, Launcher, ProductState, RecoveryView, Release,
+    ReleaseSummary, Releases, OUTCOME_EVENT, PROGRESS_EVENT,
+};
 
 /// `ping` command: contract version, launcher version and the umbrella display name.
 #[tauri::command]
@@ -34,8 +51,17 @@ pub fn ping() -> Versioned<PingResponse> {
 }
 
 /// The registered command handler (generic so tests can use the mock runtime).
+/// Commands that touch installations need an `Arc<Launcher>` in managed state.
 pub fn invoke_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync + 'static {
-    tauri::generate_handler![ping]
+    // The allowlist test reads this list; keep it on one `generate_handler!`.
+    tauri::generate_handler![
+        ping,
+        operations::get_product_state,
+        operations::inspect_operation,
+        operations::start_operation,
+        operations::cancel_operation,
+        operations::recover_product
+    ]
 }
 
 /// Application entry point.
@@ -43,6 +69,16 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(invoke_handler())
         .setup(|app| {
+            let paths = app.path();
+            let seven_zip = paths.resolve("resources/7zip/7za.exe", BaseDirectory::Resource)?;
+            let launcher = Launcher::new(
+                StateStore::open(&paths.app_local_data_dir()?),
+                Box::new(CachedReleases),
+                Downloader::new(),
+                SevenZip::bundled(&seven_zip)?,
+                Box::new(SystemHost),
+            );
+            app.manage(Arc::new(launcher));
             // Built here so the title comes from the one display-name constant.
             // shortcut: native decorations until slice 4 adds the frameless title bar.
             WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
@@ -124,10 +160,66 @@ mod tests {
         }
     }
 
+    /// The command allowlist. Adding a command means adding it here, in
+    /// `invoke_handler`, in build.rs and in capabilities/, and passing review: no
+    /// generic shell, filesystem, path, download or execute command.
+    const COMMANDS: &[&str] = &[
+        "ping",
+        "get_product_state",
+        "inspect_operation",
+        "start_operation",
+        "cancel_operation",
+        "recover_product",
+    ];
+
+    fn root_file(rel: &str) -> String {
+        std::fs::read_to_string(format!("{}/{rel}", env!("CARGO_MANIFEST_DIR"))).unwrap()
+    }
+
+    /// The identifiers in the first `[...]` after `marker` in `text`.
+    fn listed(text: &str, marker: &str) -> Vec<String> {
+        let rest = &text[text.find(marker).expect(marker) + marker.len()..];
+        let list = &rest[rest.find('[').unwrap() + 1..rest.find(']').unwrap()];
+        list.split(',')
+            .map(|c| {
+                c.trim()
+                    .trim_matches('"')
+                    .rsplit("::")
+                    .next()
+                    .unwrap()
+                    .to_owned()
+            })
+            .filter(|c| !c.is_empty())
+            .collect()
+    }
+
+    fn registered() -> Vec<String> {
+        listed(&root_file("src/app/mod.rs"), "tauri::generate_handler!")
+    }
+
     #[test]
-    fn capabilities_grant_only_allow_ping() {
-        // #40 extends this list deliberately, together with build.rs.
-        const ALLOWED: &[&str] = &["allow-ping"];
+    fn registered_commands_match_the_allowlist() {
+        assert_eq!(registered(), COMMANDS, "invoke_handler");
+        let build = root_file("build.rs");
+        assert_eq!(
+            listed(&build, "AppManifest::new().commands("),
+            COMMANDS,
+            "build.rs"
+        );
+    }
+
+    #[test]
+    fn allowlist_check_catches_an_extra_registered_command() {
+        let sneaky = "tauri::generate_handler![ping, run_anything]";
+        assert_ne!(listed(sneaky, "tauri::generate_handler!"), COMMANDS);
+    }
+
+    #[test]
+    fn capabilities_grant_only_the_allowlisted_commands() {
+        let allowed: Vec<String> = COMMANDS
+            .iter()
+            .map(|c| format!("allow-{}", c.replace('_', "-")))
+            .collect();
         let root = env!("CARGO_MANIFEST_DIR");
         let mut granted = Vec::new();
         for entry in std::fs::read_dir(format!("{root}/capabilities")).unwrap() {
@@ -142,13 +234,10 @@ mod tests {
                 );
             }
         }
-        assert_eq!(granted, ALLOWED);
+        assert_eq!(granted, allowed);
 
         // Capabilities may also be declared inline in tauri.conf.json; none are allowed there.
-        let conf: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(format!("{root}/tauri.conf.json")).unwrap(),
-        )
-        .unwrap();
+        let conf: serde_json::Value = serde_json::from_str(&root_file("tauri.conf.json")).unwrap();
         let inline = &conf["app"]["security"]["capabilities"];
         assert!(
             inline.is_null() || inline.as_array().is_some_and(|a| a.is_empty()),

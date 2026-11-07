@@ -1,7 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window. Grants only the ping command; no core or plugin permissions.",
+  "description": "Main window. Grants only the launcher's own typed commands; no core or plugin permissions.",
   "windows": ["main"],
-  "permissions": ["allow-ping"]
+  "permissions": [
+    "allow-ping",
+    "allow-get-product-state",
+    "allow-inspect-operation",
+    "allow-start-operation",
+    "allow-cancel-operation",
+    "allow-recover-product"
+  ]
 }
