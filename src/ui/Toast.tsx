@@ -15,8 +15,11 @@ export interface ToastInput {
   autoDismiss?: boolean;
   /** The dismiss button's label (default "Dismiss"). */
   dismissLabel?: string;
-  /** Called when the player dismisses the toast or it times out, not when an action is chosen. */
-  onDismiss?: () => void;
+  /**
+   * Called when the toast closes without an action: `"player"` for the dismiss button, `"timeout"`
+   * for auto-dismiss. Choosing an action or a programmatic dismiss() doesn't call it.
+   */
+  onDismiss?: (by: "player" | "timeout") => void;
 }
 
 interface Toast extends ToastInput {
@@ -25,7 +28,10 @@ interface Toast extends ToastInput {
 
 interface ToastApi {
   show(toast: ToastInput): number;
-  /** Replaces an open toast's content in place. Does nothing if it has closed. */
+  /**
+   * Replaces an open toast's content in place. Does nothing if it has closed. The auto-dismiss
+   * timer is not restarted unless the update changes whether the toast auto-dismisses.
+   */
   update(id: number, toast: ToastInput): void;
   dismiss(id: number): void;
 }
@@ -78,7 +84,7 @@ function ToastView({ toast, dismiss }: { toast: Toast; dismiss: () => void }) {
     if (!auto) return;
     const t = setTimeout(() => {
       latest.current.dismiss();
-      latest.current.onDismiss?.();
+      latest.current.onDismiss?.("timeout");
     }, TOAST_MS);
     return () => clearTimeout(t);
   }, [auto]);
@@ -106,7 +112,7 @@ function ToastView({ toast, dismiss }: { toast: Toast; dismiss: () => void }) {
           className="link"
           onClick={() => {
             dismiss();
-            toast.onDismiss?.();
+            toast.onDismiss?.("player");
           }}
         >
           {toast.dismissLabel ?? "Dismiss"}

@@ -19,10 +19,10 @@ export type SelfUpdateSelection =
   | { ok: false; error: string }
   | null;
 
-/** Null when the flag is off. In dev builds, `?selfupdate=<key>` picks the fixture phase. */
-export function selectSelfUpdate(search: string, dev: boolean, enabled: boolean): SelfUpdateSelection {
+/** Null when the flag is off. `asked` is the dev `?selfupdate=<key>` value (null outside dev). */
+export function selectSelfUpdate(asked: string | null, enabled: boolean): SelfUpdateSelection {
   if (!enabled) return null;
-  const key = (dev ? new URLSearchParams(search).get("selfupdate") : null) ?? DEFAULT_SELF_UPDATE_FIXTURE;
+  const key = asked ?? DEFAULT_SELF_UPDATE_FIXTURE;
   if (!selfUpdateFixtureByKey(key)) {
     const known = SELF_UPDATE_FIXTURES.map((f) => f.key).join(", ");
     return { ok: false, error: `Unknown self-update fixture "${key}". Known fixtures: ${known}.` };

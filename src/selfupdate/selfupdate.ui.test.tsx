@@ -10,13 +10,16 @@ import { TOAST_MS, ToastProvider } from "../ui/Toast";
 import { createSelfUpdateFixture, SELF_UPDATE_FIXTURES, type SelfUpdatePhase, type SelfUpdateFixtureApi } from "./api";
 import { AUTO_DOWNLOAD_OFF_HINT, AUTO_DOWNLOAD_ON_HINT, versionStatus } from "./copy";
 import { selectSelfUpdate, selfUpdateEnabled } from "./flag";
+import { restartHold } from "./hold";
 import { SelfUpdateProvider } from "./SelfUpdate";
+import type { ProductMap } from "../product/store";
 
 let api: FixtureApi | null = null;
 let su: SelfUpdateFixtureApi | null = null;
 
-function mount(phase: string, scene = "ready", tick = 20) {
+function mount(phase: string, scene = "ready", tick = 20, prepare?: (api: FixtureApi) => void) {
   api = createFixtureApi(scene, { tick: 60_000 });
+  prepare?.(api);
   su = createSelfUpdateFixture(phase, { tick });
   const user = userEvent.setup();
   render(
@@ -61,7 +64,7 @@ describe("self-update flag", () => {
   });
 
   it("off: no fixture is created, so nothing runs", () => {
-    expect(selectSelfUpdate("?selfupdate=ready", true, false)).toBeNull();
+    expect(selectSelfUpdate("ready", false)).toBeNull();
   });
 
   it("off: nothing self-update-related renders, and Launcher shows only Settings' own rows", async () => {
@@ -86,8 +89,11 @@ describe("self-update flag", () => {
     expect(screen.getByRole("alert").textContent).toMatch(/Unknown self-update fixture "nope"/);
   });
 
-  it("on outside dev: ignores ?selfupdate= and starts up to date", () => {
-    const s = selectSelfUpdate("?selfupdate=ready", false, true);
+  it("on outside dev: ignores ?selfupdate= and starts up to date", async () => {
+    render(<App search="?selfupdate=nope" dev={false} selfUpdate />);
+    await screen.findByText(/Ready · alpha/);
+    expect(screen.queryByRole("alert")).toBeNull();
+    const s = selectSelfUpdate(null, true);
     expect(s?.ok && s.key).toBe("up-to-date");
     if (s?.ok) s.api.dispose();
   });
@@ -107,8 +113,6 @@ describe("fixtures", () => {
       "signature_rejected",
     ];
     expect([...phases].sort()).toEqual([...all].sort());
-    const holds = SELF_UPDATE_FIXTURES.flatMap((f) => (f.status.phase === "ready" && f.status.hold ? [f.status.hold.reason] : []));
-    expect(holds).toEqual(["product_running", "product_downloading"]);
     expect(SELF_UPDATE_FIXTURES.find((f) => f.key === "available")?.autoDownload).toBe(false);
   });
 
@@ -169,7 +173,7 @@ describe("toasts", () => {
   });
 
   it("held: Restart to update is disabled and the text says why", async () => {
-    mount("held-running", "running");
+    mount("ready", "running");
     const text = await within(notifications()).findByText(/Launcher 1.3.0 is ready/);
     expect(text.textContent).toBe("Launcher 1.3.0 is ready. Restarts after you quit PD2R, or it installs the next time you Quit.");
     const restart = within(notifications()).getByRole("button", { name: "Restart to update" }) as HTMLButtonElement;
@@ -177,16 +181,62 @@ describe("toasts", () => {
     expect(restart.getAttribute("aria-describedby")).toBe(text.id);
     cleanup();
     su?.dispose();
-    mount("held-downloading", "downloading");
+    mount("ready", "downloading");
     expect(await within(notifications()).findByText(/Restarts after PD2R finishes downloading/)).toBeTruthy();
   });
 
-  it("a hold that ends updates the open toast in place", async () => {
-    const { su } = mount("held-running", "running");
+  it("the hold follows product state: quitting the game updates the open toast in place", async () => {
+    const changed: (() => void)[] = [];
+    mount("ready", "running", 20, (a) => {
+      const subscribe = a.onStateChanged.bind(a);
+      a.onStateChanged = (h) => (changed.push(h), subscribe(h));
+    });
     await within(notifications()).findByText(/Restarts after you quit PD2R/);
-    act(() => su.emit({ phase: "ready", current: "1.2.0", next: "1.3.0", hold: null }));
+    const quit = sceneByKey("ready")!.state;
+    api!.getProductState = () => Promise.resolve(structuredClone(quit));
+    act(() => changed.forEach((h) => h()));
+    await waitFor(() =>
+      expect((within(notifications()).getByRole("button", { name: "Restart to update" }) as HTMLButtonElement).disabled).toBe(false),
+    );
     expect(within(notifications()).getAllByText(/Launcher 1.3.0 is ready/)).toHaveLength(1);
-    expect((within(notifications()).getByRole("button", { name: "Restart to update" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(within(notifications()).getByText("Launcher 1.3.0 is ready")).toBeTruthy();
+  });
+
+  it("restartHold: a running game first, then any operation in progress, else none", () => {
+    const map = (...keys: string[]): ProductMap =>
+      Object.fromEntries(keys.map((k) => { const st = sceneByKey(k)!.state; return [st.product_id, { state: st, error: null, samples: [] }]; }));
+    expect(restartHold(map("ready"))).toBeNull();
+    expect(restartHold(map("running"))).toEqual({ reason: "product_running", product_id: "pd2r" });
+    expect(restartHold(map("downloading"))).toEqual({ reason: "product_downloading", product_id: "pd2r" });
+    expect(restartHold({})).toBeNull();
+  });
+
+  it("available auto-dismisses like other information toasts, without leaving the dot", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mount("available");
+    await within(notifications()).findByText("Launcher 1.3.0 is available");
+    act(() => void vi.advanceTimersByTime(TOAST_MS + 10));
+    expect(within(notifications()).queryByText("Launcher 1.3.0 is available")).toBeNull();
+    expect(screen.queryByRole("img", { name: "launcher update" })).toBeNull();
+  });
+
+  it("a failure after Try again shows its error toast again", async () => {
+    const { user, su } = mount("download-failed");
+    const first = await within(notifications()).findByRole("alert");
+    await user.click(within(first).getByRole("button", { name: "Try again" }));
+    expect(within(notifications()).queryByRole("alert")).toBeNull();
+    act(() => su.emit({ phase: "downloading", current: "1.2.0", next: "1.3.0", percent: 12 }));
+    act(() => su.emit({ phase: "download_failed", current: "1.2.0", next: "1.3.0" }));
+    expect((await within(notifications()).findByRole("alert")).textContent).toContain("Couldn't download the launcher update");
+  });
+
+  it("a signature rejected again after Try again in Settings shows its error toast again", async () => {
+    const { user, su } = mount("signature-rejected");
+    await user.click(within(await within(notifications()).findByRole("alert")).getByRole("button", { name: "Later" }));
+    const panel = await openLauncherSettings(user);
+    await user.click(within(panel).getByRole("button", { name: "Try again" }));
+    act(() => su.emit({ phase: "signature_rejected", current: "1.2.0", next: "1.3.0" }));
+    expect((await within(notifications()).findByRole("alert")).textContent).toContain("Launcher update rejected");
   });
 
   it("available offers Download, What's new and Later; Download starts the download silently", async () => {
@@ -201,11 +251,11 @@ describe("toasts", () => {
     expect(await within(notifications()).findByText("Launcher 1.3.0 is ready")).toBeTruthy();
   });
 
-  it("What's new opens the notes and leaves the dot", async () => {
+  it("What's new opens the release notes and doesn't leave the dot", async () => {
     const { user, su } = mount("available");
     await user.click(await within(notifications()).findByRole("button", { name: "What's new" }));
     expect(names(su)).toContain("openWhatsNew");
-    expect(screen.getByRole("img", { name: "launcher update" })).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "launcher update" })).toBeNull();
   });
 
   it("Restart to update shows the restarting screen, then Updated with What's new, which auto-dismisses", async () => {
@@ -238,7 +288,7 @@ describe("toasts", () => {
     expect(names(su)).toContain("download");
   });
 
-  it("signature rejected: Export diagnostics opens the diagnostics dialog; Later leaves the dot", async () => {
+  it("signature rejected: Export diagnostics opens the diagnostics dialog and leaves no dot", async () => {
     const { user } = mount("signature-rejected");
     const alert = await within(notifications()).findByRole("alert");
     expect(alert.textContent).toContain(
@@ -248,6 +298,12 @@ describe("toasts", () => {
     expect(screen.getByRole("dialog", { name: "Review diagnostics before saving" })).toBeTruthy();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("img", { name: "launcher update" })).toBeNull();
+  });
+
+  it("Later on a failure leaves the dot", async () => {
+    const { user } = mount("download-failed");
+    await user.click(within(await within(notifications()).findByRole("alert")).getByRole("button", { name: "Later" }));
     expect(screen.getByRole("img", { name: "launcher update" })).toBeTruthy();
   });
 
@@ -326,7 +382,7 @@ describe("Settings → Launcher", () => {
   });
 
   it("held: Restart to update is disabled with the reason next to it", async () => {
-    const { user } = mount("held-downloading", "downloading");
+    const { user } = mount("ready", "downloading");
     const panel = await openLauncherSettings(user);
     const restart = (await within(panel).findByRole("button", { name: "Restart to update" })) as HTMLButtonElement;
     expect(restart.disabled).toBe(true);

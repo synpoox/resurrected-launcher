@@ -1,6 +1,6 @@
 import { PRODUCTS } from "../products";
 import type { Badge } from "../product/journey";
-import { SettingsDot } from "../selfupdate/RestartingScreen";
+import { SettingsDot } from "../selfupdate/SettingsDot";
 import { arrowKeys } from "../ui/focus";
 import { BRANDING } from "./branding";
 

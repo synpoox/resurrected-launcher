@@ -2,18 +2,13 @@
 // fixtures below only. Slice 5 implements SelfUpdateApi with the signed Tauri updater.
 import type { Unlisten } from "../api/types";
 
-/** Why Restart to update waits: a product is running or downloading. It still installs on the next Quit. */
-export interface RestartHold {
-  reason: "product_running" | "product_downloading";
-  product_id: string;
-}
-
 /** Where the launcher's own update is. `current` is the running launcher's version. */
 export type SelfUpdateStatus =
   | { phase: "up_to_date"; current: string }
   | { phase: "available"; current: string; next: string }
   | { phase: "downloading"; current: string; next: string; percent: number }
-  | { phase: "ready"; current: string; next: string; hold: RestartHold | null }
+  /** Restart to update may still be held by product state (see hold.ts). */
+  | { phase: "ready"; current: string; next: string }
   | { phase: "restarting"; current: string; next: string }
   /** After the restart that installed it: `current` is the new version. */
   | { phase: "updated"; current: string }
@@ -29,9 +24,9 @@ export interface SelfUpdateApi {
   checkForUpdates(): Promise<void>;
   /** Starts (or retries) downloading the update the last check found. */
   download(): Promise<void>;
-  /** Installs the ready update and restarts the launcher. Refused while a restart hold applies. */
+  /** Installs the ready update and restarts the launcher. The UI offers it only while no product holds the restart. */
   restartToUpdate(): Promise<void>;
-  /** Opens the launcher's release notes outside the launcher. The native side owns the address. */
+  /** Opens the launcher's release notes page in the browser. The native side owns the address. */
   openWhatsNew(): Promise<void>;
   getAutoDownload(): Promise<boolean>;
   setAutoDownload(enabled: boolean): Promise<void>;
@@ -52,24 +47,15 @@ export interface SelfUpdateFixture {
 
 const v = { current: FIXTURE_CURRENT, next: FIXTURE_NEXT };
 
-/** One fixture per phase. In dev, `?selfupdate=<key>` selects one. */
+/**
+ * One fixture per phase. In dev, `?selfupdate=<key>` selects one. The held restart comes from
+ * product state: pair `ready` with `?fixture=running` or `?fixture=downloading`.
+ */
 export const SELF_UPDATE_FIXTURES: readonly SelfUpdateFixture[] = [
   { key: "up-to-date", name: "Up to date", status: { phase: "up_to_date", current: FIXTURE_CURRENT }, autoDownload: true },
   { key: "available", name: "Available (automatic downloads off)", status: { phase: "available", ...v }, autoDownload: false },
   { key: "downloading", name: "Downloading", status: { phase: "downloading", ...v, percent: 38 }, autoDownload: true },
-  { key: "ready", name: "Ready", status: { phase: "ready", ...v, hold: null }, autoDownload: true },
-  {
-    key: "held-running",
-    name: "Ready, held: product running",
-    status: { phase: "ready", ...v, hold: { reason: "product_running", product_id: "pd2r" } },
-    autoDownload: true,
-  },
-  {
-    key: "held-downloading",
-    name: "Ready, held: product downloading",
-    status: { phase: "ready", ...v, hold: { reason: "product_downloading", product_id: "pd2r" } },
-    autoDownload: true,
-  },
+  { key: "ready", name: "Ready", status: { phase: "ready", ...v }, autoDownload: true },
   { key: "restarting", name: "Restarting", status: { phase: "restarting", ...v }, autoDownload: true },
   { key: "updated", name: "Updated", status: { phase: "updated", current: FIXTURE_NEXT }, autoDownload: true },
   { key: "download-failed", name: "Download failed", status: { phase: "download_failed", ...v }, autoDownload: true },
@@ -136,7 +122,7 @@ export function createSelfUpdateFixture(key: string, options: SelfUpdateFixtureO
     clear();
     const current = status.current;
     DOWNLOAD_STEPS.forEach((percent, i) => later(i * tick, () => emit({ phase: "downloading", current, next, percent })));
-    later(DOWNLOAD_STEPS.length * tick, () => emit({ phase: "ready", current, next, hold: null }));
+    later(DOWNLOAD_STEPS.length * tick, () => emit({ phase: "ready", current, next }));
   };
   const refuse = (message: string) => Promise.reject(new Error(message));
 
@@ -175,7 +161,6 @@ export function createSelfUpdateFixture(key: string, options: SelfUpdateFixtureO
       record("restartToUpdate");
       const s = status;
       if (s.phase !== "ready") return refuse(`Not ready: ${s.phase}`);
-      if (s.hold) return refuse("Restart is held");
       emit({ phase: "restarting", current: s.current, next: s.next });
       later(tick * 2, () => emit({ phase: "updated", current: s.next }));
       return Promise.resolve();

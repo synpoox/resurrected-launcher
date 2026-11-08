@@ -1,14 +1,19 @@
 // Variant C (#28): a toast when something needs the player, then a dot on Settings if they choose
 // Later. The notice never enters a product's hero, notice or action row, and there is no tray item.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useApi } from "../api/context";
+import { useProducts } from "../product/store";
 import { DiagnosticsDialog } from "../settings/DiagnosticsDialog";
 import { useToast, type ToastInput } from "../ui/Toast";
 import type { SelfUpdateApi, SelfUpdateStatus } from "./api";
 import { availableText, downloadFailedText, readyText, rejectedText, updatedText } from "./copy";
+import { restartHold, type RestartHold } from "./hold";
 
 export interface SelfUpdate {
   /** Null until the first status arrives. */
   status: SelfUpdateStatus | null;
+  /** Why Restart to update waits, from product state; null when it can restart now. */
+  hold: RestartHold | null;
   /** Null until read. */
   autoDownload: boolean | null;
   /** The red dot on the Settings sidebar item. */
@@ -33,12 +38,24 @@ const toastKey = (s: SelfUpdateStatus) => `${s.phase}:${"next" in s ? s.next : s
 
 export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; children: ReactNode }) {
   const toast = useToast();
+  const { products } = useProducts(useApi());
   const [status, setStatus] = useState<SelfUpdateStatus | null>(null);
   const [autoDownload, setAuto] = useState<boolean | null>(null);
   const [dot, setDot] = useState(false);
   const [diagnostics, setDiagnostics] = useState(false);
-  const open = useRef<{ id: number; key: string } | null>(null);
-  const shown = useRef<string | null>(null);
+  /** The self-update toast on screen now, if any. */
+  const openToast = useRef<{ id: number; key: string } | null>(null);
+  /** The key of the last toast shown, so a re-sent status doesn't show it twice. */
+  const lastShownKey = useRef<string | null>(null);
+
+  // Compared by value, so unrelated product changes don't rebuild the toast.
+  const computed = restartHold(products);
+  const reason = computed?.reason;
+  const holder = computed?.product_id;
+  const hold = useMemo<RestartHold | null>(
+    () => (reason && holder ? { reason, product_id: holder } : null),
+    [reason, holder],
+  );
 
   useEffect(() => {
     let live = true;
@@ -66,29 +83,40 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
     () => toast.show({ tone: "error", text: "Couldn't start the launcher update. Try again from Settings → Launcher." }),
     [toast],
   );
-  const download = useCallback(() => void api.download().catch(failed), [api, failed]);
+  const download = useCallback(() => {
+    // A new attempt: if it fails again, its failure toast shows again.
+    lastShownKey.current = null;
+    void api.download().catch(failed);
+  }, [api, failed]);
   const restart = useCallback(() => void api.restartToUpdate().catch(failed), [api, failed]);
   const whatsNew = useCallback(() => void api.openWhatsNew().catch(() => {}), [api]);
 
-  // Closing a toast without starting the update leaves the dot.
-  const later = useCallback(() => setDot(true), []);
+  // Only Later leaves the dot (owner decision on PR 105): not What's new, Export diagnostics or a timeout.
+  const later = useCallback((by: "player" | "timeout") => {
+    if (by === "player") setDot(true);
+  }, []);
 
   useEffect(() => {
     if (!status) return;
     const key = toastKey(status);
-    const input = toastFor(status, { download, restart, whatsNew, later, diagnostics: () => setDiagnostics(true) });
-    if (open.current?.key === key) {
+    const input = toastFor(status, hold, { download, restart, whatsNew, later, diagnostics: () => setDiagnostics(true) });
+    if (openToast.current?.key === key) {
       // Same phase and release, new details (a restart hold began or ended).
-      if (input) toast.update(open.current.id, input);
+      if (input) toast.update(openToast.current.id, input);
       return;
     }
-    if (open.current) toast.dismiss(open.current.id);
-    open.current = null;
-    if (input && shown.current !== key) {
-      shown.current = key;
-      open.current = { id: toast.show(input), key };
+    if (openToast.current) toast.dismiss(openToast.current.id);
+    openToast.current = null;
+    if (!input) {
+      // A silent phase (downloading, restarting) ends the last toast's turn: a later failure shows again.
+      lastShownKey.current = null;
+      return;
     }
-  }, [status, toast, download, restart, whatsNew, later]);
+    if (lastShownKey.current !== key) {
+      lastShownKey.current = key;
+      openToast.current = { id: toast.show(input), key };
+    }
+  }, [status, hold, toast, download, restart, whatsNew, later]);
 
   const setAutoDownload = useCallback(
     (on: boolean) => {
@@ -111,8 +139,8 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
   const clearDot = useCallback(() => setDot(false), []);
 
   const value = useMemo<SelfUpdate>(
-    () => ({ status, autoDownload, dot, clearDot, check, download, restart, whatsNew, setAutoDownload }),
-    [status, autoDownload, dot, clearDot, check, download, restart, whatsNew, setAutoDownload],
+    () => ({ status, hold, autoDownload, dot, clearDot, check, download, restart, whatsNew, setAutoDownload }),
+    [status, hold, autoDownload, dot, clearDot, check, download, restart, whatsNew, setAutoDownload],
   );
   return (
     <SelfUpdateContext.Provider value={value}>
@@ -126,22 +154,26 @@ interface ToastHandlers {
   download(): void;
   restart(): void;
   whatsNew(): void;
-  later(): void;
+  later(by: "player" | "timeout"): void;
   diagnostics(): void;
 }
 
-/** The toast for a status, or null: downloading and restarting are silent, and so is up to date. */
-function toastFor(s: SelfUpdateStatus, h: ToastHandlers): ToastInput | null {
-  const notes = { label: "What's new", onSelect: () => (h.whatsNew(), h.later()) };
+/**
+ * The toast for a status, or null: downloading and restarting are silent, and so is up to date.
+ * The Settings dot comes only from Later, on available, ready and failure toasts.
+ */
+function toastFor(s: SelfUpdateStatus, hold: RestartHold | null, h: ToastHandlers): ToastInput | null {
+  const notes = { label: "What's new", onSelect: h.whatsNew };
   const pending = { dismissLabel: "Later", onDismiss: h.later };
   switch (s.phase) {
     case "available":
+      // Information: auto-dismisses (spec: Toast), unlike ready.
       return { tone: "info", text: availableText(s.next), actions: [{ label: "Download", onSelect: h.download }, notes], ...pending };
     case "ready":
       return {
         tone: "info",
-        text: readyText(s.next, s.hold),
-        actions: [{ label: "Restart to update", onSelect: h.restart, disabled: Boolean(s.hold) }, notes],
+        text: readyText(s.next, hold),
+        actions: [{ label: "Restart to update", onSelect: h.restart, disabled: hold !== null }, notes],
         autoDismiss: false,
         ...pending,
       };
@@ -153,10 +185,12 @@ function toastFor(s: SelfUpdateStatus, h: ToastHandlers): ToastInput | null {
       return {
         tone: "error",
         text: rejectedText(s.next, s.current),
-        actions: [{ label: "Export diagnostics", onSelect: () => (h.diagnostics(), h.later()) }],
+        actions: [{ label: "Export diagnostics", onSelect: h.diagnostics }],
         ...pending,
       };
-    default:
+    case "up_to_date":
+    case "downloading":
+    case "restarting":
       return null;
   }
 }

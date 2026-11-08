@@ -49,6 +49,89 @@ describe("Toast", () => {
     expect(onRetry).toHaveBeenCalled();
     expect(screen.queryByRole("alert")).toBeNull();
   });
+
+  it("dismissLabel replaces Dismiss; onDismiss says who closed it, and actions don't call it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const onDismiss = vi.fn();
+    const onGo = vi.fn();
+    const toast: ToastInput = {
+      tone: "info",
+      text: "Pending",
+      actions: [{ label: "Go", onSelect: onGo }],
+      dismissLabel: "Later",
+      onDismiss,
+    };
+    render(
+      <ToastProvider>
+        <Shower toast={toast} />
+      </ToastProvider>,
+    );
+    await user.click(screen.getByText("show"));
+    expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Later" }));
+    expect(onDismiss).toHaveBeenCalledWith("player");
+
+    await user.click(screen.getByText("show"));
+    act(() => void vi.advanceTimersByTime(TOAST_MS + 10));
+    expect(onDismiss).toHaveBeenLastCalledWith("timeout");
+    expect(screen.queryByText("Pending")).toBeNull();
+
+    onDismiss.mockClear();
+    await user.click(screen.getByText("show"));
+    await user.click(screen.getByRole("button", { name: "Go" }));
+    expect(onGo).toHaveBeenCalled();
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(screen.queryByText("Pending")).toBeNull();
+  });
+
+  it("a disabled action is skipped by Tab and described by the toast's text", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(
+      <ToastProvider>
+        <Shower toast={{ tone: "info", text: "Held for now", autoDismiss: false, actions: [{ label: "Restart", onSelect, disabled: true }] }} />
+      </ToastProvider>,
+    );
+    await user.click(screen.getByText("show"));
+    const restart = screen.getByRole("button", { name: "Restart" }) as HTMLButtonElement;
+    expect(restart.disabled).toBe(true);
+    expect(document.getElementById(restart.getAttribute("aria-describedby")!)?.textContent).toBe("Held for now");
+    await user.click(restart);
+    expect(onSelect).not.toHaveBeenCalled();
+    screen.getByText("show").focus();
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Dismiss" }));
+  });
+
+  it("update() replaces an open toast in place and ignores a closed one", async () => {
+    const user = userEvent.setup();
+    function Updater() {
+      const { show, update } = useToast();
+      const [id, setId] = useState<number | null>(null);
+      return (
+        <>
+          <button type="button" onClick={() => setId(show({ tone: "info", text: "One", autoDismiss: false }))}>
+            show
+          </button>
+          <button type="button" onClick={() => id !== null && update(id, { tone: "info", text: "Two", autoDismiss: false })}>
+            update
+          </button>
+        </>
+      );
+    }
+    render(
+      <ToastProvider>
+        <Updater />
+      </ToastProvider>,
+    );
+    await user.click(screen.getByText("show"));
+    await user.click(screen.getByText("update"));
+    expect(screen.getAllByRole("status").map((s) => s.querySelector("p")?.textContent)).toEqual(["Two"]);
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    await user.click(screen.getByText("update"));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
 });
 
 describe("Switch", () => {

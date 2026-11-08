@@ -1,6 +1,7 @@
 // Self-update copy (spec: Launcher self-update), kept pure so it can be tested on its own.
 import { productById } from "../products";
-import type { RestartHold, SelfUpdateStatus } from "./api";
+import type { SelfUpdateStatus } from "./api";
+import type { RestartHold } from "./hold";
 
 /** "Restarts after you quit PD2R" / "Restarts after PD2R finishes downloading". */
 export function holdText(hold: RestartHold): string {

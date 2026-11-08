@@ -48,7 +48,7 @@ function VersionRow({ su }: { su: SelfUpdate }) {
       </button>
     );
   else if (s.phase === "ready" || s.phase === "restarting") {
-    const why = s.phase === "ready" && s.hold ? holdText(s.hold) : null;
+    const why = s.phase === "ready" && su.hold ? holdText(su.hold) : null;
     control = (
       <>
         <button
