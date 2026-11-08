@@ -1,0 +1,113 @@
+# Contributing
+
+Developer guide for the launcher. For what the launcher does for players, see the [README](README.md).
+
+## Status
+
+The native core is implemented and tested. The UI runs on fixture data until it is connected to the native commands in [#79](https://github.com/synpoox/resurrected-launcher/issues/79).
+
+**Still planned:**
+- Tray, frameless window, single instance and close-to-tray: [#75](https://github.com/synpoox/resurrected-launcher/issues/75)
+- Signed launcher self-updates: [#78](https://github.com/synpoox/resurrected-launcher/issues/78), [#88](https://github.com/synpoox/resurrected-launcher/issues/88)
+- News feed source: [#80](https://github.com/synpoox/resurrected-launcher/issues/80)
+
+The v1 build is tracked in [#41](https://github.com/synpoox/resurrected-launcher/issues/41).
+
+## Tech stack
+
+| Layer | Stack |
+| --- | --- |
+| App shell | [Tauri 2](https://tauri.app) ([ADR 0003](docs/adr/0003-tauri-with-signed-launcher-updates.md)) |
+| UI | React 19, TypeScript, Vite |
+| Native core | Rust 1.90 (`src-tauri/`) |
+| Tests | Vitest and Testing Library; `cargo test` |
+| Installer | NSIS, per-user install |
+
+## Requirements
+
+- Windows 10 or 11. The native core uses Windows APIs, and CI runs on `windows-latest`.
+- Node.js 22 and npm.
+- Rust through [rustup](https://rustup.rs). `src-tauri/rust-toolchain.toml` pins 1.90.0 with clippy and rustfmt, and rustup installs it on first use.
+- [Tauri's Windows prerequisites](https://tauri.app/start/prerequisites/#windows): Microsoft C++ Build Tools and WebView2.
+
+You don't need D2R for development. The UI uses fixtures, and the Rust tests use disposable fixture installations.
+
+## Getting started
+
+```sh
+git clone https://github.com/synpoox/resurrected-launcher.git
+cd resurrected-launcher
+npm ci
+npm run tauri dev
+```
+
+In dev builds, `?fixture=<key>` picks a journey state, and ← / → cycle through them. To work on the UI in a browser without the native shell, run `npm run dev` and open <http://localhost:1420>.
+
+To make a release build, run:
+
+```sh
+npx tauri build
+```
+
+It writes an NSIS installer under `src-tauri/target/release/bundle/nsis/`. Signed release builds run in CI. See [launcher signing](docs/release/launcher-signing.md).
+
+## Tests and lint
+
+These are the same checks [CI](.github/workflows/ci.yml) runs.
+
+```sh
+npm run typecheck
+npm run lint
+npm test
+
+cd src-tauri
+cargo fmt --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
+```
+
+The slice 3 gate's phase A runs against a real D2R copy only when `SLICE3_GATE_D2R` is set, and skips otherwise. Point it only at a disposable copy, never at a live installation.
+
+## Project layout
+
+```text
+src/                 React UI
+  api/               LauncherApi seam and fixture scenes
+  shell/             window, sidebar, title bar
+  product/           product page, Patch Notes, journey dialogs
+  settings/          Settings and troubleshooting
+src-tauri/           Tauri app and Rust native core
+  src/app/           Tauri commands, window, settings
+  src/catalog/       release feed and manifest validation
+  src/install/       download, extract, install transactions, recovery
+  src/game/          D2R detection, readiness, launch, process tracking
+  src/state/         preferences, cached metadata, diagnostics
+  src/contract/      types shared with the frontend
+  resources/7zip/    bundled 7-Zip console
+  tests/             integration tests, failure matrix, slice 3 gate
+fixtures/            catalog documents and fixture product installations
+docs/                specs, ADRs, release docs, screenshots
+```
+
+## Documentation
+
+| Topic | Document |
+| --- | --- |
+| Vocabulary | [GLOSSARY.md](GLOSSARY.md) |
+| Launcher v1 spec (index) | [docs/specs/launcher-v1.md](docs/specs/launcher-v1.md) |
+| UI design spec | [docs/specs/launcher-ui.md](docs/specs/launcher-ui.md) |
+| Release feed and manifest | [docs/specs/release-manifest.md](docs/specs/release-manifest.md) |
+| Architecture decisions | [docs/adr/](docs/adr) |
+| Launcher release signing | [docs/release/launcher-signing.md](docs/release/launcher-signing.md) |
+| Third-party components | [docs/third-party.md](docs/third-party.md) |
+| Shared website context | [docs/agents/web-context.md](docs/agents/web-context.md) |
+| Screenshots of every UI state | [docs/screenshots/76/](docs/screenshots/76), [docs/screenshots/77/](docs/screenshots/77) |
+
+## Workflow
+
+- Work is tracked in [GitHub Issues](https://github.com/synpoox/resurrected-launcher/issues).
+- Read [AGENTS.md](AGENTS.md) and the [glossary](GLOSSARY.md) first, and use glossary terms in issues and PRs.
+- Flag any change that contradicts an [ADR](docs/adr).
+- PRs must pass CI.
+
+By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE). The bundled 7-Zip in `src-tauri/resources/7zip/` keeps its own license (see its `License.txt`).
