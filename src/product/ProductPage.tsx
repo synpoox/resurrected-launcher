@@ -16,6 +16,7 @@ import type { Product } from "../products";
 import { arrowKeys } from "../ui/focus";
 import { Menu, type MenuItem } from "../ui/Menu";
 import { Notice } from "../ui/Notice";
+import { pendingProps, Spinner, usePending } from "../ui/pending";
 import { useToast } from "../ui/Toast";
 import { CleanInstallDialog, LocationDialog, SaveBreakingDialog, UninstallDialog } from "./dialogs";
 import { formatBytes, formatCount, formatTimeLeft, releaseLabel, startedAgo } from "./format";
@@ -43,8 +44,9 @@ export const seenKey = (productId: string) => `launcher.patchNotesSeen.${product
 type DialogState =
   | { kind: "locate" }
   | { kind: "save-breaking"; inspection: Inspection }
-  | { kind: "uninstall"; inspection: Inspection; report: OutcomeReport | null }
-  | { kind: "clean-install"; inspection: Inspection }
+  // Issue 138: consent dialogs open on the click, with a null inspection until it answers.
+  | { kind: "uninstall"; inspection: Inspection | null; report: OutcomeReport | null }
+  | { kind: "clean-install"; inspection: Inspection | null }
   | null;
 
 export interface ProductPageProps {
@@ -161,6 +163,8 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   const [installInspection, setInstallInspection] = useState<Inspection | null>(null);
   const [repairInspection, setRepairInspection] = useState<Inspection | null>(null);
   const [showFix, setShowFix] = useState(false);
+  // Issue 138: one action at a time, busy from the click until its result or dialog arrives.
+  const pending = usePending();
   const opened = useRef(false);
   const focused = useRef(0);
   const ids = { overview: useId(), notes: useId(), notice: useId(), line: useId(), why: useId() };
@@ -224,30 +228,39 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
     [api, product.id, refresh, fail],
   );
 
-  const run = useCallback(
+  /** Inspects, then opens the operation's dialog or starts it. Callers hold the pending slot. */
+  const runOp = useCallback(
     async (kind: OperationKind) => {
+      // Consent dialogs show at once, with a loading state inside, while the inspection runs.
+      if (kind === "uninstall") setDialog({ kind: "uninstall", inspection: null, report: null });
+      if (kind === "clean_install") setDialog({ kind: "clean-install", inspection: null });
+      let inspection: Inspection;
       try {
-        const inspection = await api.inspectOperation({ product_id: product.id, kind });
-        if (kind === "update" && inspection.release.save_breaking) {
-          setDialog({ kind: "save-breaking", inspection });
-          return;
-        }
-        if (kind === "uninstall") {
-          setDialog({ kind: "uninstall", inspection, report: null });
-          return;
-        }
-        if (kind === "clean_install") {
-          setDialog({ kind: "clean-install", inspection });
-          return;
-        }
-        if (kind === "repair") setRepairInspection(inspection);
-        await start(kind, inspection);
+        inspection = await api.inspectOperation({ product_id: product.id, kind });
       } catch (e) {
+        if (kind === "uninstall" || kind === "clean_install") setDialog(null);
         fail(e);
+        return;
       }
+      // Fill the dialog only if it is still open (Not now may have closed it meanwhile).
+      if (kind === "uninstall") {
+        setDialog((d) => (d?.kind === "uninstall" ? { ...d, inspection } : d));
+        return;
+      }
+      if (kind === "clean_install") {
+        setDialog((d) => (d?.kind === "clean-install" ? { ...d, inspection } : d));
+        return;
+      }
+      if (kind === "update" && inspection.release.save_breaking) {
+        setDialog({ kind: "save-breaking", inspection });
+        return;
+      }
+      if (kind === "repair") setRepairInspection(inspection);
+      await start(kind, inspection);
     },
     [api, product.id, start, fail],
   );
+  const run = useCallback((kind: OperationKind) => pending.run(kind, () => runOp(kind)), [pending, runOp]);
 
   const play = async () => {
     try {
@@ -257,7 +270,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
       fail(e);
     }
   };
-  const cancel = () => void api.cancelOperation(product.id).then(refresh, fail);
+  const cancel = () => api.cancelOperation(product.id).then(refresh, fail);
   const checkAgain = async () => {
     try {
       if (state.readiness.status === "recovery_required") await api.recoverProduct(product.id);
@@ -266,7 +279,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
       fail(e);
     }
   };
-  const tryCatalog = () => void api.refreshCatalog().then(refresh, fail);
+  const tryCatalog = () => api.refreshCatalog().then(refresh, fail);
 
   // Fixture scenes open a dialog, the menu or an operation once state has loaded.
   useEffect(() => {
@@ -328,6 +341,19 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
       {text}
     </button>
   );
+  /** An action button in the pending group: a spinner while it runs, and no second submit. */
+  const busy = (tone: "primary" | "ghost", text: string, key: string, fn: () => Promise<unknown>) => (
+    <button
+      type="button"
+      className={`btn ${tone}`}
+      {...pendingProps(pending.key, key)}
+      onClick={() => void pending.run(key, fn)}
+    >
+      {pending.key === key && <Spinner />}
+      {text}
+    </button>
+  );
+  const cancelProps = { busy: pending.key === "cancel", onCancel: () => void pending.run("cancel", cancel) };
 
   const percent = stats.percent;
   const sizeDetail = () => {
@@ -354,8 +380,8 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
       case "loader-missing":
         return (
           <>
-            {primary("Get D2RLoader", () => void api.openLoaderDownloadPage().catch(fail))}
-            {!compact && ghost("Check again", () => void checkAgain())}
+            {busy("primary", "Get D2RLoader", "loader", () => api.openLoaderDownloadPage().catch(fail))}
+            {!compact && busy("ghost", "Check again", "check", checkAgain)}
           </>
         );
       case "install": {
@@ -364,7 +390,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         if (existing === "adoptable") {
           return (
             <>
-              {primary("Adopt", () => void run("adopt"))}
+              {busy("primary", "Adopt", "adopt", () => runOp("adopt"))}
               {!compact && line("ok", `${offered} is already in your game folder · Adopt uses it without downloading`)}
             </>
           );
@@ -372,7 +398,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         if (existing === "different") {
           return (
             <>
-              {primary("Clean install…", () => void run("clean_install"))}
+              {busy("primary", "Clean install…", "clean_install", () => runOp("clean_install"))}
               {!compact &&
                 line("warn", `The ${product.short} in your game folder isn't ${offered} · older or changed files`)}
             </>
@@ -381,7 +407,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         const missing = existing === "incomplete" && installInspection ? installInspection.files_added : 0;
         return (
           <>
-            {primary("Install", () => void run("install"))}
+            {busy("primary", "Install", "install", () => runOp("install"))}
             {!compact &&
               line(
                 "idle",
@@ -405,7 +431,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
             percent={percent}
             detail={sizeDetail()}
             cancelLabel="Cancel"
-            onCancel={cancel}
+            {...cancelProps}
           />
         );
       case "applying":
@@ -416,7 +442,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
             percent={percent}
             detail="Cancelling now waits until it's safe to stop, or rolls back"
             cancelLabel="Cancel safely"
-            onCancel={cancel}
+            {...cancelProps}
           />
         );
       case "cancelling":
@@ -438,7 +464,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         if (repairInspection) parts.push(`${formatCount(repairInspection.files_replaced_or_removed)} to restore`);
         parts.push("saves and edited filters are kept");
         return (
-          <Progress compact={compact} label="Repairing" percent={percent} detail={parts.join(" · ")} cancelLabel="Cancel" onCancel={cancel} />
+          <Progress compact={compact} label="Repairing" percent={percent} detail={parts.join(" · ")} cancelLabel="Cancel" {...cancelProps} />
         );
       }
       case "ready":
@@ -447,7 +473,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         const latest = installed && recommended?.release_id === installed.release_id;
         return (
           <>
-            {primary("Play", () => void play())}
+            {busy("primary", "Play", "play", play)}
             {!compact && manage}
             {!compact &&
               (journey === "offline"
@@ -459,8 +485,8 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
       case "update":
         return (
           <>
-            {primary("Update", () => void run("update"))}
-            {!compact && installed && ghost(`Play ${installed.display_version}`, () => void play())}
+            {busy("primary", "Update", "update", () => runOp("update"))}
+            {!compact && installed && busy("ghost", `Play ${installed.display_version}`, "play", play)}
             {!compact && manage}
             {!compact && offered && line("new", `${offered} available`)}
           </>
@@ -474,7 +500,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
                 Can't play yet. Overview says why.
               </span>
             )}
-            {!compact && ghost("Check again", () => void checkAgain())}
+            {!compact && busy("ghost", "Check again", "check", checkAgain)}
             {!compact && manage}
           </>
         );
@@ -493,15 +519,15 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
       case "startup-failed":
         return (
           <>
-            {primary("Try again", () => void play())}
-            {!compact && ghost("Repair", () => void run("repair"))}
+            {busy("primary", "Try again", "play", play)}
+            {!compact && busy("ghost", "Repair", "repair", () => runOp("repair"))}
             {!compact && ghost("Export diagnostics", onOpenSettings)}
           </>
         );
       case "offline-empty":
         return (
           <>
-            {primary("Try again", tryCatalog)}
+            {busy("primary", "Try again", "catalog", tryCatalog)}
             {!compact && line("warn", "Can't reach the release catalog")}
           </>
         );
@@ -670,7 +696,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           onClose={closeDialog}
           onConfirm={() => {
             closeDialog();
-            void start("update", dialog.inspection, { acknowledge_save_breaking: true });
+            void pending.run("update", () => start("update", dialog.inspection, { acknowledge_save_breaking: true }));
           }}
         />
       )}
@@ -679,8 +705,9 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           product={product}
           inspection={dialog.inspection}
           report={dialog.report}
+          busy={pending.key === "uninstall"}
           onClose={closeDialog}
-          onConfirm={() => void start("uninstall", dialog.inspection)}
+          onConfirm={(inspection) => void pending.run("uninstall", () => start("uninstall", inspection))}
         />
       )}
       {dialog?.kind === "clean-install" && (
@@ -688,9 +715,9 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           product={product}
           inspection={dialog.inspection}
           onClose={closeDialog}
-          onConfirm={() => {
+          onConfirm={(inspection) => {
             closeDialog();
-            void start("clean_install", dialog.inspection, { consent_clean_install: true });
+            void pending.run("clean_install", () => start("clean_install", inspection, { consent_clean_install: true }));
           }}
         />
       )}
