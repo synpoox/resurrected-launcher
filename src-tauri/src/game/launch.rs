@@ -66,8 +66,11 @@ pub fn play(
 
 /// See [`GameHost::spawn`] (`std::process::Command`, never a shell).
 ///
-/// The game must outlive the launcher. Null stdio means it holds none of the
-/// launcher's handles, and dropping the `Child` closes our handle without killing
+/// The game must outlive the launcher, holding none of its handles. Std spawns
+/// with handle inheritance on, so the launcher's own std handles (pipes when it
+/// was started by a script, CI or `tauri dev`) are made non-inheritable first;
+/// otherwise a parent reading such a pipe would wait for the game to exit (#71).
+/// The game gets null stdio, and dropping the `Child` closes our handle without killing
 /// it. If the launcher runs in a job object that kills its processes on close, the
 /// game is created with `CREATE_BREAKAWAY_FROM_JOB`; a job that forbids breakaway
 /// makes that fail with access denied, and the game is started inside it instead.
@@ -76,6 +79,8 @@ pub fn play(
 /// program (PE subsystem 2, checked on the owner's copy), so it never attaches to
 /// the launcher's console or receives its Ctrl+C.
 pub(super) fn system_spawn(exe: &Path, args: &[String], cwd: &Path) -> io::Result<u32> {
+    #[cfg(windows)]
+    stop_inheriting_std_handles();
     let spawn = |flags: u32| {
         let mut cmd = Command::new(exe);
         cmd.args(args)
@@ -96,3 +101,29 @@ pub(super) fn system_spawn(exe: &Path, args: &[String], cwd: &Path) -> io::Resul
 }
 
 const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+
+/// Clears `HANDLE_FLAG_INHERIT` on this process's std handles. Missing or
+/// unusable handles (a GUI build started from Explorer has none) are skipped.
+#[cfg(windows)]
+fn stop_inheriting_std_handles() {
+    type Handle = isize;
+    const STD_HANDLES: [u32; 3] = [-10i32 as u32, -11i32 as u32, -12i32 as u32];
+    const HANDLE_FLAG_INHERIT: u32 = 0x1;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetStdHandle(which: u32) -> Handle;
+        fn SetHandleInformation(handle: Handle, mask: u32, flags: u32) -> i32;
+    }
+
+    for which in STD_HANDLES {
+        // SAFETY: plain Win32 calls; a null or invalid handle only makes
+        // SetHandleInformation fail, which is ignored.
+        unsafe {
+            let handle = GetStdHandle(which);
+            if handle != 0 && handle != -1 {
+                SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+    }
+}
