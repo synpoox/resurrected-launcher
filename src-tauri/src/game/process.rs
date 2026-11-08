@@ -25,14 +25,14 @@ pub fn running_under(root: &Path, host: &dyn GameHost) -> Result<Vec<RunningGame
         .collect())
 }
 
-/// Canonical, `\?\`-free, upper-cased form for a case-insensitive component compare.
+/// Canonical, `\\?\`-free, upper-cased form for a case-insensitive component compare.
 /// A path that cannot be canonicalized whole (gone, access denied) keeps its
 /// deepest ancestor that can be, plus the rest as given, so a missing image under
 /// an 8.3 short-name folder (`RUNNER~1`) still compares in long form with the root.
 fn fold(path: &Path) -> PathBuf {
     let path = canonical_prefix(path);
     let text = path.to_string_lossy();
-    PathBuf::from(text.strip_prefix(r"\?\").unwrap_or(&text).to_uppercase())
+    PathBuf::from(text.strip_prefix(r"\\?\").unwrap_or(&text).to_uppercase())
 }
 
 fn canonical_prefix(path: &Path) -> PathBuf {
@@ -181,13 +181,27 @@ mod tests {
     }
 
     #[test]
-    fn an_existing_path_folds_as_before() {
+    fn an_existing_path_folds_to_its_plain_upper_cased_canonical_form() {
         let root = tempfile::tempdir().unwrap();
         let file = root.path().join("D2R.exe");
         std::fs::write(&file, b"").unwrap();
+        // Built here, not copied from `fold`: the verbatim prefix is backslash,
+        // backslash, question mark, backslash.
+        let verbatim: String = ['\\', '\\', '?', '\\'].iter().collect();
+        assert_eq!(verbatim.len(), 4);
         let canonical = std::fs::canonicalize(&file).unwrap();
         let text = canonical.to_string_lossy();
-        let expected = text.strip_prefix(r"\?\").unwrap_or(&text).to_uppercase();
-        assert_eq!(fold(&file), PathBuf::from(expected));
+        assert!(
+            text.starts_with(&verbatim),
+            "canonicalize is verbatim: {text}"
+        );
+        let expected = text[verbatim.len()..].to_uppercase();
+        let folded = fold(&file);
+        assert_eq!(folded, PathBuf::from(&expected));
+        assert!(
+            !folded.to_string_lossy().starts_with('\\'),
+            "the verbatim prefix is stripped: {}",
+            folded.display()
+        );
     }
 }
