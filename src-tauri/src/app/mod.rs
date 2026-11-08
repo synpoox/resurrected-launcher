@@ -32,17 +32,11 @@ mod settings;
 mod winapi;
 mod window;
 
-use std::sync::Arc;
-
-use tauri::path::BaseDirectory;
-use tauri::{ipc::Invoke, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
+use tauri::{ipc::Invoke, Runtime};
+#[cfg(test)]
+use tauri::WebviewWindowBuilder;
 
 use crate::contract::{PingResponse, Versioned, UMBRELLA_DISPLAY_NAME};
-use crate::game::SystemGameHost;
-use crate::install::download::Downloader;
-use crate::install::extract::SevenZip;
-use crate::install::preflight::SystemHost;
-use crate::state::StateStore;
 
 pub use game::{
     CatalogState, Desktop, LocationView, ProductState, StartupFailed, SystemDesktop, STATE_EVENT,
@@ -53,6 +47,9 @@ pub use operations::{
 };
 pub use settings::{Folder, ReleaseNotes};
 pub use window::TRAY_EVENT;
+// The tray (crate::lifecycle) calls the same commands natively, with every check.
+pub(crate) use game::{get_product_state, play_product, refresh_catalog};
+pub(crate) use operations::{cancel_operation, inspect_operation, start_operation};
 
 /// `ping` command: contract version, launcher version and the umbrella display name.
 #[tauri::command]
@@ -93,41 +90,6 @@ pub fn invoke_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync 
         window::start_window_drag,
         window::quit_launcher
     ]
-}
-
-/// Application entry point.
-pub fn run() {
-    tauri::Builder::default()
-        // Rust-side folder picker only: capabilities grant no `dialog:` permission.
-        .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(invoke_handler())
-        .setup(|app| {
-            let paths = app.path();
-            let seven_zip = paths.resolve("resources/7zip/7za.exe", BaseDirectory::Resource)?;
-            let launcher = Launcher::new(
-                StateStore::open(&paths.app_local_data_dir()?),
-                Box::new(CachedReleases),
-                Downloader::new(),
-                SevenZip::bundled(&seven_zip)?,
-                Box::new(SystemHost),
-                Box::new(SystemGameHost),
-                Box::new(SystemDesktop(app.handle().clone())),
-            );
-            let launcher = Arc::new(launcher);
-            app.manage(Arc::clone(&launcher));
-            let handle = app.handle().clone();
-            std::thread::spawn(move || launcher.start_up(&handle));
-            // Built here so the title comes from the one display-name constant.
-            // shortcut: native decorations until slice 4 adds the frameless title bar.
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-                .title(UMBRELLA_DISPLAY_NAME)
-                .inner_size(1280.0, 720.0)
-                .min_inner_size(1024.0, 640.0)
-                .build()?;
-            Ok(())
-        })
-        .run(tauri::generate_context!())
-        .expect("launcher failed to start");
 }
 
 #[cfg(test)]
