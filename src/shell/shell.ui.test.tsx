@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { ApiContext } from "../api/context";
 import { createFixtureApi, sceneByKey, type FixtureApi } from "../api/fixtures";
@@ -356,22 +356,20 @@ describe("menus and dialogs", () => {
 
 describe("journey states", () => {
   it("download progress shows %, size, speed and time left from successive events", async () => {
-    const { api } = mount("downloading");
-    await screen.findByText(/Downloading alpha 0\.4\.2/);
-    expect(screen.getByText(/540 MB of 1\.2 GB/)).toBeTruthy();
-    const bar = screen.getByRole("progressbar");
-    expect(bar.getAttribute("aria-valuenow")).toBe("43");
-    // Two more events, a second apart on the receiver's clock.
-    const step = (api.scene.progress ?? [])[1];
-    const t0 = Date.now();
-    const realNow = Date.now;
+    // Pin the clock so both samples are exactly a second apart, however slow the runner.
+    let clock = Date.now();
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
     try {
-      Date.now = () => t0 + 1000;
+      const { api } = mount("downloading");
+      await screen.findByText(/Downloading alpha 0\.4\.2/);
+      expect(screen.getByText(/540 MB of 1\.2 GB/)).toBeTruthy();
+      expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("43");
+      clock += 1000;
       await act(async () => {
-        api.emitProgress(step);
+        api.emitProgress((api.scene.progress ?? [])[1]);
       });
     } finally {
-      Date.now = realNow;
+      now.mockRestore();
     }
     expect(screen.getByText(/552 MB of 1\.2 GB · 12 MB\/s · about \d+ s left/)).toBeTruthy();
     await userEvent.setup().click(screen.getByRole("button", { name: "Cancel" }));
