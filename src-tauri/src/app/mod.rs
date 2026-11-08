@@ -200,6 +200,53 @@ mod tests {
         }
     }
 
+    /// #79: the webview may subscribe to the launcher's events, but never emit one.
+    #[test]
+    fn webview_may_listen_to_events_but_not_emit() {
+        let app = mock_builder()
+            .invoke_handler(invoke_handler())
+            .build(tauri::generate_context!())
+            .unwrap();
+        let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let call = |cmd: &str, body: serde_json::Value| {
+            get_ipc_response(
+                &webview,
+                InvokeRequest {
+                    cmd: cmd.into(),
+                    callback: CallbackFn(0),
+                    error: CallbackFn(1),
+                    url: "http://tauri.localhost".parse().unwrap(),
+                    body: InvokeBody::Json(body),
+                    headers: Default::default(),
+                    invoke_key: INVOKE_KEY.to_string(),
+                },
+            )
+        };
+        let target = serde_json::json!({ "kind": "Any" });
+        let id = call(
+            "plugin:event|listen",
+            serde_json::json!({ "event": "operation-progress", "target": target, "handler": 5 }),
+        )
+        .expect("listen is granted")
+        .deserialize::<u32>()
+        .unwrap();
+        call(
+            "plugin:event|unlisten",
+            serde_json::json!({ "event": "operation-progress", "eventId": id }),
+        )
+        .expect("unlisten is granted");
+        for cmd in ["plugin:event|emit", "plugin:event|emit_to"] {
+            let err = call(
+                cmd,
+                serde_json::json!({ "event": "product-state-changed", "target": target, "payload": null }),
+            )
+            .unwrap_err();
+            assert!(err.to_string().contains("not allowed"), "{cmd}: {err}");
+        }
+    }
+
     /// #53 item 5: a command that is registered and listed in build.rs, but not
     /// granted to the calling window, is refused.
     #[test]
@@ -366,11 +413,16 @@ mod tests {
         );
     }
 
+    /// The only core permissions granted: the webview subscribes to events but never emits.
+    const EVENT_PERMISSIONS: &[&str] = &["core:event:allow-listen", "core:event:allow-unlisten"];
+
     #[test]
     fn capabilities_grant_only_the_allowlisted_commands() {
+        // Plus subscribing to the launcher's events (#79): listen and unlisten only, never emit.
         let allowed: Vec<String> = COMMANDS
             .iter()
             .map(|c| format!("allow-{}", c.replace('_', "-")))
+            .chain(EVENT_PERMISSIONS.iter().map(|p| p.to_string()))
             .collect();
         let root = env!("CARGO_MANIFEST_DIR");
         let mut granted = Vec::new();

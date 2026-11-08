@@ -215,7 +215,7 @@ describe("toasts", () => {
 
   it("restartHold: a running game first, then any operation in progress, else none", () => {
     const map = (...keys: string[]): ProductMap =>
-      Object.fromEntries(keys.map((k) => { const st = sceneByKey(k)!.state; return [st.product_id, { state: st, error: null, samples: [] }]; }));
+      Object.fromEntries(keys.map((k) => { const st = sceneByKey(k)!.state; return [st.product_id, { state: st, error: null, samples: [], backups: [] }]; }));
     expect(restartHold(map("ready"))).toBeNull();
     expect(restartHold(map("running"))).toEqual({ reason: "product_running", product_id: "pd2r" });
     expect(restartHold(map("downloading"))).toEqual({ reason: "product_busy", product_id: "pd2r", operation: "install" });
