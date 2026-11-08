@@ -153,4 +153,5 @@ fn a_second_instance_never_takes_the_operation_lock() {
         !held(&guard),
         "the lock is free once the first instance exits"
     );
+    helper::assert_no_app_data(&id);
 }
