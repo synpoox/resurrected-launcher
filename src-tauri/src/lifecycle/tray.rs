@@ -177,10 +177,12 @@ pub fn view(
             ],
         )
     };
-    if failed.is_some() {
+    // A running game is fresher than any earlier failure.
+    let game_running = matches!(state.readiness, Readiness::Running { .. });
+    if failed.is_some() && !game_running {
         return error("Something went wrong");
     }
-    if state.startup_failed.is_some() {
+    if state.startup_failed.is_some() && !game_running {
         return error("The game didn't start");
     }
     let installed = state
@@ -225,6 +227,39 @@ pub fn view(
         Readiness::BuildUnsupported { .. } => error("D2R version not supported"),
         Readiness::LoaderMissing | Readiness::LoaderUnsupported { .. } => {
             error("D2RLoader not ready")
+        }
+    }
+}
+
+/// What "Try again" does for a product.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Retry {
+    Start(OperationKind),
+    Play,
+    CheckAgain,
+}
+
+/// "Try again": restarts a failed Install, Update or Repair (never Uninstall or
+/// Clean install without the window), retries Play after the game didn't start,
+/// else checks again.
+fn retry(failed: Option<OperationKind>, state: Option<&ProductState>) -> Retry {
+    match failed {
+        Some(kind @ (OperationKind::Install | OperationKind::Update | OperationKind::Repair)) => {
+            Retry::Start(kind)
+        }
+        None if state.is_some_and(|s| s.startup_failed.is_some()) => Retry::Play,
+        _ => Retry::CheckAgain,
+    }
+}
+
+/// Drops failures that a newer operation or a running game has superseded.
+fn clear_stale(
+    failed: &mut HashMap<ProductId, (OperationKind, Option<LauncherError>)>,
+    states: &[ProductState],
+) {
+    for s in states {
+        if s.running.is_some() || matches!(s.readiness, Readiness::Running { .. }) {
+            failed.remove(&s.product_id);
         }
     }
 }
@@ -367,6 +402,7 @@ impl Model {
             .map(|v| v.data)
             .filter(has_release)
             .collect();
+        clear_stale(&mut self.failed, &self.states);
     }
 
     /// Runs the tray menu item `id`, as a click on it would.
@@ -394,12 +430,13 @@ impl Model {
                 });
                 let _ = block_on(app::cancel_operation(app.state(), cancel));
             }
-            "retry" => match self.failed.get(&product).map(|(kind, _)| *kind) {
-                // Never Uninstall or Clean install again without the window.
-                Some(
-                    kind @ (OperationKind::Install | OperationKind::Update | OperationKind::Repair),
-                ) => self.start(app, product, kind),
-                _ => {
+            "retry" => match retry(
+                self.failed.get(&product).map(|(kind, _)| *kind),
+                self.states.iter().find(|s| s.product_id == product),
+            ) {
+                Retry::Start(kind) => self.start(app, product, kind),
+                Retry::Play => play(app, product),
+                Retry::CheckAgain => {
                     // "Check again": clear the failure and reassess.
                     self.failed.remove(&product);
                     let _ = block_on(app::refresh_catalog(app.clone(), app.state()));
@@ -670,6 +707,46 @@ mod tests {
             labels(&v),
             ["Try again [retry:pd2r]", "Show what happened [show:pd2r]"]
         );
+    }
+
+    #[test]
+    fn a_running_game_outranks_a_stale_failure() {
+        let s = state(Readiness::Running { since: 1 }, Some("0.4.1"), "0.4.2");
+        let v = view(&s, None, Some(OperationKind::Update));
+        assert_eq!(v.overlay, Overlay::Running);
+        let mut failed = HashMap::from([(s.product_id.clone(), (OperationKind::Update, None))]);
+        clear_stale(&mut failed, &[s]);
+        assert!(failed.is_empty());
+    }
+
+    #[test]
+    fn a_newer_operation_clears_a_stale_failure() {
+        let mut s = state(Readiness::UpdateAvailable, Some("0.4.1"), "0.4.2");
+        s.running = Some(OperationKind::Repair);
+        let mut failed = HashMap::from([(s.product_id.clone(), (OperationKind::Update, None))]);
+        clear_stale(&mut failed, std::slice::from_ref(&s));
+        assert!(failed.is_empty());
+        let idle = state(Readiness::UpdateAvailable, Some("0.4.1"), "0.4.2");
+        let mut kept = HashMap::from([(idle.product_id.clone(), (OperationKind::Update, None))]);
+        clear_stale(&mut kept, &[idle]);
+        assert_eq!(kept.len(), 1);
+    }
+
+    #[test]
+    fn try_again_after_the_game_did_not_start_plays_again() {
+        let mut s = state(Readiness::Ready, Some("0.4.2"), "0.4.2");
+        s.startup_failed = Some(crate::app::StartupFailed { exit_code: Some(1) });
+        assert_eq!(retry(None, Some(&s)), Retry::Play);
+        assert_eq!(
+            retry(Some(OperationKind::Update), Some(&s)),
+            Retry::Start(OperationKind::Update)
+        );
+        assert_eq!(
+            retry(Some(OperationKind::Uninstall), Some(&s)),
+            Retry::CheckAgain
+        );
+        let ok = state(Readiness::Ready, Some("0.4.2"), "0.4.2");
+        assert_eq!(retry(None, Some(&ok)), Retry::CheckAgain);
     }
 
     #[test]
