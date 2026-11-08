@@ -525,6 +525,15 @@ pub fn recover(product_root: &Path, ctx: &Context) -> Result<Recovery, LauncherE
         return Ok(Recovery::Nothing);
     };
     let mut tx = Tx { j, ctx };
+    // A game started since the caller's check would hold managed files open;
+    // refuse before touching anything, so the journal stays for a retry.
+    let running = ctx.host.processes_using(&tx.moved_files());
+    if !running.is_empty() {
+        return Err(LauncherError::new(
+            ErrorCode::GameRunning,
+            running.join("; "),
+        ));
+    }
     if tx.rolls_forward() {
         tx.finish_forward().map_err(stuck)?;
         Ok(Recovery::RolledForward)
