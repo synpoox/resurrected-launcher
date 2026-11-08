@@ -7,6 +7,10 @@ use crate::contract::{ProductId, Sha256Digest};
 use super::check::{self, each};
 use super::{CatalogError, ReleaseManifest};
 
+/// Largest release manifest the launcher downloads. The feed is mutable, so its
+/// `manifest_size` is capped before anything is fetched.
+pub const MAX_MANIFEST_SIZE: u64 = 8 * 1024 * 1024;
+
 /// Where a manifest is and what its bytes must be. Download verifies the bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReleasePointer {
@@ -130,16 +134,21 @@ impl RawFeed {
                 }
                 (RawAvailability::Available, Some(r)) => {
                     let field = format!("{field}.recommended");
+                    let size_field = format!("{field}.manifest_size");
+                    let manifest_size = check::size(&size_field, r.manifest_size)?;
+                    if manifest_size > MAX_MANIFEST_SIZE {
+                        return Err(CatalogError::InvalidField {
+                            field: size_field,
+                            reason: "larger than the 8 MiB manifest limit",
+                        });
+                    }
                     Availability::Available(ReleasePointer {
                         release_id: check::ident(&format!("{field}.release_id"), r.release_id)?,
                         manifest_url: check::https(
                             &format!("{field}.manifest_url"),
                             r.manifest_url,
                         )?,
-                        manifest_size: check::size(
-                            &format!("{field}.manifest_size"),
-                            r.manifest_size,
-                        )?,
+                        manifest_size,
                         manifest_sha256: check::digest(
                             &format!("{field}.manifest_sha256"),
                             r.manifest_sha256,

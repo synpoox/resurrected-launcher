@@ -1,0 +1,23 @@
+{
+  "schema_version": 3,
+  "products": [
+    {
+      "product_id": "pd2r",
+      "availability": "available",
+      "recommended": {
+        "release_id": "pd2r-0.1.0-alpha",
+        "manifest_url": "https://github.com/synpoox/pd2-resurrected/releases/download/v0.1.0-alpha/release-manifest.json",
+        "manifest_size": 138429,
+        "manifest_sha256": "2250c5a604007112457b3ace8c74109bd3a8e555655f598af9c5159c7e9bd8cf"
+      }
+    },
+    {
+      "product_id": "project-09",
+      "availability": "upcoming"
+    },
+    {
+      "product_id": "project-forever",
+      "availability": "upcoming"
+    }
+  ]
+}

@@ -55,39 +55,12 @@ fn invalid(f: &str, reason: &'static str) -> CatalogError {
     }
 }
 
-fn unofficial(url: &str) -> CatalogError {
-    CatalogError::LoaderSourceNotOfficial { url: field(url) }
-}
-
-const SRC: &str = "https://github.com/D2RLoader/Installer/releases/download/";
-const DOT_SEGMENTS: &str = "URL path must not contain dot segments";
-
 fn manifest_rejections() -> Vec<(&'static str, CatalogError)> {
     use CatalogError::*;
     vec![
-        ("loader-path-traversal", invalid("loader.url", DOT_SEGMENTS)),
         (
-            "loader-encoded-traversal",
-            invalid("loader.url", DOT_SEGMENTS),
-        ),
-        (
-            "loader-extra-segment",
-            unofficial(&format!("{SRC}v0.1.0/sub/e.exe")),
-        ),
-        (
-            "loader-query",
-            unofficial(&format!("{SRC}v0.1.0/e.exe?x=1")),
-        ),
-        (
-            "loader-tag-mismatch",
-            unofficial(&format!("{SRC}v9.9.9/D2RLoaderInstaller.exe")),
-        ),
-        (
-            "loader-version-not-allowed",
-            invalid(
-                "loader.installs_loader_version",
-                "must be one of compatibility.loader_versions",
-            ),
+            "url-dot-segment",
+            invalid("archive.url", "URL path must not contain dot segments"),
         ),
         ("url-port", not_https("archive.url")),
         ("url-ip-literal", not_https("archive.url")),
@@ -135,10 +108,12 @@ fn manifest_rejections() -> Vec<(&'static str, CatalogError)> {
         ("zero-hash", placeholder("archive.sha256")),
         ("missing-hash", placeholder("files[1].sha256")),
         ("missing-size", placeholder("archive.size")),
-        ("zero-size", placeholder("loader.size")),
+        (
+            "zero-size",
+            placeholder("compatibility.game_builds[0].size"),
+        ),
         ("empty-file-placeholder-hash", placeholder("files[2].size")),
         ("not-https-archive", not_https("archive.url")),
-        ("not-https-loader", not_https("loader.url")),
         (
             "absolute-path",
             unsafe_path("files[0].path", PathError::Colon),
@@ -207,12 +182,6 @@ fn manifest_rejections() -> Vec<(&'static str, CatalogError)> {
             },
         ),
         (
-            "unofficial-loader",
-            LoaderSourceNotOfficial {
-                url: field("https://example.invalid/D2RLoaderInstaller.exe"),
-            },
-        ),
-        (
             "no-game-builds",
             InvalidField {
                 field: field("compatibility.game_builds"),
@@ -256,6 +225,13 @@ fn feed_rejections() -> Vec<(&'static str, CatalogError)> {
             placeholder("products[0].recommended.manifest_size"),
         ),
         (
+            "manifest-too-large",
+            invalid(
+                "products[0].recommended.manifest_size",
+                "larger than the 8 MiB manifest limit",
+            ),
+        ),
+        (
             "upcoming-with-artifacts",
             UpcomingHasArtifacts {
                 product_id: ProductId("project-09".to_owned()),
@@ -282,9 +258,6 @@ fn valid_release_manifest_describes_the_release() {
     assert_eq!(m.inventory.empty_dirs(), [path("d2rloader/patches")]);
     assert_eq!(m.mod_folder(), "PD2R");
     assert!(!m.is_save_breaking());
-    assert!(!m.loader.signed);
-    assert_eq!(m.loader.installer_version, "v0.1.0");
-    assert_eq!(m.loader.installs_loader_version, "1.3.1-beta");
     assert_eq!(
         m.compatibility.game_builds[0].platform,
         Platform::WindowsX64
@@ -468,4 +441,92 @@ fn release_manifest_matches_setting_files_case_insensitively() {
         m.compatibility.required_settings[0].file,
         path("D2RLOADER/Config.ini")
     );
+}
+
+/// Published PD2R v0.1.0-alpha (#56): the generated schema-3 manifest and feed
+/// parse, the feed pins the manifest bytes, and `files` is exactly the archive.
+#[test]
+fn published_pd2r_0_1_0_alpha_manifest_matches_its_archive_listing() {
+    use sha2::{Digest, Sha256};
+    let bytes = fixture("real/pd2r-0.1.0-alpha/release-manifest.json");
+    let m = ReleaseManifest::parse(&bytes).unwrap();
+    let feed = Feed::parse(&fixture("real/pd2r-0.1.0-alpha/feed.json")).unwrap();
+    let pd2r = feed.product(&ProductId("pd2r".to_owned())).unwrap();
+    pd2r.check_manifest(&m).unwrap();
+    let Availability::Available(pointer) = &pd2r.availability else {
+        panic!("pd2r is available");
+    };
+    assert_eq!(pointer.manifest_size, bytes.len() as u64);
+    let digest: [u8; 32] = Sha256::digest(&bytes).into();
+    assert_eq!(pointer.manifest_sha256.as_bytes(), &digest);
+    for upcoming in ["project-09", "project-forever"] {
+        let p = feed.product(&ProductId(upcoming.to_owned())).unwrap();
+        assert_eq!(p.availability, Availability::Upcoming);
+    }
+
+    assert_eq!(m.release_id, "pd2r-0.1.0-alpha");
+    assert_eq!(m.mod_folder(), "PD2Resurrected");
+    assert_eq!(m.archive.size, 72_790_802);
+    assert_eq!(m.inventory.files().len(), 577);
+    let total: u64 = m.inventory.files().iter().map(|f| f.size).sum();
+    assert_eq!(total, 1_699_496_572);
+    assert_eq!(m.compatibility.loader_versions, ["1.3.1-beta"]);
+    let s = &m.compatibility.required_settings[0];
+    assert_eq!(
+        (s.file.as_str(), s.key.as_str(), s.value.as_str()),
+        (
+            "d2rloader/config/d2rloader.toml",
+            "d2rcore.save_format.mode",
+            "extended"
+        )
+    );
+    let shipped: Vec<_> = m
+        .inventory
+        .files()
+        .iter()
+        .filter(|f| m.ownership_of(&f.path) == Ownership::ShippedDefault)
+        .map(|f| f.path.as_str())
+        .collect();
+    assert_eq!(
+        shipped,
+        [
+            "d2rloader/config/d2rloader.toml",
+            "d2rloader/config/filter.json"
+        ]
+    );
+
+    // kind \t size \t sha256 \t path; `#` lines are comments, the first names the archive.
+    let listing = String::from_utf8(fixture("real/pd2r-0.1.0-alpha/archive-listing.tsv")).unwrap();
+    let header = format!(
+        "# PD2Resurrected-0.1.0-alpha.7z\t{}\t{}",
+        m.archive.size, m.archive.sha256
+    );
+    assert_eq!(listing.lines().next(), Some(header.as_str()));
+    assert!(header.ends_with("b6e2bfbd2ff4d451727109d12f89d4fc262dbff89e0c35b54aeff5c602d2c152"));
+    let rows: Vec<Vec<&str>> = listing
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .map(|l| l.split('\t').collect())
+        .collect();
+    let entries: Vec<(&str, Option<u64>)> = rows
+        .iter()
+        .map(|r| (r[3], (r[0] == "F").then(|| r[1].parse().unwrap())))
+        .collect();
+    assert_eq!(m.archive_mismatches(&entries), Vec::<String>::new());
+    for r in rows.iter().filter(|r| r[0] == "F") {
+        let rel = path(r[3].strip_prefix("PD2Resurrected/").unwrap());
+        let f = m.inventory.files().iter().find(|f| f.path == rel).unwrap();
+        assert_eq!(f.sha256.to_string(), r[2], "{}", r[3]);
+    }
+
+    // A missing, extra, misplaced or resized entry is reported.
+    let mut bad = entries.clone();
+    let last = bad.pop().unwrap();
+    bad.push(("PD2Resurrected/extra.dll", Some(1)));
+    bad.push(("modinfo.json", Some(1)));
+    let resized = bad.iter().position(|e| e.1.is_some()).unwrap();
+    bad[resized].1 = Some(1);
+    let got = m.archive_mismatches(&bad);
+    assert_eq!(got.len(), 4, "{got:?}");
+    assert!(got.contains(&format!("{} is missing from the archive", last.0)));
 }

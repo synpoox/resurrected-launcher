@@ -1,5 +1,6 @@
 //! Slice 3 game DTOs (#55): the D2R location, a product's readiness to play, the
-//! pinned loader installer offer and the running game. Wire names are snake_case.
+//! loader guidance (a link to the official download page) and the running game.
+//! Wire names are snake_case.
 //!
 //! Offline single-player only: nothing here can name a mode, server or TCP/IP game.
 

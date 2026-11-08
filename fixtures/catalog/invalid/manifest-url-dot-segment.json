@@ -9,7 +9,7 @@
   "min_launcher_version": "0.1.0",
   "install_root": "mods/PD2R",
   "archive": {
-    "url": "https://github.com/synpoox/pd2-resurrected/releases/download/v0.4.0-alpha.1/PD2R-0.4.0-alpha.1.7z",
+    "url": "https://github.com/synpoox/pd2-resurrected/releases/download/v0.4.0-alpha.1/%2E%2e/PD2R-0.4.0-alpha.1.7z",
     "format": "7z",
     "size": 98304,
     "sha256": "0eb3e36bfb24dcd9bb1d1bece1531216b59539a8fde17ee80224af0653c92aa3",
@@ -88,13 +88,5 @@
       "key": "save_format",
       "value": "pd2r"
     }
-  },
-  "loader": {
-    "installer_version": "v0.1.0",
-    "installs_loader_version": "1.3.1-beta",
-    "url": "https://github.com/D2RLoader/Installer/releases/download/../../../../evil/x/releases/download/v1/e.exe",
-    "size": 2097152,
-    "sha256": "64faa4f99198c36b1d9946e057533bd71ab062d432d48e27150b0596f095cf11",
-    "signed": false
   }
 }

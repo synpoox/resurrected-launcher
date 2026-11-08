@@ -30,8 +30,6 @@ pub enum CatalogError {
     Inventory(InventoryError),
     /// The archive's declared contents disagree with the file list.
     ArchiveInconsistent { field: String },
-    /// The loader installer pin does not point at the official upstream releases.
-    LoaderSourceNotOfficial { url: String },
     /// An upcoming product carries a release pointer.
     UpcomingHasArtifacts { product_id: ProductId },
     /// The manifest is not the release the feed points to.
@@ -70,12 +68,6 @@ impl fmt::Display for CatalogError {
             Self::Inventory(e) => write!(f, "file list: {e}"),
             Self::ArchiveInconsistent { field } => {
                 write!(f, "{field} does not match the file list")
-            }
-            Self::LoaderSourceNotOfficial { url } => {
-                write!(
-                    f,
-                    "loader installer {url} is not an official upstream release"
-                )
             }
             Self::UpcomingHasArtifacts { product_id } => {
                 write!(f, "upcoming product {} carries a release", product_id.0)
