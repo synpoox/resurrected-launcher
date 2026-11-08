@@ -93,6 +93,8 @@ pub(crate) fn fate(
 /// * A dotted key (`d2rcore.save_format.mode`) is TOML: the enclosing `[table]`
 ///   plus the line's key must spell it, and a quoted string comes back unquoted.
 pub(crate) fn setting_value<'t>(text: &'t str, key: &str) -> Option<&'t str> {
+    // Editors such as Notepad may save a UTF-8 BOM, which would hide the first line.
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     if !key.contains('.') {
         return text
             .lines()
@@ -265,6 +267,19 @@ mod tests {
         assert_eq!(
             setting_value(&real, "d2rcore.save_format.mode"),
             Some("extended")
+        );
+    }
+
+    #[test]
+    fn setting_value_ignores_a_utf8_bom_on_the_first_line() {
+        let toml = "\u{feff}[d2rcore.save_format]\nmode = \"extended\"\n";
+        assert_eq!(
+            setting_value(toml, "d2rcore.save_format.mode"),
+            Some("extended")
+        );
+        assert_eq!(
+            setting_value("\u{feff}default_mod=PD2R\n", "default_mod"),
+            Some("PD2R")
         );
     }
 }

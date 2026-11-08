@@ -168,6 +168,26 @@ pub(crate) fn journal_path(root: &Path) -> PathBuf {
     sibling(root, ".resurrected-journal.json")
 }
 
+/// Refuses with [`ErrorCode::RecoveryRequired`] when `root` has a journal, and also
+/// when that cannot be checked (access denied, say): fails closed, never "no journal".
+pub(crate) fn refuse_pending_journal(root: &Path) -> Result<(), LauncherError> {
+    let path = journal_path(root);
+    match fs::symlink_metadata(&path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Ok(_) => Err(LauncherError::new(
+            ErrorCode::RecoveryRequired,
+            "an interrupted transaction needs recovery",
+        )),
+        Err(e) => Err(LauncherError::new(
+            ErrorCode::RecoveryRequired,
+            format!(
+                "cannot check {} for an interrupted transaction: {e}",
+                path.display()
+            ),
+        )),
+    }
+}
+
 fn progress_path(root: &Path) -> PathBuf {
     sibling(root, ".resurrected-journal.progress")
 }
@@ -460,6 +480,20 @@ pub(crate) fn durable_rename(from: &Path, to: &Path, replace: bool) -> io::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn journal_check_fails_closed_when_it_cannot_look() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("PD2R");
+        refuse_pending_journal(&root).unwrap();
+        fs::write(journal_path(&root), b"{}").unwrap();
+        let err = refuse_pending_journal(&root).unwrap_err();
+        assert_eq!(err.code, ErrorCode::RecoveryRequired);
+        // An error other than NotFound (here InvalidInput) is not "no journal".
+        let err = refuse_pending_journal(&dir.path().join("bad\0name")).unwrap_err();
+        assert_eq!(err.code, ErrorCode::RecoveryRequired);
+        assert!(err.message.contains("cannot check"), "{err}");
+    }
 
     /// The release path: real flushes, write-through renames and a flushed copy.
     #[test]

@@ -1,6 +1,6 @@
-//! Release archive download: HTTPS only (every redirect hop too), into a partial
-//! file beside the product root, with size and SHA-256 verification before the
-//! archive takes its final name (#6 step 2).
+//! Release archive download: public HTTPS only (every redirect hop too, by the
+//! catalog host rule), into a partial file beside the product root, with size and
+//! SHA-256 verification before the archive takes its final name (#6 step 2).
 //!
 //! An incomplete download restarts from zero; a complete archive found on disk is
 //! reused only after it is re-verified. Resume of partial downloads is deferred.
@@ -127,10 +127,22 @@ fn require_https(url: &str) -> Result<(), LauncherError> {
     }
 }
 
+/// The catalog's public-host rule (no IP literal, local or single-label host, port
+/// or user info), applied to every hop when `public_only`.
+fn require_public(url: &str, public_only: bool) -> Result<(), LauncherError> {
+    if public_only && crate::catalog::public_https("download URL", url.to_owned()).is_err() {
+        return Err(failed(
+            "download URL or redirect is not a public HTTPS host",
+        ));
+    }
+    Ok(())
+}
+
 /// Downloads release archives. The only network client in Install; it takes no
 /// URL from the frontend, only the [`Archive`] of a validated release manifest.
 pub struct Downloader {
     agent: ureq::Agent,
+    public_only: bool,
 }
 
 impl Default for Downloader {
@@ -142,11 +154,15 @@ impl Default for Downloader {
 impl Downloader {
     /// A downloader trusting the bundled WebPKI roots.
     pub fn new() -> Self {
-        Self::with_tls(TlsConfig::default())
+        Self {
+            public_only: true,
+            ..Self::with_tls(TlsConfig::default())
+        }
     }
 
     /// A downloader with its own TLS trust; integration tests pass the fixture
-    /// server's certificate. Not for production use.
+    /// server's certificate, and it also accepts local hosts and ports (the
+    /// fixture server is `127.0.0.1:<port>`). Not for production use.
     #[doc(hidden)]
     pub fn with_tls(tls: TlsConfig) -> Self {
         // shortcut: cancel is checked between reads, so a stalled read waits for the
@@ -161,13 +177,17 @@ impl Downloader {
             .tls_config(tls)
             .build()
             .into();
-        Self { agent }
+        Self {
+            agent,
+            public_only: false,
+        }
     }
 
     fn get(&self, url: &str) -> Result<ureq::http::Response<ureq::Body>, LauncherError> {
         let mut url = url.to_owned();
         for _ in 0..=MAX_REDIRECTS {
             require_https(&url)?;
+            require_public(&url, self.public_only)?;
             let response = self
                 .agent
                 .get(&url)
@@ -663,6 +683,51 @@ pub(crate) mod tests {
         let plain = fixture.url("/archive").replace("https:", "http:");
         let err = fetch(&fixture, &source(plain, &bytes), &paths).unwrap_err();
         assert_eq!(err.code, ErrorCode::DownloadFailed, "{err}");
+    }
+
+    #[test]
+    fn every_download_hop_must_be_a_public_https_host() {
+        for ok in [
+            "https://github.com/synpoox/pd2-resurrected/releases/download/v1/a.7z",
+            "https://release-assets.githubusercontent.com/github-production-release-asset/1/x?sig=a%2Fb",
+        ] {
+            require_public(ok, true).unwrap();
+        }
+        for bad in [
+            "https://127.0.0.1/x",
+            "https://[::1]/x",
+            "https://10.0.0.1/x",
+            "https://example.org:8443/x",
+            "https://localhost/x",
+            "https://router.localhost/x",
+            "https://intranet/x",
+            "https://user@example.org/x",
+        ] {
+            let err = require_public(bad, true).unwrap_err();
+            assert_eq!(err.code, ErrorCode::DownloadFailed, "{bad}");
+            require_public(bad, false).unwrap();
+        }
+
+        // The production downloader refuses the fixture's 127.0.0.1:<port> before
+        // sending anything; a hop to it from a public host fails the same check.
+        let bytes = archive_bytes();
+        let fixture = serve_archive(bytes.clone());
+        let strict = Downloader {
+            public_only: true,
+            ..fixture.downloader()
+        };
+        let (_dir, _guard, paths) = disposable_root();
+        let err = strict
+            .fetch(
+                &source(fixture.url("/moved"), &bytes),
+                &paths,
+                &AtomicBool::new(false),
+                &mut |_, _| {},
+            )
+            .unwrap_err();
+        assert!(err.message.contains("public HTTPS host"), "{err}");
+        assert!(fixture.hits().is_empty());
+        assert_nothing_left(&paths);
     }
 
     #[test]

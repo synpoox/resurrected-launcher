@@ -14,6 +14,7 @@ mod feed;
 mod manifest;
 mod sync;
 
+pub(crate) use check::https as public_https;
 pub use error::CatalogError;
 pub use feed::{Availability, Feed, FeedProduct, ReleasePointer, MAX_MANIFEST_SIZE};
 pub use manifest::{

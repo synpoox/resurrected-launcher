@@ -92,6 +92,8 @@ fn install_archive_with_unsafe_entry_paths_is_refused_before_extraction() {
         Malice::Absolute,
         Malice::CaseConflict,
         Malice::Unlisted,
+        Malice::Stray,
+        Malice::Flat,
     ] {
         install_hostile(malice);
     }

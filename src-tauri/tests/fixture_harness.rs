@@ -26,14 +26,10 @@ fn fixture_release_archive_extracts_to_exactly_its_manifest_inventory() {
         let paths = TransactionPaths::of(&guard);
         fs::write(paths.archive(), &release.archive).unwrap();
         let inventory = &release.manifest.inventory;
-        extract(
-            &seven_zip(),
-            release.manifest.archive.format,
-            inventory,
-            &paths,
-            &not_cancelled(),
-        )
-        .unwrap_or_else(|e| panic!("{name}: {e}"));
+        extract(&seven_zip(), &release.manifest, &paths, &not_cancelled())
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        // The archive's top folder is stripped: staging mirrors the product root.
+        assert!(!paths.staging().join(release.manifest.mod_folder()).exists());
         verify_staging(&paths, inventory, &not_cancelled()).unwrap();
         let listed: Vec<&str> = inventory.files().iter().map(|f| f.path.as_str()).collect();
         assert_eq!(listed, release.payload.keys().collect::<Vec<_>>(), "{name}");
@@ -88,20 +84,14 @@ fn malicious_fixture_archives_are_refused_before_extraction() {
         let guard = WriteGuard::check(&game.product_root(&release)).unwrap();
         let paths = TransactionPaths::of(&guard);
         fs::write(paths.archive(), &release.archive).unwrap();
-        let err = extract(
-            &seven_zip(),
-            release.manifest.archive.format,
-            &release.manifest.inventory,
-            &paths,
-            &not_cancelled(),
-        )
-        .expect_err(release.release_id());
+        let err = extract(&seven_zip(), &release.manifest, &paths, &not_cancelled())
+            .expect_err(release.release_id());
         // Each fixture must trip its own rule, not an incidental one.
         let why = match malice {
             Malice::Traversal => "DotComponent",
             Malice::Absolute => "Colon",
             Malice::CaseConflict => "differs only in case",
-            Malice::Unlisted => "not in the file list",
+            Malice::Unlisted | Malice::Stray | Malice::Flat => "not in the manifest",
             Malice::Junction => "reparse point",
         };
         assert_eq!(err.code, ErrorCode::UnsafeArchiveEntry, "{malice:?}: {err}");

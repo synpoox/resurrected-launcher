@@ -146,52 +146,15 @@ impl ReleaseManifest {
     }
 
     /// How a 7-Zip listing of the release archive differs from `files` and
-    /// `empty_dirs`; empty when it matches. Each entry is its archive path (`/` or
-    /// `\`) and its size, `None` for a directory. Every entry must sit under one
-    /// top-level [`Self::mod_folder`] directory, as published for players to unpack
-    /// into `mods/`.
+    /// `empty_dirs`, under one top-level [`Self::mod_folder`] directory as published
+    /// for players to unpack into `mods/`; empty when it matches. See
+    /// [`ExpectedInventory::listing_mismatches`], which extraction uses too.
     pub fn archive_mismatches(&self, entries: &[(&str, Option<u64>)]) -> Vec<String> {
-        let top = self.mod_folder();
-        let under = |p: &RelativePath| format!("{top}/{}", p.as_str());
-        let mut files: std::collections::BTreeMap<String, u64> = self
-            .inventory
-            .files()
+        self.inventory
+            .listing_mismatches(self.mod_folder(), entries)
             .iter()
-            .map(|f| (under(&f.path), f.size))
-            .collect();
-        let mut empty: std::collections::BTreeSet<String> =
-            self.inventory.empty_dirs().iter().map(under).collect();
-        let mut dirs = std::collections::BTreeSet::from([top.to_owned()]);
-        for p in files.keys().chain(&empty) {
-            dirs.extend(p.match_indices('/').map(|(i, _)| p[..i].to_owned()));
-        }
-        dirs.extend(empty.iter().cloned());
-        let mut out = Vec::new();
-        for (raw, size) in entries {
-            let path = raw.replace('\\', "/");
-            match size {
-                None if dirs.contains(&path) => {
-                    empty.remove(&path);
-                }
-                None => out.push(format!("directory {path} is not in the manifest")),
-                Some(n) => match files.remove(&path) {
-                    Some(want) if want == *n => {}
-                    Some(want) => out.push(format!("{path} is {n} bytes, manifest says {want}")),
-                    None => out.push(format!("{path} is not in the manifest")),
-                },
-            }
-        }
-        out.extend(
-            files
-                .keys()
-                .map(|p| format!("{p} is missing from the archive")),
-        );
-        out.extend(
-            empty
-                .iter()
-                .map(|p| format!("{p}/ is missing from the archive")),
-        );
-        out
+            .map(ToString::to_string)
+            .collect()
     }
 
     /// Immutability: a release ID seen before must have exactly the same metadata.
@@ -302,7 +265,12 @@ impl RawManifest {
 
         let install_root = check::path("install_root", self.install_root)?;
         match install_root.as_str().split_once('/') {
-            Some((mods, folder)) if mods.eq_ignore_ascii_case("mods") && !folder.contains('/') => {}
+            Some((mods, folder)) if mods.eq_ignore_ascii_case("mods") && !folder.contains('/') => {
+                // Launch passes it as `-mod <folder>`; a leading `-` would read as a switch.
+                if folder.starts_with('-') {
+                    return Err(invalid("install_root", "folder must not start with -"));
+                }
+            }
             _ => return Err(invalid("install_root", "must be mods/<folder>")),
         }
 

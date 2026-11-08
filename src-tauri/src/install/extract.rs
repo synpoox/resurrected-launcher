@@ -8,12 +8,14 @@
 //! Every listed entry is checked before anything is written: the path must be a
 //! [`RelativePath`] (traversal, absolute, drive, stream, device names, trailing
 //! dot/space), no two entries may collide ignoring case, links/reparse points/
-//! hard links and anti-items are refused, and every entry must be in the
-//! [`ExpectedInventory`]. After extraction, [`verify_staging`] checks the exact
-//! tree against the inventory, so whatever 7-Zip did on disk is checked again.
+//! hard links and anti-items are refused, and the listing must match the
+//! [`ExpectedInventory`] under the archive's single top-level `install_root`
+//! folder ([`ExpectedInventory::listing_mismatches`]). Extraction strips that
+//! folder. After extraction, [`verify_staging`] checks the exact tree against the
+//! inventory, so whatever 7-Zip did on disk is checked again.
 
 use std::collections::{HashMap, HashSet};
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -22,8 +24,10 @@ use std::time::Duration;
 
 use super::download::{hash_file, io_error, verify_file};
 use super::paths::{under, TransactionPaths};
-use crate::catalog::ArchiveFormat;
-use crate::contract::{ErrorCode, ExpectedInventory, LauncherError, RelativePath, Sha256Digest};
+use crate::catalog::{ArchiveFormat, ReleaseManifest};
+use crate::contract::{
+    ErrorCode, ExpectedInventory, LauncherError, ListingMismatch, RelativePath, Sha256Digest,
+};
 
 /// Pinned 7-Zip Extra console (`x64/7za.exe`), see `docs/third-party.md`.
 pub const SEVEN_ZIP_VERSION: &str = "26.04";
@@ -246,13 +250,14 @@ fn allowed_dirs(inventory: &ExpectedInventory) -> HashSet<&str> {
     dirs
 }
 
-fn validate(entries: &[Listed], inventory: &ExpectedInventory) -> Result<(), LauncherError> {
-    let files: HashMap<&str, u64> = inventory
-        .files()
-        .iter()
-        .map(|f| (f.path.as_str(), f.size))
-        .collect();
-    let dirs = allowed_dirs(inventory);
+/// Per-entry safety checks, then [`ExpectedInventory::listing_mismatches`] with the
+/// archive's single top-level folder `top`.
+fn validate(
+    entries: &[Listed],
+    inventory: &ExpectedInventory,
+    top: &str,
+) -> Result<(), LauncherError> {
+    let mut listing = Vec::new();
     let mut entry_keys = HashSet::new();
     // Case-folded path (entry or ancestor) -> first spelling seen.
     let mut spellings: HashMap<String, String> = HashMap::new();
@@ -297,23 +302,28 @@ fn validate(entries: &[Listed], inventory: &ExpectedInventory) -> Result<(), Lau
         }
         let is_dir =
             prop(entry, "Folder") == "+" || letters.contains('D') || posix.starts_with('d');
-        if is_dir {
-            if !dirs.contains(s) {
-                return Err(bad("directory not in the file list"));
-            }
-        } else {
-            let Some(&size) = files.get(s) else {
-                return Err(bad("not in the file list"));
+        let size =
+            if is_dir {
+                None
+            } else {
+                let size = prop(entry, "Size");
+                Some(size.parse::<u64>().map_err(|_| {
+                    mismatch(format!("archive entry {raw:?} declares size {size:?}"))
+                })?)
             };
-            if prop(entry, "Size") != size.to_string() {
-                return Err(mismatch(format!(
-                    "archive entry {raw:?} declares size {:?}, expected {size}",
-                    prop(entry, "Size")
-                )));
-            }
-        }
+        listing.push((path, size));
     }
-    Ok(())
+    let listing: Vec<(&str, Option<u64>)> = listing.iter().map(|(p, s)| (p.as_str(), *s)).collect();
+    let mismatches = inventory.listing_mismatches(top, &listing);
+    // An entry with no place in the inventory is unsafe; anything else is a mismatch.
+    let unlisted = mismatches
+        .iter()
+        .find(|m| matches!(m, ListingMismatch::Unlisted { .. }));
+    match (unlisted, mismatches.first()) {
+        (Some(m), _) => Err(unsafe_entry(format!("archive entry {m}"))),
+        (None, Some(m)) => Err(mismatch(format!("archive entry {m}"))),
+        (None, None) => Ok(()),
+    }
 }
 
 /// Validates every entry of the verified archive, then extracts it with the pinned
@@ -336,38 +346,80 @@ fn validate(entries: &[Listed], inventory: &ExpectedInventory) -> Result<(), Lau
 /// never player or unknown files, so deleting it whole is safe), and must not delete
 /// a staging path its journal does not own.
 ///
-/// Errors: [`ErrorCode::UnsafeArchiveEntry`] (nothing written),
-/// [`ErrorCode::InventoryMismatch`] (declared size differs; nothing written),
+/// The archive holds one top-level folder, the `install_root` folder
+/// ([`ReleaseManifest::mod_folder`], e.g. `PD2Resurrected/`), and `manifest.inventory`
+/// is relative to it. Anything else at the top level is refused. Staging ends up
+/// holding that folder's contents, so it mirrors the product root.
+///
+/// Errors: [`ErrorCode::UnsafeArchiveEntry`] (an unsafe entry, or one the inventory
+/// has no place for; nothing written), [`ErrorCode::InventoryMismatch`] (a declared
+/// size differs or an inventory entry is missing; nothing written),
 /// [`ErrorCode::Cancelled`], [`ErrorCode::Internal`] (7-Zip failure, pin mismatch,
 /// staging already exists).
 pub fn extract(
     seven_zip: &SevenZip,
-    format: ArchiveFormat,
-    inventory: &ExpectedInventory,
+    manifest: &ReleaseManifest,
     paths: &TransactionPaths,
     cancel: &AtomicBool,
 ) -> Result<(), LauncherError> {
-    extract_kind(seven_zip, format.into(), inventory, paths, cancel)
+    extract_kind(
+        seven_zip,
+        manifest.archive.format.into(),
+        &manifest.inventory,
+        manifest.mod_folder(),
+        paths,
+        cancel,
+    )
 }
 
 fn extract_kind(
     seven_zip: &SevenZip,
     kind: Kind,
     inventory: &ExpectedInventory,
+    top: &str,
     paths: &TransactionPaths,
     cancel: &AtomicBool,
 ) -> Result<(), LauncherError> {
     let archive = paths.archive();
-    validate(&seven_zip.list(archive, kind)?, inventory)?;
+    validate(&seven_zip.list(archive, kind)?, inventory, top)?;
     let staging = paths.staging();
     // create_dir, not create_dir_all: never extract into an existing directory.
     fs::create_dir(staging).map_err(|e| io_error("creating staging", staging, e))?;
-    let result = seven_zip.extract_all(archive, kind, staging, cancel);
+    let result = seven_zip
+        .extract_all(archive, kind, staging, cancel)
+        .and_then(|()| strip_top(staging, top));
     if result.is_err() {
         // std's remove_dir_all does not follow links or junctions.
         let _ = fs::remove_dir_all(staging);
     }
     result
+}
+
+/// Moves the contents of `staging/<top>` up into staging and removes the folder.
+fn strip_top(staging: &Path, top: &str) -> Result<(), LauncherError> {
+    let folder = staging.join(top);
+    let names = fs::read_dir(&folder)
+        .and_then(|d| {
+            d.map(|e| e.map(|e| e.file_name()))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(|e| io_error("reading", &folder, e))?;
+    // A child spelled like `top` (as Windows compares) would land on its own parent,
+    // so first rename the folder to a name no child has.
+    let fold = |n: &OsStr| n.to_string_lossy().to_uppercase();
+    let mut aside = OsString::from(top);
+    while names.iter().any(|n| fold(n) == fold(&aside)) {
+        aside.push("_");
+    }
+    let from = staging.join(&aside);
+    if from != folder {
+        fs::rename(&folder, &from).map_err(|e| io_error("renaming", &folder, e))?;
+    }
+    for name in names {
+        let to = staging.join(&name);
+        fs::rename(from.join(&name), &to).map_err(|e| io_error("moving into staging", &to, e))?;
+    }
+    fs::remove_dir(&from).map_err(|e| io_error("removing", &from, e))
 }
 
 fn is_link(meta: &fs::Metadata) -> bool {
@@ -488,28 +540,34 @@ mod tests {
 
     // ---- fixture archive writers (stored zip, ustar) ----
 
+    /// The archive's top-level folder in these tests; [`file`] and [`dir`] put
+    /// entries under it, [`raw`] does not.
+    const TOP: &str = "mod";
+
     struct ZipEntry<'a> {
-        name: &'a str,
+        name: String,
         data: &'a [u8],
         made_by: u16,
         attr: u32,
     }
 
-    fn file<'a>(name: &'a str, data: &'a [u8]) -> ZipEntry<'a> {
+    fn raw<'a>(name: &str, data: &'a [u8]) -> ZipEntry<'a> {
         ZipEntry {
-            name,
+            name: name.to_owned(),
             data,
             made_by: 20,
             attr: 0,
         }
     }
 
-    fn dir(name: &str) -> ZipEntry<'_> {
+    fn file<'a>(name: &str, data: &'a [u8]) -> ZipEntry<'a> {
+        raw(&format!("{TOP}/{name}"), data)
+    }
+
+    fn dir(name: &str) -> ZipEntry<'static> {
         ZipEntry {
-            name,
-            data: b"",
-            made_by: 20,
             attr: 0x10,
+            ..file(name, b"")
         }
     }
 
@@ -576,7 +634,7 @@ mod tests {
         for (name, kind, link, data) in entries {
             let mut h = [0u8; 512];
             let mut put = |at: usize, s: &[u8]| h[at..at + s.len()].copy_from_slice(s);
-            put(0, name.as_bytes());
+            put(0, format!("{TOP}/{name}").as_bytes());
             put(100, b"0000644\0");
             put(108, b"0000000\0");
             put(116, b"0000000\0");
@@ -608,7 +666,7 @@ mod tests {
     ) {
         let (dir, _guard, paths) = disposable_root();
         fs::write(paths.archive(), archive).unwrap();
-        let result = extract_kind(&bundled(), kind, inv, &paths, &AtomicBool::new(false));
+        let result = extract_kind(&bundled(), kind, inv, TOP, &paths, &AtomicBool::new(false));
         (dir, paths, result)
     }
 
@@ -623,6 +681,7 @@ mod tests {
             &["Saves"],
         );
         let archive = zip(&[
+            dir(""),
             dir("Data/"),
             dir("Data/global/"),
             file("Data/global/excel/a.txt", b"alpha"),
@@ -638,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    fn release_archive_in_7z_format_extracts() {
+    fn release_archive_in_7z_format_extracts_without_its_top_folder() {
         let src = tempfile::tempdir().unwrap();
         fs::create_dir_all(src.path().join("mod/data")).unwrap();
         fs::write(src.path().join("mod/data/x.txt"), b"seven").unwrap();
@@ -651,32 +710,37 @@ mod tests {
             .status()
             .unwrap();
         assert!(status.success());
-        let inv = inventory(&[("mod/data/x.txt", b"seven")], &[]);
-        extract(
-            &bundled(),
-            ArchiveFormat::SevenZip,
-            &inv,
-            &paths,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
-        verify_staging(&paths, &inv, &AtomicBool::new(false)).unwrap();
+        let inv = inventory(&[("data/x.txt", b"seven")], &[]);
+        let cancel = AtomicBool::new(false);
+        extract_kind(&bundled(), Kind::SevenZ, &inv, TOP, &paths, &cancel).unwrap();
+        verify_staging(&paths, &inv, &cancel).unwrap();
+        assert_eq!(
+            fs::read(paths.staging().join("data/x.txt")).unwrap(),
+            b"seven"
+        );
         drop(dir);
+    }
+
+    #[test]
+    fn a_child_spelled_like_the_top_folder_survives_the_strip() {
+        let inv = inventory(&[("MOD/x.txt", b"x"), ("y.txt", b"y")], &[]);
+        let archive = zip(&[file("MOD/x.txt", b"x"), file("y.txt", b"y")]);
+        let (_dir, paths, result) = run(&archive, Kind::Zip, &inv);
+        result.unwrap();
+        verify_staging(&paths, &inv, &AtomicBool::new(false)).unwrap();
     }
 
     #[test]
     fn malicious_release_archive_entries_are_rejected_before_extraction() {
         let symlink = ZipEntry {
-            name: "link.txt",
             data: b"../../evil",
             made_by: 3 << 8 | 20,
             attr: 0o120_777 << 16,
+            ..file("link.txt", b"")
         };
         let reparse = ZipEntry {
-            name: "link.txt",
-            data: b"x",
-            made_by: 20,
             attr: 0x400,
+            ..file("link.txt", b"x")
         };
         let cases: Vec<(&str, Vec<ZipEntry>, &str)> = vec![
             ("traversal", vec![file("../up.txt", b"x")], "DotComponent"),
@@ -690,9 +754,14 @@ mod tests {
                 vec![file("..\\up.txt", b"x")],
                 "DotComponent",
             ),
-            ("absolute", vec![file("/abs.txt", b"x")], "Absolute"),
-            ("drive absolute", vec![file("C:/drive.txt", b"x")], "Colon"),
-            ("drive relative", vec![file("C:rel.txt", b"x")], "Colon"),
+            (
+                "top traversal",
+                vec![raw("../up.txt", b"x")],
+                "DotComponent",
+            ),
+            ("absolute", vec![raw("/abs.txt", b"x")], "Absolute"),
+            ("drive absolute", vec![raw("C:/drive.txt", b"x")], "Colon"),
+            ("drive relative", vec![raw("C:rel.txt", b"x")], "Colon"),
             (
                 "alternate data stream",
                 vec![file("ok.txt:stream", b"x")],
@@ -732,14 +801,29 @@ mod tests {
             ("symlink", vec![symlink], "link or special"),
             ("reparse point", vec![reparse], "reparse point"),
             (
+                "case-conflicting top folder",
+                vec![raw("MOD/Data/a.txt", b"x")],
+                "differs only in case",
+            ),
+            (
                 "not in the file list",
                 vec![file("extra.txt", b"x")],
-                "not in the file list",
+                "mod/extra.txt is not in the manifest",
             ),
             (
                 "directory not in the file list",
                 vec![dir("stray/")],
-                "not in the file list",
+                "directory mod/stray is not in the manifest",
+            ),
+            (
+                "file beside the top folder",
+                vec![raw("ok.txt", b"x")],
+                "entry ok.txt is not in the manifest",
+            ),
+            (
+                "second top folder",
+                vec![raw("other/ok.txt", b"x")],
+                "other/ok.txt is not in the manifest",
             ),
         ];
         let inv = inventory(
@@ -779,15 +863,43 @@ mod tests {
     }
 
     #[test]
+    fn release_archive_missing_an_inventory_entry_is_rejected_before_extraction() {
+        let inv = inventory(&[("a.txt", b"a"), ("b.txt", b"b")], &["empty"]);
+        for (entries, why) in [
+            (
+                vec![file("a.txt", b"a"), dir("empty/")],
+                "mod/b.txt is missing",
+            ),
+            (
+                vec![file("a.txt", b"a"), file("b.txt", b"b")],
+                "mod/empty/ is missing",
+            ),
+            // The pre-#67 layout: the tree at the archive root, no top folder.
+            (
+                vec![raw("a.txt", b"a"), raw("b.txt", b"b")],
+                "not in the manifest",
+            ),
+        ] {
+            let (_dir, paths, result) = run(&zip(&entries), Kind::Zip, &inv);
+            let err = result.unwrap_err();
+            assert!(err.message.contains(why), "{err}");
+            assert!(!paths.staging().exists());
+        }
+    }
+
+    #[test]
     fn missing_file_after_extraction_fails_inventory_verification() {
         let inv = inventory(&[("a.txt", b"a"), ("b.txt", b"b")], &["empty"]);
-        let (_dir, paths, result) = run(&zip(&[file("a.txt", b"a")]), Kind::Zip, &inv);
+        let archive = zip(&[file("a.txt", b"a"), file("b.txt", b"b"), dir("empty/")]);
+        let (_dir, paths, result) = run(&archive, Kind::Zip, &inv);
         result.unwrap();
+        fs::remove_file(paths.staging().join("b.txt")).unwrap();
         let err = verify_staging(&paths, &inv, &AtomicBool::new(false)).unwrap_err();
         assert_eq!(err.code, ErrorCode::InventoryMismatch);
         assert!(err.message.contains("b.txt is missing"), "{err}");
 
         fs::write(paths.staging().join("b.txt"), b"b").unwrap();
+        fs::remove_dir(paths.staging().join("empty")).unwrap();
         let err = verify_staging(&paths, &inv, &AtomicBool::new(false)).unwrap_err();
         assert!(err.message.contains("required directory empty"), "{err}");
     }
@@ -832,8 +944,15 @@ mod tests {
         let inv = inventory(&[("a.txt", b"a")], &[]);
         let (_dir, _guard, paths) = disposable_root();
         fs::write(paths.archive(), zip(&[file("a.txt", b"a")])).unwrap();
-        let err =
-            extract_kind(&bundled(), Kind::Zip, &inv, &paths, &AtomicBool::new(true)).unwrap_err();
+        let err = extract_kind(
+            &bundled(),
+            Kind::Zip,
+            &inv,
+            TOP,
+            &paths,
+            &AtomicBool::new(true),
+        )
+        .unwrap_err();
         assert_eq!(err.code, ErrorCode::Cancelled);
         assert!(!paths.staging().exists());
     }
@@ -845,8 +964,15 @@ mod tests {
         fs::write(paths.archive(), zip(&[file("a.txt", b"a")])).unwrap();
         fs::create_dir(paths.staging()).unwrap();
         fs::write(paths.staging().join("left.txt"), b"old").unwrap();
-        let err =
-            extract_kind(&bundled(), Kind::Zip, &inv, &paths, &AtomicBool::new(false)).unwrap_err();
+        let err = extract_kind(
+            &bundled(),
+            Kind::Zip,
+            &inv,
+            TOP,
+            &paths,
+            &AtomicBool::new(false),
+        )
+        .unwrap_err();
         assert_eq!(err.code, ErrorCode::Internal);
         assert!(
             paths.staging().join("left.txt").exists(),
@@ -882,8 +1008,15 @@ mod tests {
         let inv = inventory(&[("a.txt", b"a")], &[]);
         let (_root, _guard, paths) = disposable_root();
         fs::write(paths.archive(), zip(&[file("a.txt", b"a")])).unwrap();
-        let err =
-            extract_kind(&seven_zip, Kind::Zip, &inv, &paths, &AtomicBool::new(false)).unwrap_err();
+        let err = extract_kind(
+            &seven_zip,
+            Kind::Zip,
+            &inv,
+            TOP,
+            &paths,
+            &AtomicBool::new(false),
+        )
+        .unwrap_err();
         assert_eq!(err.code, ErrorCode::Internal);
         assert!(err.message.contains("does not match the pinned"), "{err}");
         assert!(!paths.staging().exists());

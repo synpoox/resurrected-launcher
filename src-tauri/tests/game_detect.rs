@@ -123,6 +123,34 @@ fn folder_without_d2r_exe_tells_the_player_what_to_choose() {
     assert!(err.message.contains("D2R.exe"), "{}", err.message);
 }
 
+#[cfg(windows)]
+#[test]
+fn a_drive_root_is_refused_even_through_a_junction() {
+    let tmp = tempfile::tempdir().unwrap();
+    let drive = tmp.path().ancestors().last().unwrap().to_path_buf();
+    /// Removes the junction itself (never its target) before `tmp` is cleaned up.
+    struct Unlink(PathBuf);
+    impl Drop for Unlink {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir(&self.0);
+        }
+    }
+    let junction = Unlink(tmp.path().join("D2R"));
+    let status = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&junction.0)
+        .arg(&drive)
+        .output()
+        .unwrap()
+        .status;
+    assert!(status.success());
+    for root in [drive.as_path(), junction.0.as_path()] {
+        let err = validate(root, &ok_host()).unwrap_err();
+        assert_eq!(err.code, ErrorCode::D2rNotFound);
+        assert!(err.message.contains("drive root"), "{}", err.message);
+    }
+}
+
 #[test]
 fn d2r_exe_must_be_a_regular_file_with_version_info() {
     let dir = tempfile::tempdir().unwrap();

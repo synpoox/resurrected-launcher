@@ -10,7 +10,7 @@ use super::process::running_under;
 use super::GameHost;
 use crate::catalog::ReleaseManifest;
 use crate::contract::{ErrorCode, GameLocation, LauncherError, Readiness, RunningGame};
-use crate::install::journal::journal_path;
+use crate::install::journal::refuse_pending_journal;
 use crate::install::plan::product_root;
 
 /// Starts the installed release of `manifest`'s product at `location` through
@@ -39,12 +39,7 @@ pub fn play(
         ));
     }
     let root = &location.path;
-    if std::fs::symlink_metadata(journal_path(&product_root(root, manifest))).is_ok() {
-        return Err(LauncherError::new(
-            ErrorCode::RecoveryRequired,
-            "an interrupted transaction needs recovery",
-        ));
-    }
+    refuse_pending_journal(&product_root(root, manifest))?;
     if let Some(game) = running_under(root, host)?.first() {
         return Err(LauncherError::new(
             ErrorCode::GameRunning,
@@ -70,15 +65,34 @@ pub fn play(
 }
 
 /// See [`GameHost::spawn`] (`std::process::Command`, never a shell).
+///
+/// The game must outlive the launcher. Null stdio means it holds none of the
+/// launcher's handles, and dropping the `Child` closes our handle without killing
+/// it. If the launcher runs in a job object that kills its processes on close, the
+/// game is created with `CREATE_BREAKAWAY_FROM_JOB`; a job that forbids breakaway
+/// makes that fail with access denied, and the game is started inside it instead.
+///
+/// No `DETACHED_PROCESS` or `CREATE_NEW_PROCESS_GROUP`: D2RLoader.exe is a GUI
+/// program (PE subsystem 2, checked on the owner's copy), so it never attaches to
+/// the launcher's console or receives its Ctrl+C.
 pub(super) fn system_spawn(exe: &Path, args: &[String], cwd: &Path) -> io::Result<u32> {
-    // Null stdio so the game holds none of the launcher's handles; dropping the
-    // `Child` closes our handle without killing the game.
-    let child = Command::new(exe)
-        .args(args)
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
-    Ok(child.id())
+    let spawn = |flags: u32| {
+        let mut cmd = Command::new(exe);
+        cmd.args(args)
+            .current_dir(cwd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        #[cfg(windows)]
+        std::os::windows::process::CommandExt::creation_flags(&mut cmd, flags);
+        #[cfg(not(windows))]
+        let _ = flags;
+        cmd.spawn().map(|child| child.id())
+    };
+    match spawn(CREATE_BREAKAWAY_FROM_JOB) {
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => spawn(0),
+        result => result,
+    }
 }
+
+const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
