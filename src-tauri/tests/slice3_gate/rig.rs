@@ -164,6 +164,24 @@ impl Desktop for GateDesktop {
     fn open_loader_download_page(&self) -> std::io::Result<()> {
         Ok(())
     }
+    fn open_folder(&self, _: &Path) -> std::io::Result<()> {
+        Ok(())
+    }
+    fn show_in_folder(&self, _: &Path) -> std::io::Result<()> {
+        Ok(())
+    }
+    fn pick_save_file(&self, _: &str) -> Option<PathBuf> {
+        None
+    }
+    fn saved_games(&self) -> std::io::Result<PathBuf> {
+        Err(std::io::Error::other("the gate has no Saved Games"))
+    }
+    fn run_value(&self) -> std::io::Result<Option<String>> {
+        Ok(None)
+    }
+    fn set_run_value(&self, _: Option<&str>) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Published releases; the last one pushed per product is the recommended one.
