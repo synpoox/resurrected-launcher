@@ -6,12 +6,7 @@ Developer guide for the launcher. For what the launcher does for players, see th
 
 The native core is implemented and tested. The UI runs on fixture data until it is connected to the native commands in [#79](https://github.com/synpoox/resurrected-launcher/issues/79).
 
-**Still planned:**
-- Launcher self-update notice: [#78](https://github.com/synpoox/resurrected-launcher/issues/78)
-- Signed launcher updates through the Tauri updater: [#88](https://github.com/synpoox/resurrected-launcher/issues/88), with signing keys in [#86](https://github.com/synpoox/resurrected-launcher/issues/86)
-- News feed source: [#80](https://github.com/synpoox/resurrected-launcher/issues/80)
-
-The v1 build is tracked in [#41](https://github.com/synpoox/resurrected-launcher/issues/41).
+Remaining v1 work is tracked in the [launcher v1 map (#41)](https://github.com/synpoox/resurrected-launcher/issues/41) and its open sub-issues.
 
 ## Tech stack
 
@@ -77,9 +72,11 @@ src/                 React UI
   shell/             window, sidebar, title bar
   product/           product page, Patch Notes, journey dialogs
   settings/          Settings and troubleshooting
+  selfupdate/        launcher self-update notice
   ui/                shared controls: dialog, menu, toast, switch
 src-tauri/           Tauri app and Rust native core
-  src/app/           Tauri commands, window, settings
+  src/app/           Tauri commands, window controls, settings
+  src/lifecycle/     window, tray, single instance, Quit
   src/catalog/       release feed and manifest validation
   src/install/       download, extract, install transactions, recovery
   src/game/          D2R detection, readiness, launch, process tracking
