@@ -6,7 +6,7 @@
 mod support;
 
 use resurrected_launcher_lib::catalog::{
-    manifest_identity, refresh, refresh_with, Feed, FEED_IDENTITY,
+    apply, fetch, manifest_identity, refresh, Feed, Fetch, FEED_IDENTITY,
 };
 use resurrected_launcher_lib::contract::{ErrorCode, LauncherError, Sha256Digest};
 use resurrected_launcher_lib::install::download::{Downloader, Expect};
@@ -58,6 +58,18 @@ impl Rig {
     fn cached(&mut self, identity: &str) -> Option<Vec<u8>> {
         self.state.cached(identity).map(|c| c.bytes)
     }
+}
+
+/// `refresh`'s two phases with the downloads done by `download`.
+fn refresh_with(
+    state: &mut StateStore,
+    feed_url: &str,
+    download: &mut Fetch<'_>,
+) -> Result<Feed, LauncherError> {
+    let fetched = fetch(feed_url, download, &mut |identity| {
+        state.cached(identity).map(|c| c.sha256)
+    })?;
+    apply(state, fetched)
 }
 
 fn identity(r: &FixtureRelease) -> String {
