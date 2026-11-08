@@ -3,8 +3,9 @@
 //!
 //! Commands are [`ping`], the install operation commands in [`operations`] (#40)
 //! and the D2R location, readiness, catalog and Play commands in [`game`] (#60),
-//! the Settings and troubleshooting commands in [`settings`] and the window
-//! controls in [`window`] (#74).
+//! the Settings and troubleshooting commands in [`settings`], the window
+//! controls in [`window`] (#74) and the launcher self-update commands in
+//! [`selfupdate`] (#88).
 //! There is no generic shell, filesystem, path, URL, download or execute command,
 //! and there must never be one: arguments from the frontend are product IDs,
 //! intents, consents and inspection tokens only, and Rust validates every request.
@@ -28,6 +29,7 @@
 
 mod game;
 mod operations;
+mod selfupdate;
 mod settings;
 mod winapi;
 mod window;
@@ -44,6 +46,10 @@ pub use game::{
 pub use operations::{
     CachedReleases, ConflictView, InspectionView, Launcher, RecoveryView, Refusal, Release,
     ReleaseSummary, Releases, OUTCOME_EVENT, PROGRESS_EVENT,
+};
+pub use selfupdate::{
+    SelfUpdateStatus, SelfUpdater, SystemUpdateHost, UpdateHost, RELEASE_PAGE, SELF_UPDATE_EVENT,
+    UPDATE_DIR,
 };
 pub use settings::{Folder, ReleaseNotes};
 pub use window::TRAY_EVENT;
@@ -88,7 +94,14 @@ pub fn invoke_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync 
         window::toggle_maximize_window,
         window::close_window,
         window::start_window_drag,
-        window::quit_launcher
+        window::quit_launcher,
+        selfupdate::get_launcher_update_status,
+        selfupdate::check_for_launcher_update,
+        selfupdate::download_launcher_update,
+        selfupdate::restart_to_update_launcher,
+        selfupdate::open_launcher_whats_new,
+        selfupdate::get_launcher_auto_download,
+        selfupdate::set_launcher_auto_download
     ]
 }
 
@@ -303,6 +316,13 @@ mod tests {
         "close_window",
         "start_window_drag",
         "quit_launcher",
+        "get_launcher_update_status",
+        "check_for_launcher_update",
+        "download_launcher_update",
+        "restart_to_update_launcher",
+        "open_launcher_whats_new",
+        "get_launcher_auto_download",
+        "set_launcher_auto_download",
     ];
 
     fn root_file(rel: &str) -> String {

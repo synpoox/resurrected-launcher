@@ -29,6 +29,13 @@ fn main() {
         "close_window",
         "start_window_drag",
         "quit_launcher",
+        "get_launcher_update_status",
+        "check_for_launcher_update",
+        "download_launcher_update",
+        "restart_to_update_launcher",
+        "open_launcher_whats_new",
+        "get_launcher_auto_download",
+        "set_launcher_auto_download",
     ]);
     let attributes = tauri_build::Attributes::new()
         .windows_attributes(windows)

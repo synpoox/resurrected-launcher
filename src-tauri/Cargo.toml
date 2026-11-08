@@ -22,10 +22,15 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2.8.0"
 tauri-plugin-single-instance = "2.5.5"
+# Signed launcher self-updates (#88, ADR 0003). No zip: the NSIS installer is served as is.
+tauri-plugin-updater = { version = "2.9.0", default-features = false, features = ["rustls-tls"] }
 # HTTPS archive download (#35); ring keeps the Windows build free of cmake/nasm.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
+base64 = "0.22"
+# Ephemeral updater signing keys, generated in a temp dir by the self-update tests.
+minisign = "0.10.0"
 # Local TLS fixture server for download tests.
 rcgen = { version = "0.14", default-features = false, features = ["ring"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }

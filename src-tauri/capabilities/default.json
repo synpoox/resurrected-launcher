@@ -28,6 +28,13 @@
     "allow-close-window",
     "allow-start-window-drag",
     "allow-quit-launcher",
+    "allow-get-launcher-update-status",
+    "allow-check-for-launcher-update",
+    "allow-download-launcher-update",
+    "allow-restart-to-update-launcher",
+    "allow-open-launcher-whats-new",
+    "allow-get-launcher-auto-download",
+    "allow-set-launcher-auto-download",
     "core:event:allow-listen",
     "core:event:allow-unlisten"
   ]
