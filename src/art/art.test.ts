@@ -14,11 +14,11 @@ describe("bundled art", () => {
   });
 
   it("every colour in the art is a token value", () => {
-    const tokens = new Set(readFileSync("src/tokens.css", "utf8").match(/#[0-9a-f]+(?=;)/gi));
+    const tokens = readFileSync("src/tokens.css", "utf8").match(/#[0-9a-f]+(?=;)/gi) ?? [];
     for (const file of readdirSync(dir).filter((f) => f.endsWith(".svg"))) {
       const svg = readFileSync(`${dir}/${file}`, "utf8");
       expect(svg, file).not.toMatch(/rgba?\(|hsla?\(|hwb\(|lab\(|lch\(|color\(/i);
-      for (const colour of svg.match(/#[0-9a-f]{3,8}/gi) ?? []) expect(tokens, `${file}: ${colour}`).toContain(colour);
+      for (const colour of svg.match(/#[0-9a-f]+\b/gi) ?? []) expect(tokens, `${file}: ${colour}`).toContain(colour);
     }
   });
 
