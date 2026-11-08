@@ -12,17 +12,19 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
-use super::operations::{locked, Launcher, Release, ReleaseSummary, RunningMap};
-use crate::catalog::{refresh_with, Availability, Feed, MAX_FEED_SIZE};
+use super::operations::{locked, Launcher, Release, ReleaseSummary, Running};
+use crate::catalog::{
+    manifest_identity, refresh_with, Availability, Feed, FEED_IDENTITY, MAX_FEED_SIZE,
+};
 use crate::contract::{
     ErrorCode, GameLocation, LauncherError, LoaderGuidance, OperationKind, ProductId, Readiness,
     RunningGame, Sha256Digest, Versioned, LOADER_DOWNLOAD_PAGE,
 };
-use crate::game::process::{running_under, wait_until_exited};
+use crate::game::process::wait_until_exited;
 use crate::game::readiness::{self, Facts};
 use crate::game::{detect, launch, loader_setup};
 use crate::install::download::Expect;
-use crate::install::journal::journal_path;
+use crate::install::journal::refuse_pending_journal;
 use crate::install::plan::product_root;
 use crate::state::{InstalledRelease, Preferences};
 
@@ -119,7 +121,7 @@ struct Assessed {
 pub(super) fn refuse_linked_root(d2r: &Path) -> Result<(), LauncherError> {
     let abs = std::path::absolute(d2r).unwrap_or_else(|_| d2r.to_path_buf());
     for dir in abs.ancestors() {
-        if std::fs::symlink_metadata(dir).is_ok_and(|m| is_link(&m)) {
+        if std::fs::symlink_metadata(dir).is_ok_and(|m| detect::is_link(&m)) {
             return Err(LauncherError::new(
                 ErrorCode::D2rNotFound,
                 format!(
@@ -130,19 +132,6 @@ pub(super) fn refuse_linked_root(d2r: &Path) -> Result<(), LauncherError> {
         }
     }
     Ok(())
-}
-
-/// Same rule as `game::detect`'s (private) check: any reparse point or symlink.
-fn is_link(meta: &std::fs::Metadata) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-        if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-            return true;
-        }
-    }
-    meta.file_type().is_symlink()
 }
 
 fn internal(e: impl std::fmt::Display) -> LauncherError {
@@ -170,14 +159,17 @@ impl Launcher {
             .as_ref()
             .or(recommended.as_ref())
             .map(|r| &r.manifest);
-        let running = match &location {
-            Some(l) => running_under(&l.path, &*self.game)?,
-            None => Vec::new(),
+        // A listing failure blocks like a running game (below), never "not running".
+        let (running, listing_failed) = match &location {
+            Some(l) => match self.games_under(&l.path) {
+                Ok(games) => (games, false),
+                Err(_) => (Vec::new(), true),
+            },
+            None => (Vec::new(), false),
         };
+        // Fails closed like Play's own recheck: an uncheckable journal is pending.
         let journal = match (&location, manifest) {
-            (Some(l), Some(m)) => {
-                std::fs::symlink_metadata(journal_path(&product_root(&l.path, m))).is_ok()
-            }
+            (Some(l), Some(m)) => refuse_pending_journal(&product_root(&l.path, m)).is_err(),
             _ => false,
         };
         let facts = Facts {
@@ -188,7 +180,19 @@ impl Launcher {
             recovery_pending: journal || !self.recovered.load(Ordering::SeqCst),
             running: &running,
         };
-        let readiness = readiness::assess(&facts, &self.hashes, &*self.game)?;
+        let readiness = match readiness::assess(&facts, &self.hashes, &*self.game) {
+            Ok(Readiness::D2rMissing) => Readiness::D2rMissing,
+            // shortcut: `since: 0` when the processes could not be listed at all.
+            Ok(_) if listing_failed => Readiness::Running { since: 0 },
+            Ok(r) => r,
+            // D2R.exe could not be hashed: its build is unverified, so not playable.
+            Err(_) => Readiness::BuildUnsupported {
+                found: location
+                    .as_ref()
+                    .map(|l| l.build.clone())
+                    .unwrap_or_default(),
+            },
+        };
         let guidance = manifest.and_then(|m| loader_setup::guidance(&readiness, m));
         Ok(Assessed {
             record,
@@ -202,7 +206,7 @@ impl Launcher {
     }
 
     pub(super) fn state_of(&self, product: &ProductId) -> Result<ProductState, LauncherError> {
-        let running = self.running().get(product).map(|(_, kind)| *kind);
+        let running = self.running().ops.get(product).map(|(_, kind)| *kind);
         let assessed = self.assess(product)?;
         let catalog = self
             .catalog
@@ -224,15 +228,10 @@ impl Launcher {
         })
     }
 
-    /// `OperationInProgress` while any operation runs, `GameRunning` while a game
-    /// runs under the selected root.
-    fn refuse_location_change(&self, running: &RunningMap) -> Result<(), LauncherError> {
-        if let Some(product) = running.keys().next() {
-            return Err(LauncherError::new(
-                ErrorCode::OperationInProgress,
-                format!("{} has an operation running", product.0),
-            ));
-        }
+    /// `OperationInProgress` while any operation or recovery runs, `GameRunning`
+    /// while a game runs under the selected root.
+    fn refuse_location_change(&self, running: &Running) -> Result<(), LauncherError> {
+        running.refuse_any()?;
         let current = locked(&self.state)?.preferences().d2r_location.clone();
         match current {
             Some(d2r) => self.refuse_if_game_running(&d2r),
@@ -263,12 +262,7 @@ impl Launcher {
         product: &ProductId,
     ) -> Result<RunningGame, LauncherError> {
         let running = self.running();
-        if let Some((other, (_, kind))) = running.iter().next() {
-            return Err(LauncherError::new(
-                ErrorCode::OperationInProgress,
-                format!("{} is running {kind:?}", other.0),
-            ));
-        }
+        running.refuse_any()?;
         let a = self.assess(product)?;
         let refused = |code| LauncherError::new(code, format!("not playable: {:?}", a.readiness));
         if let Some(code) = a.readiness.play_refusal() {
@@ -278,7 +272,13 @@ impl Launcher {
         let (Some(location), Some(installed)) = (&a.location, &a.installed) else {
             return Err(refused(ErrorCode::Internal));
         };
-        let game = launch::play(location, &installed.manifest, &a.readiness, &*self.game)?;
+        let game = launch::play(location, &installed.manifest, &a.readiness, &*self.game).map_err(
+            |e| match e.code {
+                // play's only Internal is a process-listing failure: fail closed.
+                ErrorCode::Internal => LauncherError::new(ErrorCode::GameRunning, e.message),
+                _ => e,
+            },
+        )?;
         drop(running);
         self.watch_exit(app, location.path.clone());
         Ok(game)
@@ -295,17 +295,23 @@ impl Launcher {
     }
 
     /// Startup (blocking; `run` calls it on a worker thread): recovers every
-    /// installed product, then enables Play, watches a game already running under
-    /// the root, and refreshes the catalog in the background.
+    /// installed product and every product of the cached feed (an interrupted
+    /// first install has a journal but no record), then enables Play, watches a
+    /// game already running under the root, and refreshes the catalog in the
+    /// background.
     pub fn start_up<R: Runtime>(self: &Arc<Self>, app: &AppHandle<R>) {
-        let products: Vec<ProductId> = locked(&self.state)
-            .map(|s| {
-                s.installed_releases()
-                    .iter()
-                    .map(|r| r.product_id.clone())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let mut products: Vec<ProductId> = Vec::new();
+        if let Ok(mut s) = locked(&self.state) {
+            products.extend(s.installed_releases().iter().map(|r| r.product_id.clone()));
+            let feed = s
+                .cached(FEED_IDENTITY)
+                .and_then(|c| Feed::parse(&c.bytes).ok());
+            for p in feed.into_iter().flat_map(|f| f.products) {
+                if !products.contains(&p.product_id) {
+                    products.push(p.product_id);
+                }
+            }
+        }
         for product in &products {
             // A failure leaves the journal; readiness then reports recovery_required.
             let _ = self.recover(product);
@@ -315,7 +321,7 @@ impl Launcher {
             .ok()
             .and_then(|s| s.preferences().d2r_location.clone());
         if let Some(root) = root {
-            if running_under(&root, &*self.game).is_ok_and(|g| !g.is_empty()) {
+            if self.games_under(&root).is_ok_and(|g| !g.is_empty()) {
                 self.watch_exit(app, root);
             }
         }
@@ -356,6 +362,15 @@ impl Launcher {
         let parsed = Feed::parse(&feed.0)?;
         for product in &parsed.products {
             if let Availability::Available(p) = &product.availability {
+                // Already cached with the pointed-at bytes: the refresh keeps it
+                // without downloading, so neither does the prefetch.
+                let identity = manifest_identity(&product.product_id, &p.release_id);
+                let cached = locked(&self.state)?
+                    .cached(&identity)
+                    .is_some_and(|c| c.sha256 == p.manifest_sha256);
+                if cached {
+                    continue;
+                }
                 let expect = Expect::Exact {
                     size: p.manifest_size,
                     sha256: &p.manifest_sha256,

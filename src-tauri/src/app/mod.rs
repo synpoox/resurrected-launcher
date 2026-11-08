@@ -175,11 +175,44 @@ mod tests {
             "read_file",
             "plugin:fs|read_file",
             "plugin:shell|execute",
-            "plugin:dialog|open",
             "plugin:opener|open_url",
         ];
         for cmd in cmds {
             assert!(invoke_with(invoke_handler(), cmd).is_err(), "{cmd}");
+        }
+    }
+
+    /// The dialog plugin is registered (for the Rust-side picker), but no
+    /// capability grants its commands to the webview.
+    #[test]
+    fn registered_dialog_plugin_commands_are_refused_by_the_acl() {
+        let app = mock_builder()
+            .plugin(tauri_plugin_dialog::init())
+            .invoke_handler(invoke_handler())
+            .build(tauri::generate_context!())
+            .unwrap();
+        let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        for cmd in [
+            "plugin:dialog|open",
+            "plugin:dialog|save",
+            "plugin:dialog|message",
+        ] {
+            let err = get_ipc_response(
+                &webview,
+                InvokeRequest {
+                    cmd: cmd.into(),
+                    callback: CallbackFn(0),
+                    error: CallbackFn(1),
+                    url: "http://tauri.localhost".parse().unwrap(),
+                    body: InvokeBody::Json(serde_json::json!({ "options": {} })),
+                    headers: Default::default(),
+                    invoke_key: INVOKE_KEY.to_string(),
+                },
+            )
+            .unwrap_err();
+            assert!(err.to_string().contains("not allowed"), "{cmd}: {err}");
         }
     }
 
@@ -254,8 +287,35 @@ mod tests {
         found
     }
 
+    /// `text` without its `mod tests { ... }` blocks (braces counted).
+    fn without_test_modules(text: &str) -> String {
+        let mut out = String::new();
+        let mut rest = text;
+        // Spelled with an escape so this source text keeps its braces balanced.
+        const OPEN: &str = "mod tests \u{7b}";
+        while let Some(at) = rest.find(OPEN) {
+            out.push_str(&rest[..at]);
+            let body = &rest[at + OPEN.len()..];
+            let mut depth = 1;
+            let end = body
+                .char_indices()
+                .find(|&(_, c)| {
+                    match c {
+                        '{' => depth += 1,
+                        '}' => depth -= 1,
+                        _ => {}
+                    }
+                    depth == 0
+                })
+                .map_or(body.len(), |(i, _)| i + 1);
+            rest = &body[end..];
+        }
+        out.push_str(rest);
+        out
+    }
+
     /// Every command registered by non-test code anywhere under `src/`: each
-    /// `generate_handler!` before a file's `#[cfg(test)]` (#53 item 5).
+    /// `generate_handler!` outside `mod tests` blocks (#53 item 5).
     fn registered() -> Vec<String> {
         fn walk(dir: &std::path::Path, out: &mut Vec<String>) {
             let mut entries: Vec<_> = std::fs::read_dir(dir)
@@ -268,8 +328,7 @@ mod tests {
                     walk(&path, out);
                 } else if path.extension().is_some_and(|e| e == "rs") {
                     let text = std::fs::read_to_string(&path).unwrap();
-                    let code = text.split("#[cfg(test)]").next().unwrap();
-                    out.extend(listed(code, "generate_handler!"));
+                    out.extend(listed(&without_test_modules(&text), "generate_handler!"));
                 }
             }
         }
@@ -301,6 +360,12 @@ mod tests {
         assert_eq!(
             listed(second, "generate_handler!"),
             ["ping", "run_anything"]
+        );
+        // Code after a test module still counts; the test module does not.
+        let after = "mod tests { fn f() { generate_handler![a] } } generate_handler![b]";
+        assert_eq!(
+            listed(&without_test_modules(after), "generate_handler!"),
+            ["b"]
         );
     }
 

@@ -8,8 +8,8 @@ mod support;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -36,7 +36,10 @@ use tauri::{Listener, Manager, WebviewWindow, WebviewWindowBuilder};
 /// Fixture releases handed to the commands; the last one added per product is
 /// the recommended release.
 #[derive(Default)]
-struct FixtureReleases(Mutex<Vec<Release>>);
+struct FixtureReleases(Mutex<Vec<Release>>, Mutex<Option<Gate>>);
+
+/// Makes the next `installed` call announce itself, then wait to be released.
+type Gate = (Sender<()>, Receiver<()>);
 
 impl Releases for FixtureReleases {
     fn recommended(
@@ -59,6 +62,10 @@ impl Releases for FixtureReleases {
         _: &mut StateStore,
         record: &InstalledRelease,
     ) -> Result<Release, LauncherError> {
+        if let Some((entered, release)) = self.1.lock().unwrap().take() {
+            entered.send(()).unwrap();
+            release.recv().unwrap();
+        }
         let all = self.0.lock().unwrap();
         Ok(all
             .iter()
@@ -93,6 +100,8 @@ type Spawned = (PathBuf, Vec<String>, PathBuf);
 #[derive(Clone, Default)]
 struct FakeGame {
     processes: Arc<Mutex<Vec<RunningGame>>>,
+    /// Set: listing processes fails.
+    fail_listing: Arc<AtomicBool>,
     /// (exe, args, cwd) of every spawn.
     spawned: Arc<Mutex<Vec<Spawned>>>,
 }
@@ -108,6 +117,9 @@ impl GameHost for FakeGame {
         Vec::new()
     }
     fn processes(&self) -> std::io::Result<Vec<RunningGame>> {
+        if self.fail_listing.load(Ordering::SeqCst) {
+            return Err(std::io::Error::other("injected listing failure"));
+        }
         Ok(self.processes.lock().unwrap().clone())
     }
     fn product_version(&self, file: &Path) -> std::io::Result<Option<String>> {
@@ -173,6 +185,23 @@ impl Releases for Shared {
         r: &InstalledRelease,
     ) -> Result<Release, LauncherError> {
         self.0.installed(s, r)
+    }
+}
+
+/// A host whose second sharing check (the recheck before the first live
+/// mutation, after the journal is written) panics: an interrupted first install.
+#[derive(Default)]
+struct CrashBeforeActivation(AtomicUsize);
+
+impl Host for CrashBeforeActivation {
+    fn free_space(&self, _: &std::path::Path) -> std::io::Result<u64> {
+        Ok(u64::MAX)
+    }
+    fn processes_using(&self, _: &[PathBuf]) -> Vec<String> {
+        if self.0.fetch_add(1, Ordering::SeqCst) == 1 {
+            panic!("injected crash before activation");
+        }
+        Vec::new()
     }
 }
 
@@ -917,4 +946,82 @@ fn game_commands_take_no_paths_or_urls() {
     .unwrap();
     assert_eq!(rig.desktop.opened.load(Ordering::SeqCst), 1);
     assert_eq!(rig.state().location.unwrap().path, rig.game.d2r());
+}
+
+#[test]
+fn a_process_listing_failure_blocks_like_a_running_game() {
+    let rig = Rig::new();
+    let r1 = rig.publish(PD2R_1);
+    rig.game.product_root(&r1);
+    rig.start_up();
+    assert_eq!(rig.run("install", json!({}))["status"], "succeeded");
+    let repair = rig.inspect("repair", json!({})).unwrap();
+    rig.host.fail_listing.store(true, Ordering::SeqCst);
+
+    // State still answers, with a blocking reason instead of an error.
+    assert_eq!(rig.state().readiness, Readiness::Running { since: 0 });
+    assert_eq!(code(rig.play().unwrap_err()), "game_running");
+    let start = rig.start("repair", json!({}), &repair.token);
+    assert_eq!(code(start.unwrap_err()), "game_running");
+    let recover = rig.invoke("recover_product", json!({ "product_id": "pd2r" }));
+    assert_eq!(code(recover.unwrap_err()), "game_running");
+    assert!(rig.host.spawned.lock().unwrap().is_empty());
+
+    rig.host.fail_listing.store(false, Ordering::SeqCst);
+    assert_eq!(rig.state().readiness, Readiness::Ready);
+}
+
+#[test]
+fn play_and_location_changes_wait_for_a_running_recovery() {
+    let rig = Rig::new();
+    let r1 = rig.publish(PD2R_1);
+    rig.game.product_root(&r1);
+    rig.start_up();
+    assert_eq!(rig.run("install", json!({}))["status"], "succeeded");
+
+    let (entered_tx, entered) = channel();
+    let (release, release_rx) = channel();
+    *rig.releases.1.lock().unwrap() = Some((entered_tx, release_rx));
+    let webview = rig.webview.clone();
+    let recovery = std::thread::spawn(move || {
+        invoke(&webview, "recover_product", json!({ "product_id": "pd2r" }))
+    });
+    entered.recv_timeout(Duration::from_secs(20)).unwrap();
+    // Recovery holds its reservation: nothing else may start under the root.
+    assert_eq!(code(rig.play().unwrap_err()), "operation_in_progress");
+    let choose = rig.invoke("choose_game_location", json!({}));
+    assert_eq!(code(choose.unwrap_err()), "operation_in_progress");
+    let again = rig.invoke("recover_product", json!({ "product_id": "pd2r" }));
+    assert_eq!(code(again.unwrap_err()), "operation_in_progress");
+
+    release.send(()).unwrap();
+    let reply = recovery.join().unwrap().unwrap();
+    assert_eq!(data::<RecoveryView>(reply), RecoveryView::Nothing);
+    assert!(rig.host.spawned.lock().unwrap().is_empty());
+    rig.play().unwrap();
+}
+
+/// An interrupted first install leaves a journal but no installed record; startup
+/// recovers it through the cached feed's product list.
+#[test]
+fn startup_recovers_an_interrupted_first_install() {
+    let rig = Rig::on(Box::new(CrashBeforeActivation::default()));
+    let r1 = rig.publish(PD2R_1);
+    let root = rig.game.product_root(&r1);
+    let outcome = rig.run("install", json!({}));
+    assert_eq!(outcome["error"]["code"], "internal", "{outcome}");
+    assert!(rig.state().installed.is_none());
+    let journal = root.with_file_name("PD2R.resurrected-journal.json");
+    assert!(journal.exists(), "no journal at {}", journal.display());
+    {
+        let launcher = rig.webview.state::<Arc<Launcher>>();
+        let mut store = launcher.state.lock().unwrap();
+        store.put_cached("feed", &feed(&[&r1])).unwrap();
+    }
+
+    rig.start_up();
+    assert!(!journal.exists());
+    assert_eq!(rig.state().readiness, Readiness::NotInstalled);
+    // Only the sentinel is left in the product root.
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
 }

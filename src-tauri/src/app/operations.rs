@@ -3,7 +3,7 @@
 //! consents and the token of the inspection it showed; everything else (the D2R
 //! location, release manifests, the downloader, 7-Zip) is native state.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -150,17 +150,41 @@ pub struct Launcher {
     /// Where `refresh_catalog` downloads the feed: [`DEFAULT_FEED_URL`] unless a
     /// test points it elsewhere.
     pub feed_url: String,
-    /// Running operations: cancel flag and kind, by product. Also the app
-    /// operation lock: `start_operation` reserves under it, and `play_product`
-    /// holds it from assessment to spawn.
-    running: Mutex<RunningMap>,
+    /// Running operations and recoveries. Also the app operation lock:
+    /// `start_operation` and recovery reserve under it, and `play_product` holds
+    /// it from assessment to spawn.
+    running: Mutex<Running>,
     pub(super) hashes: BuildHashCache,
     pub(super) catalog: Mutex<CatalogState>,
     /// Set once startup recovery finished; Play is refused before.
     pub(super) recovered: AtomicBool,
 }
 
-pub(super) type RunningMap = HashMap<ProductId, (Arc<AtomicBool>, OperationKind)>;
+/// What runs per product, behind the app operation lock.
+#[derive(Default)]
+pub(super) struct Running {
+    /// Started operations: cancel flag and kind.
+    pub(super) ops: HashMap<ProductId, (Arc<AtomicBool>, OperationKind)>,
+    /// Products whose restart recovery is running.
+    pub(super) recovering: HashSet<ProductId>,
+}
+
+impl Running {
+    fn busy(&self, product: &ProductId) -> bool {
+        self.ops.contains_key(product) || self.recovering.contains(product)
+    }
+
+    /// [`ErrorCode::OperationInProgress`] while any operation or recovery runs.
+    pub(super) fn refuse_any(&self) -> Result<(), LauncherError> {
+        match self.ops.keys().chain(&self.recovering).next() {
+            Some(p) => Err(LauncherError::new(
+                ErrorCode::OperationInProgress,
+                format!("{} has an operation or recovery running", p.0),
+            )),
+            None => Ok(()),
+        }
+    }
+}
 
 /// The install host plus whole-process tracking: every preflight (and its
 /// recheck before the first live mutation) also refuses with `GameRunning` while
@@ -239,7 +263,7 @@ impl Launcher {
             game,
             desktop,
             feed_url: DEFAULT_FEED_URL.to_owned(),
-            running: Mutex::new(HashMap::new()),
+            running: Mutex::new(Running::default()),
             hashes: BuildHashCache::default(),
             catalog: Mutex::new(CatalogState::NotRefreshed),
             recovered: AtomicBool::new(false),
@@ -264,13 +288,25 @@ impl Launcher {
 
     /// The running map. Entries are only added and removed whole (removal by drop
     /// guards), so a poisoned lock is still consistent.
-    pub(super) fn running(&self) -> MutexGuard<'_, RunningMap> {
+    pub(super) fn running(&self) -> MutexGuard<'_, Running> {
         self.running.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// [`ErrorCode::GameRunning`] while any process runs under `d2r`.
+    /// The processes under `d2r`. A listing failure is [`ErrorCode::GameRunning`]:
+    /// fails closed, never "nothing runs".
+    pub(super) fn games_under(&self, d2r: &Path) -> Result<Vec<RunningGame>, LauncherError> {
+        running_under(d2r, &*self.game).map_err(|e| {
+            LauncherError::new(
+                ErrorCode::GameRunning,
+                format!("cannot tell whether the game is running: {}", e.message),
+            )
+        })
+    }
+
+    /// [`ErrorCode::GameRunning`] while any process runs under `d2r`, or when that
+    /// cannot be listed.
     pub(super) fn refuse_if_game_running(&self, d2r: &Path) -> Result<(), LauncherError> {
-        match running_under(d2r, &*self.game)?.first() {
+        match self.games_under(d2r)?.first() {
             Some(g) => Err(LauncherError::new(ErrorCode::GameRunning, describe(g))),
             None => Ok(()),
         }
@@ -525,7 +561,7 @@ pub async fn start_operation<R: Runtime>(
     let cancel = Arc::new(AtomicBool::new(false));
     let reservation = {
         let mut running = launcher.running();
-        if running.contains_key(&req.product_id) {
+        if running.busy(&req.product_id) {
             return Err(LauncherError::new(
                 ErrorCode::OperationInProgress,
                 format!("{} already has an operation running", req.product_id.0),
@@ -534,7 +570,9 @@ pub async fn start_operation<R: Runtime>(
         // Under the app operation lock, so a Play cannot slip in between.
         launcher.refuse_if_game_running(&resolved.d2r)?;
         // Reserved first so two starts cannot both pass; inspected outside the lock.
-        running.insert(req.product_id.clone(), (cancel.clone(), req.kind));
+        running
+            .ops
+            .insert(req.product_id.clone(), (cancel.clone(), req.kind));
         Reservation {
             launcher: Arc::clone(&launcher),
             product_id: req.product_id.clone(),
@@ -602,7 +640,7 @@ struct Reservation {
 
 impl Drop for Reservation {
     fn drop(&mut self) {
-        self.launcher.running().remove(&self.product_id);
+        self.launcher.running().ops.remove(&self.product_id);
     }
 }
 
@@ -645,6 +683,7 @@ pub async fn cancel_operation(
     let req = request.into_current()?;
     let running = launcher.running();
     let (cancel, _) = running
+        .ops
         .get(&req.product_id)
         .ok_or_else(|| invalid(format!("{} has no operation running", req.product_id.0)))?;
     cancel.store(true, Ordering::Relaxed);
@@ -663,30 +702,52 @@ pub async fn recover_product(
 }
 
 impl Launcher {
+    /// Reserves `product_id` as recovering under the app operation lock (so no
+    /// Play, location change or operation on it starts meanwhile), then recovers.
     pub(super) fn recover(&self, product_id: &ProductId) -> Result<RecoveryView, LauncherError> {
-        if self.running().contains_key(product_id) {
-            return Err(LauncherError::new(
-                ErrorCode::OperationInProgress,
-                format!("{} has an operation running", product_id.0),
-            ));
-        }
-        let (d2r, manifest) = {
+        let d2r = {
+            let mut running = self.running();
+            if running.busy(product_id) {
+                return Err(LauncherError::new(
+                    ErrorCode::OperationInProgress,
+                    format!("{} has an operation running", product_id.0),
+                ));
+            }
+            let d2r = self.d2r_root(&*locked(&self.state)?)?;
+            self.refuse_if_game_running(&d2r)?;
+            running.recovering.insert(product_id.clone());
+            d2r
+        };
+        let _reserved = Recovering(self, product_id);
+        let manifest = {
             let mut state = locked(&self.state)?;
-            let d2r = self.d2r_root(&state)?;
             // Any manifest of the product names its install root.
             let release = match state.installed_release(product_id).cloned() {
                 Some(record) => self.releases.installed(&mut state, &record)?,
                 None => self.releases.recommended(&mut state, product_id)?,
             };
-            (d2r, release.manifest)
+            release.manifest
         };
-        self.refuse_if_game_running(&d2r)?;
         let cancel = AtomicBool::new(false);
-        let env = self.env(&*self.host, &NoFaults, &cancel);
+        let host = GameAware {
+            host: &*self.host,
+            game: &*self.game,
+            d2r: &d2r,
+        };
+        let env = self.env(&host, &NoFaults, &cancel);
         Ok(match ops::recover(&env, &d2r, &manifest)? {
             Recovery::Nothing => RecoveryView::Nothing,
             Recovery::RolledBack => RecoveryView::RolledBack,
             Recovery::RolledForward => RecoveryView::RolledForward,
         })
+    }
+}
+
+/// Frees a product's recovery reservation when dropped, even on a panic.
+struct Recovering<'a>(&'a Launcher, &'a ProductId);
+
+impl Drop for Recovering<'_> {
+    fn drop(&mut self) {
+        self.0.running().recovering.remove(self.1);
     }
 }
