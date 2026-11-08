@@ -1,14 +1,25 @@
 // Self-update copy (spec: Launcher self-update), kept pure so it can be tested on its own.
 import { productById } from "../products";
 import type { SelfUpdateStatus } from "./api";
+import type { OperationKind } from "../api/types";
 import type { RestartHold } from "./hold";
 
-/** "Restarts after you quit PD2R" / "Restarts after PD2R finishes downloading". */
+/** What the product is busy with, for the held-restart text. Downloads keep the spec's wording. */
+const BUSY_WITH: Record<OperationKind, string> = {
+  install: "downloading",
+  update: "downloading",
+  clean_install: "downloading",
+  adopt: "setting up",
+  repair: "repairing",
+  uninstall: "uninstalling",
+};
+
+/** "Restarts after you quit PD2R" / "Restarts after PD2R finishes downloading" (or repairing, …). */
 export function holdText(hold: RestartHold): string {
   const short = productById(hold.product_id)?.short ?? "the game";
   return hold.reason === "product_running"
     ? `Restarts after you quit ${short}`
-    : `Restarts after ${short} finishes downloading`;
+    : `Restarts after ${short} finishes ${BUSY_WITH[hold.operation]}`;
 }
 
 /** The Launcher version row's status, after the version. */

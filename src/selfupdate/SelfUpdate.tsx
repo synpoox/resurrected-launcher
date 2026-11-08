@@ -43,19 +43,17 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
   const [autoDownload, setAuto] = useState<boolean | null>(null);
   const [dot, setDot] = useState(false);
   const [diagnostics, setDiagnostics] = useState(false);
-  /** The self-update toast on screen now, if any. */
-  const openToast = useRef<{ id: number; key: string } | null>(null);
+  /** The self-update toast on screen now, if any. Cleared as soon as that toast closes. */
+  const openToast = useRef<OpenToast | null>(null);
   /** The key of the last toast shown, so a re-sent status doesn't show it twice. */
   const lastShownKey = useRef<string | null>(null);
 
   // Compared by value, so unrelated product changes don't rebuild the toast.
-  const computed = restartHold(products);
-  const reason = computed?.reason;
-  const holder = computed?.product_id;
-  const hold = useMemo<RestartHold | null>(
-    () => (reason && holder ? { reason, product_id: holder } : null),
-    [reason, holder],
-  );
+  const holdKey = JSON.stringify(restartHold(products));
+  const hold = useMemo(() => JSON.parse(holdKey) as RestartHold | null, [holdKey]);
+  /** The automatic-download value the launcher last confirmed, and the latest change request. */
+  const autoConfirmed = useRef<{ value: boolean; request: number } | null>(null);
+  const autoRequest = useRef(0);
 
   useEffect(() => {
     let live = true;
@@ -70,7 +68,13 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
       () => {},
     );
     api.getAutoDownload().then(
-      (on) => live && setAuto(on),
+      (on) => {
+        if (!live) return;
+        if (autoRequest.current === 0) {
+          autoConfirmed.current = { value: on, request: 0 };
+          setAuto(on);
+        }
+      },
       () => live && setAuto(true),
     );
     return () => {
@@ -84,10 +88,13 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
     [toast],
   );
   const download = useCallback(() => {
-    // A new attempt: if it fails again, its failure toast shows again.
+    // A new attempt: close the old failure toast, and if this one fails too, its toast shows again,
+    // even when the failure arrives with no downloading event in between.
+    if (openToast.current) toast.dismiss(openToast.current.id);
+    openToast.current = null;
     lastShownKey.current = null;
     void api.download().catch(failed);
-  }, [api, failed]);
+  }, [api, toast, failed]);
   const restart = useCallback(() => void api.restartToUpdate().catch(failed), [api, failed]);
   const whatsNew = useCallback(() => void api.openWhatsNew().catch(() => {}), [api]);
 
@@ -100,9 +107,10 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
     if (!status) return;
     const key = toastKey(status);
     const input = toastFor(status, hold, { download, restart, whatsNew, later, diagnostics: () => setDiagnostics(true) });
-    if (openToast.current?.key === key) {
+    const current = openToast.current;
+    if (current?.key === key) {
       // Same phase and release, new details (a restart hold began or ended).
-      if (input) toast.update(openToast.current.id, input);
+      if (input) toast.update(current.id, closesInto(input, current, openToast));
       return;
     }
     if (openToast.current) toast.dismiss(openToast.current.id);
@@ -114,17 +122,28 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
     }
     if (lastShownKey.current !== key) {
       lastShownKey.current = key;
-      openToast.current = { id: toast.show(input), key };
+      const entry: OpenToast = { id: 0, key };
+      entry.id = toast.show(closesInto(input, entry, openToast));
+      openToast.current = entry;
     }
   }, [status, hold, toast, download, restart, whatsNew, later]);
 
   const setAutoDownload = useCallback(
     (on: boolean) => {
+      const request = ++autoRequest.current;
       setAuto(on);
-      api.setAutoDownload(on).catch(() => {
-        setAuto(!on);
-        toast.show({ tone: "error", text: "Couldn't change automatic launcher downloads. Try again." });
-      });
+      api.setAutoDownload(on).then(
+        () => {
+          // Requests can settle out of order; keep the newest one the launcher accepted.
+          if (!autoConfirmed.current || request > autoConfirmed.current.request) autoConfirmed.current = { value: on, request };
+        },
+        () => {
+          // Only the latest request decides the switch; an older failure is superseded.
+          if (request !== autoRequest.current) return;
+          setAuto(autoConfirmed.current?.value ?? !on);
+          toast.show({ tone: "error", text: "Couldn't change automatic launcher downloads. Try again." });
+        },
+      );
     },
     [api, toast],
   );
@@ -148,6 +167,26 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
       {diagnostics && <DiagnosticsDialog onClose={() => setDiagnostics(false)} />}
     </SelfUpdateContext.Provider>
   );
+}
+
+interface OpenToast {
+  id: number;
+  key: string;
+}
+
+/** Forgets `entry` as the open toast once it closes, whether by Later, an action or a timeout. */
+function closesInto(input: ToastInput, entry: OpenToast, ref: { current: OpenToast | null }): ToastInput {
+  const forget = () => {
+    if (ref.current === entry) ref.current = null;
+  };
+  return {
+    ...input,
+    actions: input.actions?.map((a) => ({ ...a, onSelect: () => (forget(), a.onSelect()) })),
+    onDismiss: (by) => {
+      forget();
+      input.onDismiss?.(by);
+    },
+  };
 }
 
 interface ToastHandlers {

@@ -1,12 +1,13 @@
 // The restart hold (spec: Launcher self-update → Held restart), derived from product state only.
+import type { OperationKind } from "../api/types";
 import type { ProductMap } from "../product/store";
 import { PRODUCTS } from "../products";
 
 /** Why Restart to update waits. The update still installs on the next Quit. */
-export interface RestartHold {
-  reason: "product_running" | "product_downloading";
-  product_id: string;
-}
+export type RestartHold =
+  | { reason: "product_running"; product_id: string }
+  /** An operation is in progress; `operation` names it so the copy can say which. */
+  | { reason: "product_busy"; product_id: string; operation: OperationKind };
 
 /**
  * A running game holds the restart first; otherwise any operation in progress (download, update,
@@ -17,6 +18,6 @@ export function restartHold(products: ProductMap): RestartHold | null {
   const playing = states.find((s) => s.readiness.status === "running");
   if (playing) return { reason: "product_running", product_id: playing.product_id };
   const busy = states.find((s) => s.running);
-  if (busy) return { reason: "product_downloading", product_id: busy.product_id };
+  if (busy?.running) return { reason: "product_busy", product_id: busy.product_id, operation: busy.running };
   return null;
 }

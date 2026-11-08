@@ -3,7 +3,10 @@ import { createContext, useCallback, useContext, useEffect, useId, useMemo, useR
 export interface ToastAction {
   label: string;
   onSelect: () => void;
-  /** Shows the action disabled; the toast's text says why. */
+  /**
+   * Shows the action disabled (`aria-disabled`, still focusable, so focus isn't lost when an
+   * update() disables it); the toast's text says why.
+   */
   disabled?: boolean;
 }
 
@@ -92,14 +95,16 @@ function ToastView({ toast, dismiss }: { toast: Toast; dismiss: () => void }) {
     <div className={`toast ${toast.tone}`} role={toast.tone === "error" ? "alert" : "status"}>
       <p id={text}>{toast.text}</p>
       <div className="toast-actions">
-        {toast.actions?.map((a) => (
+        {toast.actions?.map((a, i) => (
           <button
-            key={a.label}
+            // By position, so an update() that relabels an action keeps its button (and focus).
+            key={i}
             type="button"
             className="link"
-            disabled={a.disabled}
+            aria-disabled={a.disabled || undefined}
             aria-describedby={a.disabled ? text : undefined}
             onClick={() => {
+              if (a.disabled) return;
               dismiss();
               a.onSelect();
             }}

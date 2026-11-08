@@ -8,7 +8,7 @@ import { createFixtureApi, sceneByKey, type FixtureApi } from "../api/fixtures";
 import { Shell } from "../shell/Shell";
 import { TOAST_MS, ToastProvider } from "../ui/Toast";
 import { createSelfUpdateFixture, SELF_UPDATE_FIXTURES, type SelfUpdatePhase, type SelfUpdateFixtureApi } from "./api";
-import { AUTO_DOWNLOAD_OFF_HINT, AUTO_DOWNLOAD_ON_HINT, versionStatus } from "./copy";
+import { AUTO_DOWNLOAD_OFF_HINT, AUTO_DOWNLOAD_ON_HINT, holdText, versionStatus } from "./copy";
 import { selectSelfUpdate, selfUpdateEnabled } from "./flag";
 import { restartHold } from "./hold";
 import { SelfUpdateProvider } from "./SelfUpdate";
@@ -177,7 +177,7 @@ describe("toasts", () => {
     const text = await within(notifications()).findByText(/Launcher 1.3.0 is ready/);
     expect(text.textContent).toBe("Launcher 1.3.0 is ready. Restarts after you quit PD2R, or it installs the next time you Quit.");
     const restart = within(notifications()).getByRole("button", { name: "Restart to update" }) as HTMLButtonElement;
-    expect(restart.disabled).toBe(true);
+    expect(restart.getAttribute("aria-disabled")).toBe("true");
     expect(restart.getAttribute("aria-describedby")).toBe(text.id);
     cleanup();
     su?.dispose();
@@ -196,10 +196,21 @@ describe("toasts", () => {
     api!.getProductState = () => Promise.resolve(structuredClone(quit));
     act(() => changed.forEach((h) => h()));
     await waitFor(() =>
-      expect((within(notifications()).getByRole("button", { name: "Restart to update" }) as HTMLButtonElement).disabled).toBe(false),
+      expect(within(notifications()).getByRole("button", { name: "Restart to update" }).hasAttribute("aria-disabled")).toBe(false),
     );
     expect(within(notifications()).getAllByText(/Launcher 1.3.0 is ready/)).toHaveLength(1);
     expect(within(notifications()).getByText("Launcher 1.3.0 is ready")).toBeTruthy();
+  });
+
+  it("held text names what the product is busy with", () => {
+    const busy = (operation: "install" | "update" | "repair" | "uninstall" | "adopt" | "clean_install") =>
+      holdText({ reason: "product_busy", product_id: "pd2r", operation });
+    expect(holdText({ reason: "product_running", product_id: "pd2r" })).toBe("Restarts after you quit PD2R");
+    expect(busy("install")).toBe("Restarts after PD2R finishes downloading");
+    expect(busy("update")).toBe("Restarts after PD2R finishes downloading");
+    expect(busy("repair")).toBe("Restarts after PD2R finishes repairing");
+    expect(busy("uninstall")).toBe("Restarts after PD2R finishes uninstalling");
+    expect(busy("adopt")).toBe("Restarts after PD2R finishes setting up");
   });
 
   it("restartHold: a running game first, then any operation in progress, else none", () => {
@@ -207,7 +218,7 @@ describe("toasts", () => {
       Object.fromEntries(keys.map((k) => { const st = sceneByKey(k)!.state; return [st.product_id, { state: st, error: null, samples: [] }]; }));
     expect(restartHold(map("ready"))).toBeNull();
     expect(restartHold(map("running"))).toEqual({ reason: "product_running", product_id: "pd2r" });
-    expect(restartHold(map("downloading"))).toEqual({ reason: "product_downloading", product_id: "pd2r" });
+    expect(restartHold(map("downloading"))).toEqual({ reason: "product_busy", product_id: "pd2r", operation: "install" });
     expect(restartHold({})).toBeNull();
   });
 
@@ -218,6 +229,40 @@ describe("toasts", () => {
     act(() => void vi.advanceTimersByTime(TOAST_MS + 10));
     expect(within(notifications()).queryByText("Launcher 1.3.0 is available")).toBeNull();
     expect(screen.queryByRole("img", { name: "launcher update" })).toBeNull();
+  });
+
+  it("a failure that follows Try again directly (no downloading event) still shows its toast", async () => {
+    const { user, su } = mount("download-failed");
+    const failNow = () => {
+      su.emit({ phase: "download_failed", current: "1.2.0", next: "1.3.0" });
+      return Promise.resolve();
+    };
+    su.download = failNow;
+    await user.click(within(await within(notifications()).findByRole("alert")).getByRole("button", { name: "Try again" }));
+    expect(within(notifications()).getAllByRole("alert")).toHaveLength(1);
+    // From Settings too, while the failure toast is still open: it is replaced, not duplicated or lost.
+    const panel = await openLauncherSettings(user);
+    await user.click(within(panel).getByRole("button", { name: "Try again" }));
+    expect(within(notifications()).getAllByRole("alert")).toHaveLength(1);
+    // And after Later closed it.
+    await user.click(within(notifications()).getByRole("button", { name: "Later" }));
+    await user.click(within(panel).getByRole("button", { name: "Try again" }));
+    expect(within(notifications()).getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("keeps focus on Restart to update when a hold starts while it is focused", async () => {
+    const changed: (() => void)[] = [];
+    mount("ready", "ready", 20, (a) => {
+      const subscribe = a.onStateChanged.bind(a);
+      a.onStateChanged = (h) => (changed.push(h), subscribe(h));
+    });
+    const restart = await within(notifications()).findByRole("button", { name: "Restart to update" });
+    restart.focus();
+    const playing = sceneByKey("running")!.state;
+    api!.getProductState = () => Promise.resolve(structuredClone(playing));
+    act(() => changed.forEach((h) => h()));
+    await waitFor(() => expect(restart.getAttribute("aria-disabled")).toBe("true"));
+    expect(document.activeElement).toBe(restart);
   });
 
   it("a failure after Try again shows its error toast again", async () => {
@@ -334,7 +379,7 @@ describe("Settings → Launcher", () => {
     const check = await within(panel).findByRole("button", { name: "Check for updates" });
     await user.click(check);
     expect(within(panel).getByText("Launcher 1.2.0 · Checking…")).toBeTruthy();
-    expect((check as HTMLButtonElement).disabled).toBe(true);
+    expect(check.getAttribute("aria-disabled")).toBe("true");
     expect(await within(panel).findByText(/Downloading 1\.3\.0 · \d+%/)).toBeTruthy();
     expect(names(su)).toContain("checkForUpdates");
     expect(within(notifications()).queryByText(/Launcher/)).toBeNull();
@@ -357,6 +402,30 @@ describe("Settings → Launcher", () => {
     within(panel).getByRole("button", { name: "Download" }).focus();
     await user.keyboard("{Enter}");
     expect(await within(panel).findByText(/Downloading 1\.3\.0/)).toBeTruthy();
+  });
+
+  it("rapid toggles: only the latest request decides, and a failure reverts to the last confirmed value", async () => {
+    const { user, su } = mount("up-to-date");
+    const pending: { on: boolean; resolve: () => void; reject: () => void }[] = [];
+    su.setAutoDownload = (on) =>
+      new Promise<void>((resolve, reject) => pending.push({ on, resolve, reject: () => reject(new Error("nope")) }));
+    const panel = await openLauncherSettings(user);
+    const sw = within(panel).getByRole("switch", { name: "Download launcher updates automatically" });
+    await waitFor(() => expect(sw.getAttribute("aria-checked")).toBe("true"));
+    await user.click(sw); // A: off
+    await user.click(sw); // B: on
+    await user.click(sw); // C: off
+    expect(pending.map((p) => p.on)).toEqual([false, true, false]);
+    await act(async () => pending[2].resolve());
+    await act(async () => pending[0].reject()); // a late failure of an older request
+    await act(async () => pending[1].resolve());
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    expect(within(notifications()).queryByRole("alert")).toBeNull();
+
+    await user.click(sw); // D: on, fails: back to C's confirmed off
+    await act(async () => pending[3].reject());
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    expect(within(notifications()).getByRole("alert").textContent).toMatch(/Couldn't change automatic launcher downloads/);
   });
 
   it("a failed switch change reverts and says so", async () => {
@@ -385,7 +454,7 @@ describe("Settings → Launcher", () => {
     const { user } = mount("ready", "downloading");
     const panel = await openLauncherSettings(user);
     const restart = (await within(panel).findByRole("button", { name: "Restart to update" })) as HTMLButtonElement;
-    expect(restart.disabled).toBe(true);
+    expect(restart.getAttribute("aria-disabled")).toBe("true");
     const why = document.getElementById(restart.getAttribute("aria-describedby")!);
     expect(why?.textContent).toBe("Restarts after PD2R finishes downloading");
   });
@@ -405,7 +474,7 @@ describe("Settings → Launcher", () => {
     const { user } = mount("downloading", "ready", 60_000);
     const panel = await openLauncherSettings(user);
     const check = (await within(panel).findByRole("button", { name: "Check for updates" })) as HTMLButtonElement;
-    expect(check.disabled).toBe(true);
+    expect(check.getAttribute("aria-disabled")).toBe("true");
     expect(document.getElementById(check.getAttribute("aria-describedby")!)?.textContent).toBe(
       "Launcher 1.2.0 · Downloading 1.3.0 · 38%",
     );

@@ -85,7 +85,7 @@ describe("Toast", () => {
     expect(screen.queryByText("Pending")).toBeNull();
   });
 
-  it("a disabled action is skipped by Tab and described by the toast's text", async () => {
+  it("a disabled action stays focusable, does nothing, and is described by the toast's text", async () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();
     render(
@@ -95,13 +95,51 @@ describe("Toast", () => {
     );
     await user.click(screen.getByText("show"));
     const restart = screen.getByRole("button", { name: "Restart" }) as HTMLButtonElement;
-    expect(restart.disabled).toBe(true);
+    expect(restart.getAttribute("aria-disabled")).toBe("true");
     expect(document.getElementById(restart.getAttribute("aria-describedby")!)?.textContent).toBe("Held for now");
     await user.click(restart);
     expect(onSelect).not.toHaveBeenCalled();
-    screen.getByText("show").focus();
-    await user.tab();
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.getByText("Held for now")).toBeTruthy();
+    restart.focus();
+    await user.keyboard("{Enter}");
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(restart);
+  });
+
+  it("update() that disables or relabels a focused action keeps focus on it", async () => {
+    const user = userEvent.setup();
+    function Updater() {
+      const { show, update } = useToast();
+      const [id, setId] = useState<number | null>(null);
+      const input = (label: string, disabled: boolean): ToastInput => ({
+        tone: "info",
+        text: "Ready",
+        autoDismiss: false,
+        actions: [{ label, onSelect: () => {}, disabled }],
+      });
+      return (
+        <>
+          <button type="button" onClick={() => setId(show(input("Restart", false)))}>
+            show
+          </button>
+          <button type="button" onClick={() => id !== null && update(id, input("Restart later", true))}>
+            hold
+          </button>
+        </>
+      );
+    }
+    render(
+      <ToastProvider>
+        <Updater />
+      </ToastProvider>,
+    );
+    await user.click(screen.getByText("show"));
+    const action = screen.getByRole("button", { name: "Restart" });
+    action.focus();
+    act(() => screen.getByText("hold").click());
+    expect(document.activeElement).toBe(action);
+    expect(action.textContent).toBe("Restart later");
+    expect(action.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("update() replaces an open toast in place and ignores a closed one", async () => {

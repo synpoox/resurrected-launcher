@@ -107,22 +107,30 @@ export function createSelfUpdateFixture(key: string, options: SelfUpdateFixtureO
     status = s;
     handlers.forEach((h) => h(structuredClone(s)));
   };
-  const later = (ms: number, fn: () => void) => {
+  /** The download's own steps, so a new download replaces them without cancelling a pending check. */
+  const steps = new Set<ReturnType<typeof setTimeout>>();
+  const later = (ms: number, fn: () => void, group = timers) => {
     const t = setTimeout(() => {
-      timers.delete(t);
+      group.delete(t);
       fn();
     }, ms);
-    timers.add(t);
+    group.add(t);
+  };
+  const stop = (group: Set<ReturnType<typeof setTimeout>>) => {
+    group.forEach(clearTimeout);
+    group.clear();
   };
   const clear = () => {
-    timers.forEach(clearTimeout);
-    timers.clear();
+    stop(timers);
+    stop(steps);
   };
   const startDownload = (next: string) => {
-    clear();
+    stop(steps);
     const current = status.current;
-    DOWNLOAD_STEPS.forEach((percent, i) => later(i * tick, () => emit({ phase: "downloading", current, next, percent })));
-    later(DOWNLOAD_STEPS.length * tick, () => emit({ phase: "ready", current, next }));
+    DOWNLOAD_STEPS.forEach((percent, i) =>
+      later(i * tick, () => emit({ phase: "downloading", current, next, percent }), steps),
+    );
+    later(DOWNLOAD_STEPS.length * tick, () => emit({ phase: "ready", current, next }), steps);
   };
   const refuse = (message: string) => Promise.reject(new Error(message));
 

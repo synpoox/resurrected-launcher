@@ -48,6 +48,7 @@ export function App({ search, dev, selfUpdate = false }: AppProps) {
   }, [dev, selection, selfUpdateKey]);
 
   const error = !selection.ok ? selection.error : update?.ok === false ? update.error : null;
+  // `!selection.ok` is implied by the error but narrows `selection` for the code below.
   if (error !== null || !selection.ok) {
     return (
       <div className="fixture-error" role="alert">
