@@ -2,7 +2,7 @@
 //! type: paths and inventories that exist are already valid, so Catalog (#33) and
 //! extraction (#35) reuse these checks rather than duplicating them.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::str::FromStr;
 
@@ -293,6 +293,98 @@ impl ExpectedInventory {
 
     pub fn empty_dirs(&self) -> &[RelativePath] {
         &self.empty_dirs
+    }
+
+    /// How a 7-Zip listing of a release archive differs from this inventory, in
+    /// listing order and then the missing entries; empty when it matches. Each entry
+    /// is its archive path (`/` or `\`, compared exactly) and its size, `None` for a
+    /// directory.
+    ///
+    /// The archive holds one top-level folder `top` (the `install_root` folder) and
+    /// this inventory is relative to it, so anything else at the top level, or an
+    /// archive without that folder, is [`ListingMismatch::Unlisted`]. Both the
+    /// launcher's extraction and the `validate-release` tool use this check.
+    pub fn listing_mismatches(
+        &self,
+        top: &str,
+        entries: &[(&str, Option<u64>)],
+    ) -> Vec<ListingMismatch> {
+        let under = |p: &RelativePath| format!("{top}/{}", p.as_str());
+        let mut files: BTreeMap<String, u64> = self
+            .files
+            .iter()
+            .map(|f| (under(&f.path), f.size))
+            .collect();
+        let mut empty: BTreeSet<String> = self.empty_dirs.iter().map(under).collect();
+        let mut dirs = BTreeSet::from([top.to_owned()]);
+        for p in files.keys().chain(&empty) {
+            dirs.extend(p.match_indices('/').map(|(i, _)| p[..i].to_owned()));
+        }
+        dirs.extend(empty.iter().cloned());
+        let mut out = Vec::new();
+        for (raw, size) in entries {
+            let path = raw.replace('\\', "/");
+            match size {
+                None if dirs.contains(&path) => {
+                    empty.remove(&path);
+                }
+                None => out.push(ListingMismatch::Unlisted { path, dir: true }),
+                Some(listed) => match files.remove(&path) {
+                    Some(expected) if expected == *listed => {}
+                    Some(expected) => out.push(ListingMismatch::Size {
+                        path,
+                        listed: *listed,
+                        expected,
+                    }),
+                    None => out.push(ListingMismatch::Unlisted { path, dir: false }),
+                },
+            }
+        }
+        out.extend(
+            files
+                .into_keys()
+                .map(|path| ListingMismatch::Missing { path, dir: false }),
+        );
+        out.extend(
+            empty
+                .into_iter()
+                .map(|path| ListingMismatch::Missing { path, dir: true }),
+        );
+        out
+    }
+}
+
+/// One difference found by [`ExpectedInventory::listing_mismatches`]. Paths are
+/// archive paths, top folder included.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ListingMismatch {
+    /// A listed file or directory the inventory has no place for.
+    Unlisted { path: String, dir: bool },
+    /// A listed file whose size differs from the inventory's.
+    Size {
+        path: String,
+        listed: u64,
+        expected: u64,
+    },
+    /// An inventory file or required empty dir the listing lacks.
+    Missing { path: String, dir: bool },
+}
+
+impl fmt::Display for ListingMismatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unlisted { path, dir: true } => {
+                write!(f, "directory {path} is not in the manifest")
+            }
+            Self::Unlisted { path, dir: false } => write!(f, "{path} is not in the manifest"),
+            Self::Size {
+                path,
+                listed,
+                expected,
+            } => write!(f, "{path} is {listed} bytes, manifest says {expected}"),
+            Self::Missing { path, dir: false } => write!(f, "{path} is missing from the archive"),
+            Self::Missing { path, dir: true } => write!(f, "{path}/ is missing from the archive"),
+        }
     }
 }
 

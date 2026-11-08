@@ -13,7 +13,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use super::download::Downloader;
 use super::extract::{extract, verify_staging, SevenZip};
-use super::journal::{journal_path, Paths};
+use super::journal::{refuse_pending_journal, Paths};
 use super::lock::OperationLock;
 use super::paths::TransactionPaths;
 use super::plan::{self, Conflict, Inspection, Request};
@@ -152,13 +152,7 @@ impl Steps for OpSteps<'_> {
                 .downloader
                 .fetch(&m.archive, &tx, cancel, &mut |_, _| {})
                 .map(drop),
-            Boundary::Staged => extract(
-                self.env.seven_zip,
-                m.archive.format,
-                &m.inventory,
-                &tx,
-                cancel,
-            ),
+            Boundary::Staged => extract(self.env.seven_zip, m, &tx, cancel),
             Boundary::StagedInventoryVerified => {
                 verify_staging(&tx, &m.inventory, cancel)?;
                 // Recheck preservation right before the first live mutation.
@@ -245,12 +239,7 @@ pub fn run(env: &Env, req: &Request) -> Result<Report, LauncherError> {
     }
     let guard = WriteGuard::check(&plan::product_root(req.d2r, req.release))?;
     let op_lock = OperationLock::acquire(&guard)?;
-    if std::fs::symlink_metadata(journal_path(guard.root())).is_ok() {
-        return Err(LauncherError::new(
-            ErrorCode::RecoveryRequired,
-            "an interrupted transaction needs recovery",
-        ));
-    }
+    refuse_pending_journal(guard.root())?;
     let insp = plan::inspect(&*lock(env.state)?, req, guard.root())?;
     refuse(&insp.conflicts)?;
     let preserved = insp.preserved.clone();

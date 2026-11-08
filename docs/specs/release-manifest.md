@@ -57,14 +57,14 @@ One per release, published as a durable public asset next to the archive. See `f
 
 | Field | Rule |
 | --- | --- |
-| `install_root` | `mods/<folder>`, relative to the selected D2R installation, for example `mods/PD2Resurrected`. No absolute or publisher-chosen destinations. Launch selects the product only as `-mod <folder>`, so no `default_mod` loader setting is required. The schema-2 `launch.launch_arguments` are dropped on purpose: publisher-supplied arguments are not allowed. |
+| `install_root` | `mods/<folder>`, relative to the selected D2R installation, for example `mods/PD2Resurrected`. The folder may not start with `-`, so `-mod <folder>` cannot read as a loader switch. No absolute or publisher-chosen destinations. Launch selects the product only as `-mod <folder>`, so no `default_mod` loader setting is required. The schema-2 `launch.launch_arguments` are dropped on purpose: publisher-supplied arguments are not allowed. |
 | `archive` | `{url, format, size, sha256, file_count, total_size}`. One complete archive; repairs and updates download all of it, no deltas. `url` is HTTPS; `format` is `7z`; `size` and `sha256` are required and real. `file_count` and `total_size` must equal the count and size sum of `files`, and a sum that overflows 64 bits is inconsistent. |
 | `files` | Every file the archive unpacks into `install_root`: `{path, size, sha256, ownership}`. Must not be empty. |
 | `empty_dirs` | Directories that must exist although they hold no file. |
 
 Paths use `/`, are relative to `install_root`, and must pass the contract's `RelativePath` rules (no absolute, drive, `..`, `.`, stream, device name, trailing dot/space, forbidden character or 8.3 alias). The list must have no duplicates ignoring case and nothing may lie under a file or an empty dir (`ExpectedInventory`). Extraction later checks the unpacked tree against exactly this inventory.
 
-**Archive layout.** The published archive holds one top-level folder, the `install_root` folder (`PD2Resurrected/`), so a player can unpack it into `mods/`; `files` and `empty_dirs` are relative to that folder. `ReleaseManifest::archive_mismatches` and the `validate-release` tool check a 7-Zip listing against this layout. Launcher-side extraction (`install::extract`) still expects entries at the archive root and must strip the folder before it can install a published archive.
+**Archive layout.** The published archive holds one top-level folder, the `install_root` folder (`PD2Resurrected/`), so a player can unpack it into `mods/`; `files` and `empty_dirs` are relative to that folder. One check, `ExpectedInventory::listing_mismatches`, compares a 7-Zip listing with this layout; `ReleaseManifest::archive_mismatches` (used by the `validate-release` tool) and launcher-side extraction (`install::extract`) both call it. Extraction refuses anything else at the top level (a stray entry, a second folder, or the tree at the archive root), then strips the folder so staging mirrors the product root, and checks the unpacked tree against the inventory again ([#68](https://github.com/synpoox/resurrected-launcher/issues/68)).
 
 A file `size` and `sha256` must always be present. `size: 0` is allowed only with the SHA-256 of empty input (`e3b0c442...b855`), and that hash only with `size: 0`; any other combination is a placeholder.
 
@@ -126,7 +126,7 @@ Each maps to a `CatalogError` variant and, over IPC, to an `ErrorCode`.
 
 ## Not covered here
 
-- Byte verification of downloaded manifests and archives, HTTPS enforcement on redirects, and the extracted-tree check (download/extract, #35).
+- Byte verification of downloaded manifests and archives, HTTPS and the public-host rule above on every redirect hop, and the extracted-tree check (download/extract, #35).
 - The cache files themselves and their integrity checks (State, #34). Refresh fills them (#56).
 - Publisher signatures on game-release metadata: deferred by the owner (#6). HTTPS and hashes detect mismatches, not a malicious publisher.
 - Open question: if D2RLoader reads a required or save-format setting from a file outside the product's `install_root`, the setting needs a scope field in a later schema.

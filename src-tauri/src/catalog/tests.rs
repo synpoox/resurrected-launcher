@@ -80,6 +80,10 @@ fn manifest_rejections() -> Vec<(&'static str, CatalogError)> {
             invalid("install_root", "must be mods/<folder>"),
         ),
         (
+            "install-root-switch",
+            invalid("install_root", "folder must not start with -"),
+        ),
+        (
             "setting-not-shipped-default",
             invalid(
                 "compatibility.required_settings[0].file",

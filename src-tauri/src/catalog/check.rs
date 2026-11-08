@@ -76,8 +76,8 @@ pub(super) fn size(field: &str, v: Option<u64>) -> Result<u64, CatalogError> {
 
 /// `https://` with a public DNS host name: no user info, port, IP literal, localhost
 /// or single-label host, no whitespace or control characters, and no `.`/`..` path
-/// segment (literal or `%2e`-encoded). Redirects are checked by download (#35).
-pub(super) fn https(field: &str, url: String) -> Result<String, CatalogError> {
+/// segment (literal or `%2e`-encoded). Download applies it to every redirect hop.
+pub(crate) fn https(field: &str, url: String) -> Result<String, CatalogError> {
     let not_https = || CatalogError::NotHttps {
         field: field.to_owned(),
     };
