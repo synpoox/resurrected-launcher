@@ -259,6 +259,24 @@ describe("quit when the operation already ended", () => {
   });
 });
 
+describe("quit refused", () => {
+  it("a refused quit shows why and re-enables both buttons", async () => {
+    const { api, user } = mount("downloading");
+    await loaded();
+    await act(async () => api.emitTrayRequest({ action: "quit_while_busy", product_id: "pd2r", error: null }));
+    const dialog = await screen.findByRole("dialog", { name: "Quit while PD2R is downloading?" });
+    api.cancelOperation = () => Promise.resolve();
+    api.quitLauncher = () =>
+      Promise.reject({ code: "recovery_required", message: "Recovery is still running." } satisfies LauncherError);
+    await user.click(within(dialog).getByRole("button", { name: "Cancel download and quit" }));
+    await act(async () => api.emitOutcome({ status: "cancelled", product_id: "pd2r", kind: "install" }));
+    expect(await screen.findByText("Recovery is still running.")).toBeTruthy();
+    const again = within(dialog).getByRole("button", { name: "Cancel download and quit" });
+    expect(again.hasAttribute("disabled")).toBe(false);
+    expect(within(dialog).getByRole("button", { name: "Keep downloading" }).hasAttribute("disabled")).toBe(false);
+  });
+});
+
 describe("About in live mode", () => {
   const renderForever = (showAbout?: boolean) => {
     api = createFixtureApi("coming-soon");

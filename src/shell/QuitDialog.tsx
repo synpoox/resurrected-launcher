@@ -27,7 +27,12 @@ export function QuitDialog({ product, hasInstalled, onClose }: QuitDialogProps) 
   useEffect(() => {
     if (!stopping) return;
     const fail = (e: unknown) => toast.show({ tone: "error", text: asError(e).message });
-    const quit = () => void api.quitLauncher().catch(fail);
+    // A refused quit (for example while recovery runs) shows why and lets the player choose again.
+    const quit = () =>
+      void api.quitLauncher().catch((e) => {
+        fail(e);
+        setStopping(false);
+      });
     const sub = subscribe(
       api.onOutcome((o) => {
         if (o.product_id !== product.id) return;
