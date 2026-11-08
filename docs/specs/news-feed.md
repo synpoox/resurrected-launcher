@@ -17,7 +17,7 @@ The product page's news feed (bottom right, `docs/specs/launcher-ui.md`) reads o
       "kind": "announcement",
       "title": "TCP/IP co-op testing weekend",
       "published": "2026-11-01",
-      "url": "https://discord.gg/mGpHT26Xak"
+      "url": "https://discord.gg/4mKqKXMRy9"
     }
   ]
 }
