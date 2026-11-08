@@ -33,7 +33,8 @@ export function Settings({ initialTab = "game" }: { initialTab?: SettingsTab }) 
           role="tablist"
           aria-label="Settings sections"
           aria-orientation="vertical"
-          onKeyDown={arrowKeys("[role=tab]", "vertical", true)}
+          // Vertical, but ← → move too: the owner reached for them first (issue 127).
+          onKeyDown={arrowKeys("[role=tab]", "both", true)}
         >
           {SETTINGS_TABS.map(([key, name]) => (
             <button

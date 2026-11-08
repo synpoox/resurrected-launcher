@@ -195,7 +195,7 @@ Target **WCAG 2.2 AA**: 4.5:1 for text, 3:1 for large text (24px, or 18.66px bol
 
 **Keyboard and focus** (drafted in #20; check them in implementation):
 - Tab order: window controls → sidebar → tabs → main action and its row (or the Patch Notes action) → main content → news feed.
-- Arrow keys move within the sidebar list, the tab list and open menus. Enter and Space activate.
+- Arrow keys move within the sidebar list, the tab list and open menus. Enter and Space activate. The vertical Settings section list takes ← → as well as ↑ ↓ (#127).
 - Esc closes the open menu or dialog.
 - Dialogs trap focus and return it to the control that opened them. Menus return focus to `⋯`.
 - Every focusable element shows the 3px `--focus` ring at a 2px offset. The window controls use an **inset** ring, because an outset ring is clipped at the window's top edge.
