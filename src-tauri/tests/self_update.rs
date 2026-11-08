@@ -174,6 +174,9 @@ impl Desktop for NoDesktop {
     fn open_loader_download_page(&self) -> io::Result<()> {
         Ok(())
     }
+    fn open_link(&self, _: &str) -> io::Result<()> {
+        Ok(())
+    }
     fn open_folder(&self, _: &Path) -> io::Result<()> {
         Ok(())
     }
