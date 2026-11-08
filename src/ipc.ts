@@ -401,6 +401,8 @@ export type LauncherUpdateStatus =
   | { phase: "downloading"; current: string; next: string; percent: number }
   | { phase: "ready"; current: string; next: string }
   | { phase: "restarting"; current: string; next: string }
+  /** Quit is installing the ready update; the launcher closes and doesn't relaunch. */
+  | { phase: "quitting"; current: string; next: string }
   | { phase: "updated"; current: string }
   | { phase: "download_failed"; current: string; next: string }
   | { phase: "signature_rejected"; current: string; next: string };

@@ -35,6 +35,7 @@ export function versionStatus(s: SelfUpdateStatus): string {
     case "ready":
       return `${s.next} ready · installs on restart or Quit`;
     case "restarting":
+    case "quitting":
       return `Installing ${s.next}…`;
     case "download_failed":
       return `Couldn't download ${s.next}`;
@@ -47,8 +48,17 @@ export const AUTO_DOWNLOAD_ON_HINT = "Updates download in the background and ins
 export const AUTO_DOWNLOAD_OFF_HINT = "You'll be told when an update is available. Nothing downloads until you choose Download.";
 
 export const availableText = (next: string) => `Launcher ${next} is available`;
-export const readyText = (next: string, hold: RestartHold | null) =>
-  hold ? `Launcher ${next} is ready. ${holdText(hold)}, or it installs the next time you Quit.` : `Launcher ${next} is ready`;
+/**
+ * While a game runs, Quit closes the launcher without installing (the update stays ready). While an
+ * operation runs, Quit itself waits or asks, so the update installs on Restart or Quit afterwards.
+ */
+export const readyText = (next: string, hold: RestartHold | null) => {
+  if (!hold) return `Launcher ${next} is ready`;
+  const short = productById(hold.product_id)?.short ?? "the game";
+  return hold.reason === "product_running"
+    ? `Launcher ${next} is ready. ${holdText(hold)}. Quitting the launcher while ${short} runs doesn't install it; it stays ready for later.`
+    : `Launcher ${next} is ready. ${holdText(hold)}. After that, it also installs when you Quit.`;
+};
 export const updatedText = (version: string) => `Updated to launcher ${version}`;
 export const downloadFailedText = (current: string) =>
   `Couldn't download the launcher update. Launcher ${current} keeps working.`;

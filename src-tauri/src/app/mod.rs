@@ -50,8 +50,8 @@ pub use operations::{
     ReleaseSummary, Releases, OUTCOME_EVENT, PROGRESS_EVENT,
 };
 pub use selfupdate::{
-    SelfUpdateStatus, SelfUpdater, SystemUpdateHost, UpdateHost, RELEASE_PAGE, SELF_UPDATE_EVENT,
-    UPDATE_DIR,
+    begin_quit, SelfUpdateStatus, SelfUpdater, SystemUpdateHost, UpdateHost, RELEASE_PAGE,
+    SELF_UPDATE_EVENT, UPDATE_DIR,
 };
 pub use settings::{Folder, ReleaseNotes};
 pub use window::TRAY_EVENT;
