@@ -1,0 +1,157 @@
+/* Settings and troubleshooting (spec: Settings, layout B). Square, no shadows. */
+
+.settings {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  color: var(--hero-copy);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.subnav {
+  display: flex;
+  flex-direction: column;
+  padding-top: 48px;
+  border-right: 1px solid var(--line);
+}
+
+.subnav h1 {
+  padding: 0 28px 18px;
+  font-size: 26px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.subnav [role="tablist"] {
+  display: flex;
+  flex-direction: column;
+}
+
+.subnav [role="tab"] {
+  padding: 10px 28px;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.subnav [role="tab"]:hover {
+  color: var(--text);
+}
+
+.subnav [role="tab"][aria-selected="true"] {
+  color: var(--text);
+  background: var(--hover-tint);
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.spanel {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 30px 48px 40px;
+  scrollbar-color: var(--line) var(--bg);
+}
+
+.spanel > * {
+  max-width: 720px;
+}
+
+.ssec {
+  display: grid;
+  padding-top: 22px;
+}
+
+.slabel {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.srow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.srow-text b {
+  display: block;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.settings .hint {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ctl {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  max-width: 220px;
+  text-align: right;
+}
+
+.settings code,
+.dialog .report {
+  font-family: Consolas, monospace;
+}
+
+.settings .path {
+  word-break: break-all;
+}
+
+.settings .notice {
+  max-width: none;
+  margin: 12px 0 0;
+}
+
+.fine {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.credits {
+  list-style: none;
+}
+
+.credits li {
+  display: grid;
+  gap: 2px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.credits b {
+  color: var(--text);
+}
+
+.dialog .report {
+  max-height: 220px;
+  overflow: auto;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  scrollbar-color: var(--line) var(--bg);
+}
+
+.dialog .never {
+  margin: 4px 0 4px 18px;
+}

@@ -24,7 +24,7 @@ fn build_loader_matrix_supported_build_and_loader_are_ready_and_play() {
     let state = rig.state();
     assert_eq!(state.readiness, Readiness::Ready);
     let location = state.location.unwrap();
-    assert_eq!(location.build, D2R_BUILD);
+    assert_eq!(location.location.build, D2R_BUILD);
     assert_eq!(state.loader_guidance, None);
     let game = rig.play().unwrap();
     let loader = FakeLoader::adopt(&game.image);
@@ -140,7 +140,7 @@ fn build_loader_matrix_linked_game_or_loader_refuses_play() {
     rig.desktop.will_pick(&jn);
     let picked = rig.invoke("choose_game_location", json!({}));
     assert_eq!(code(picked.unwrap_err()), "d2r_not_found");
-    assert_eq!(rig.state().location.unwrap().path, rig.d2r);
+    assert_eq!(rig.state().location.unwrap().location.path, rig.d2r);
     fs::remove_dir(&jn).unwrap();
 
     let _ = fs::remove_file(rig.d2r.join("D2RLoader.exe.started"));
@@ -221,6 +221,6 @@ fn build_loader_matrix_reads_the_build_label_from_a_real_version_resource() {
     rig.adopted();
     let state = rig.state();
     assert_eq!(state.readiness, Readiness::Ready);
-    let build = state.location.unwrap().build;
+    let build = state.location.unwrap().location.build;
     assert!(build.starts_with("10.0."), "{build}");
 }
