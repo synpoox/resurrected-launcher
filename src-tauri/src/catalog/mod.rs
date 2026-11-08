@@ -8,11 +8,15 @@
 //! Missing, placeholder or unsupported data is a [`CatalogError`] and never
 //! fabricates readiness. Path and hash rules come from [`crate::contract`]; this
 //! module does not redefine them.
+//!
+//! [`news`] reads the separate, untrusted `news.json` (#80); it shares only the
+//! public-HTTPS rule.
 
 mod check;
 mod error;
 mod feed;
 mod manifest;
+pub mod news;
 mod sync;
 
 pub(crate) use check::https as public_https;

@@ -30,12 +30,10 @@ export interface ShellProps {
   open?: SceneOpen;
   /** Dev fixtures: open the first product page on this tab. */
   tab?: Tab;
-  /** Shows "About <product>" (default on); App turns it off in live mode until #80. */
-  showAbout?: boolean;
 }
 
 /** The window: seamless title bar, sidebar, and the product page or Settings in the main area. */
-export function Shell({ product, open, tab, showAbout = true }: ShellProps) {
+export function Shell({ product, open, tab }: ShellProps) {
   const api = useApi();
   const { products, refresh, dismissBackups } = useProducts(api);
   const [view, setView] = useState<View>(() => ({ kind: "product", id: initialProduct(product) }));
@@ -115,7 +113,6 @@ export function Shell({ product, open, tab, showAbout = true }: ShellProps) {
             trayFocus={trayFocus?.product_id === current.id ? trayFocus : undefined}
             onOpenSettings={() => select({ kind: "settings" })}
             onDismissBackups={() => dismissBackups(current.id)}
-            showAbout={showAbout}
           />
         ) : (
           <Settings />

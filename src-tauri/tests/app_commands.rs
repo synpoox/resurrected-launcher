@@ -169,6 +169,9 @@ impl Desktop for FakeDesktop {
         self.opened.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
+    fn open_link(&self, _: &str) -> std::io::Result<()> {
+        Ok(())
+    }
     fn open_folder(&self, dir: &Path) -> std::io::Result<()> {
         self.folders.lock().unwrap().push(dir.to_owned());
         Ok(())

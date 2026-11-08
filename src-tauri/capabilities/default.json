@@ -28,6 +28,9 @@
     "allow-close-window",
     "allow-start-window-drag",
     "allow-quit-launcher",
+    "allow-get-news",
+    "allow-open-news-link",
+    "allow-open-product-page",
     "core:event:allow-listen",
     "core:event:allow-unlisten"
   ]

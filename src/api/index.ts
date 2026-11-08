@@ -18,9 +18,7 @@ export const FIXTURE_KEYS: readonly string[] = SCENES.map((s) => s.key);
 export function selectApi(search: string, dev: boolean, live = false): Selection {
   const asked = dev ? new URLSearchParams(search).get("fixture") : null;
   if (asked === null && live) {
-    // News stays on fixtures until #80.
-    const news = createFixtureApi(DEFAULT_SCENE);
-    return { ok: true, mode: "live", api: { ...createLiveApi(news), dispose: () => news.dispose() } };
+    return { ok: true, mode: "live", api: { ...createLiveApi(), dispose: () => {} } };
   }
   const key = asked ?? DEFAULT_SCENE;
   if (!sceneByKey(key)) {

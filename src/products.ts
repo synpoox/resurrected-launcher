@@ -1,4 +1,6 @@
 import type { HeroProductId } from "./art";
+// The one table of "About <product>" pages, also bundled by Rust (`app::news`).
+import PRODUCT_PAGES from "./product-pages.json";
 
 /** A product as the sidebar and product page show it. Display copy is provisional (GLOSSARY.md). */
 export interface Product {
@@ -16,6 +18,9 @@ export interface Product {
   description: string;
   /** False for products without a release (Forever and 09 today): no tabs, no install. */
   hasRelease: boolean;
+  /** Shows "About <product>" (products without a release): the product has an entry in
+   *  `product-pages.json`. Forever and 09 have no public repository yet, so they have none. */
+  aboutPage: boolean;
 }
 
 /** In the spec's sidebar order. */
@@ -29,6 +34,7 @@ export const PRODUCTS: readonly Product[] = [
     title: ["The game you know.", "A world reborn."],
     description: "The Project Diablo 2 experience, rebuilt on Diablo II: Resurrected.",
     hasRelease: true,
+    aboutPage: "pd2r" in PRODUCT_PAGES,
   },
   {
     id: "project-forever",
@@ -39,6 +45,7 @@ export const PRODUCTS: readonly Product[] = [
     title: ["A different future.", "A resurrected world."],
     description: "Class changes, legacy items, league mechanics and a reworked endgame.",
     hasRelease: false,
+    aboutPage: "project-forever" in PRODUCT_PAGES,
   },
   {
     id: "project-09",
@@ -49,6 +56,7 @@ export const PRODUCTS: readonly Product[] = [
     title: ["An earlier era.", "A world revisited."],
     description: "Lord of Destruction 1.09d, ported to Diablo II: Resurrected 3.3.",
     hasRelease: false,
+    aboutPage: "project-09" in PRODUCT_PAGES,
   },
 ];
 

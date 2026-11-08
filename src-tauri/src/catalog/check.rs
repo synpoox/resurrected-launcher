@@ -78,6 +78,12 @@ pub(super) fn size(field: &str, v: Option<u64>) -> Result<u64, CatalogError> {
 /// or single-label host, no whitespace or control characters, and no `.`/`..` path
 /// segment (literal or `%2e`-encoded). Download applies it to every redirect hop.
 pub(crate) fn https(field: &str, url: String) -> Result<String, CatalogError> {
+    https_host(field, url).map(|(url, _)| url)
+}
+
+/// [`https`], also returning the lowercased host it checked, so callers that
+/// restrict hosts (the news allowlist) check the same host this rule validated.
+pub(crate) fn https_host(field: &str, url: String) -> Result<(String, String), CatalogError> {
     let not_https = || CatalogError::NotHttps {
         field: field.to_owned(),
     };
@@ -108,7 +114,7 @@ pub(crate) fn https(field: &str, url: String) -> Result<String, CatalogError> {
             reason: "URL path must not contain dot segments",
         });
     }
-    Ok(url)
+    Ok((url, host))
 }
 
 pub(super) fn path(field: &str, p: String) -> Result<RelativePath, CatalogError> {
@@ -119,7 +125,7 @@ pub(super) fn path(field: &str, p: String) -> Result<RelativePath, CatalogError>
 }
 
 /// Product and release IDs: short, lowercase, filename-safe, never a display name.
-pub(super) fn ident(field: &str, s: String) -> Result<String, CatalogError> {
+pub(crate) fn ident(field: &str, s: String) -> Result<String, CatalogError> {
     let ok = (1..=64).contains(&s.len())
         && s.bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))

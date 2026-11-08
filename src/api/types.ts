@@ -10,6 +10,7 @@ import type {
   GameLocation,
   Inspection,
   LauncherError,
+  NewsState,
   OperationOutcome,
   OperationRequest,
   ProductState,
@@ -30,6 +31,8 @@ export type {
   InstalledRelease,
   LauncherError,
   LoaderGuidance,
+  NewsItem,
+  NewsState,
   OperationKind,
   OperationOutcome,
   OperationRequest,
@@ -44,17 +47,6 @@ export type {
   RunningGame,
   TrayRequest,
 } from "../ipc";
-
-// ---- News view types (#80 produces them later) ----
-
-export interface NewsItem {
-  tag: string;
-  title: string;
-  /** ISO date */
-  published: string;
-}
-
-export type NewsState = { status: "ok"; items: NewsItem[] } | { status: "offline" };
 
 /** Stops a subscription. Compatible with Tauri's `UnlistenFn`. */
 export type Unlisten = () => void;

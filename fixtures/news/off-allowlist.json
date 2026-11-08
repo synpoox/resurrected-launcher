@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "items": [
+    { "product_id": "pd2r", "kind": "guide", "title": "Fine", "published": "2026-11-01", "url": "https://github.com/synpoox/pd2-resurrected" },
+    { "product_id": "pd2r", "kind": "guide", "title": "Lookalike host", "published": "2026-11-02", "url": "https://github.com.evil.example/x" }
+  ]
+}

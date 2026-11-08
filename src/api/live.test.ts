@@ -6,7 +6,6 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke, isTauri: () => false }));
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 
 const { createLiveApi } = await import("./live");
-const { createFixtureApi } = await import("./fixtures");
 const { selectApi } = await import("./index");
 const { CONTRACT_VERSION } = await import("../ipc");
 type LauncherApi = import("./types").LauncherApi;
@@ -20,14 +19,14 @@ beforeEach(() => {
 
 describe("live adapter", () => {
   it("satisfies LauncherApi with no casts", () => {
-    const live = createLiveApi(createFixtureApi("ready"));
+    const live = createLiveApi();
     expectTypeOf(live).toExtend<LauncherApi>();
     const api: LauncherApi = live;
     expect(api).toBe(live);
   });
 
   it("passes window commands straight through to ipc", async () => {
-    const live = createLiveApi(createFixtureApi("ready"));
+    const live = createLiveApi();
     invoke.mockResolvedValue(undefined);
     await live.minimizeWindow();
     await live.toggleMaximizeWindow();
@@ -44,7 +43,7 @@ describe("live adapter", () => {
   });
 
   it("unwraps Versioned replies and subscribes to the native events", async () => {
-    const live = createLiveApi(createFixtureApi("ready"));
+    const live = createLiveApi();
     invoke.mockResolvedValue(reply("rolled_back"));
     expect(await live.recoverProduct("pd2r")).toBe("rolled_back");
     expect(invoke).toHaveBeenCalledWith("recover_product", { product_id: "pd2r" });
@@ -61,11 +60,18 @@ describe("live adapter", () => {
     ]);
   });
 
-  it("serves news from the fixture until #80, without native calls", async () => {
-    const news = createFixtureApi("ready");
-    const live = createLiveApi(news);
-    expect(await live.getNews("pd2r")).toEqual(await news.getNews("pd2r"));
-    expect(invoke).not.toHaveBeenCalled();
+  it("passes news commands through with product ids and indexes only", async () => {
+    const live = createLiveApi();
+    invoke.mockResolvedValueOnce(reply({ status: "offline" }));
+    expect(await live.getNews("pd2r")).toEqual({ status: "offline" });
+    invoke.mockResolvedValue(undefined);
+    await live.openNewsLink("pd2r", 2);
+    await live.openProductPage("pd2r");
+    expect(invoke.mock.calls).toEqual([
+      ["get_news", { product_id: "pd2r" }],
+      ["open_news_link", { product_id: "pd2r", index: 2 }],
+      ["open_product_page", { product_id: "pd2r" }],
+    ]);
   });
 });
 

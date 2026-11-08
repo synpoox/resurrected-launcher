@@ -68,7 +68,7 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 - Hero copy sits left at about 44% height: ribbon tag, a **title that is always exactly two lines** (scaling between 30px and 50px instead of wrapping), and one line of description.
 - The bottom-left holds the action row. Play is solid red, at least 260px × 60px, with a plain uppercase label. Next to it is the square `⋯` **Manage** menu (Repair, Open saves folder, Open settings folder, divider, Uninstall… in `--detail`) and one readiness line ("● Ready · alpha 0.4.2 (latest)"). When a secondary button shares the row, the primary narrows to 200px.
 - **Notices** sit directly above the action row: a panel with a 2px left rule, muted for information and accent for errors.
-- The bottom-right holds a 250px text-only news feed: tag · relative date, headline, and an ↗ link out. It has no images and no in-launcher article view. **The feed shows announcements and guides only; release notes live in Patch Notes.** An empty feed reads "Nothing yet."
+- The bottom-right holds a 250px text-only news feed: tag · relative date, headline, and an ↗ link out. It has no images and no in-launcher article view. **The feed shows announcements and guides only; release notes live in Patch Notes.** An empty feed reads "Nothing yet." Source, format and link rules: `docs/specs/news-feed.md`.
 
 **Product page, Patch Notes tab** (approved in #20):
 - Fills the whole main area except the sidebar, with no hero art. It scrolls with a dark scrollbar, and content passes under a solid top fade.
@@ -78,7 +78,7 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 - The installed release's notes ship with it and display offline. Newer releases offline show "Patch notes for newer releases need a connection. Retry".
 
 **Rules for both tabs:**
-- **Products without a release** (Forever and 09 today) show no tabs. They get only the Coming soon ribbon, the description and an outlined "About <product>" button, with no install, date, signup or account.
+- **Products without a release** (Forever and 09 today) show no tabs. They get only the Coming soon ribbon, the description and, when the product has a bundled page, an outlined "About <product>" button, with no install, date, signup or account. Forever and 09 have no public page yet, so they show no About button (#80, `docs/specs/news-feed.md`).
 - **Default tab**: Overview. The first launch after an update installs opens Patch Notes once, on the new release.
 
 **Settings** (layout B, approved in [#19](https://github.com/synpoox/resurrected-launcher/issues/19)):
@@ -175,7 +175,7 @@ Every state keeps the hero, ribbon, title and description. The state appears in 
 | Uninstall | `uninstall` | Accent-topped dialog: removes PD2R's files only. **Kept:** saves and settings with path and Open. **Not touched:** D2R, D2RLoader and other products. |
 | Offline | `offline` | Play still works: "Offline · alpha 0.4.1 verified · can't check for updates". The news feed reads "News needs a connection. Retry". |
 | Offline, never installed | `offline-empty` | No release to offer: Install is replaced by "Can't reach the release catalog" with "Try again" (refreshes the catalog). Nothing is downloaded or installed until it loads. |
-| Coming soon | `coming-soon` | Ribbon, description, "About Forever"; no tabs. |
+| Coming soon | `coming-soon` | Ribbon and description; no tabs. "About Forever" appears once Forever has a public page. |
 
 ## Motion
 

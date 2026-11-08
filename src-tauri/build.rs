@@ -29,6 +29,9 @@ fn main() {
         "close_window",
         "start_window_drag",
         "quit_launcher",
+        "get_news",
+        "open_news_link",
+        "open_product_page",
     ]);
     let attributes = tauri_build::Attributes::new()
         .windows_attributes(windows)
