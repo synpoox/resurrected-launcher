@@ -1,5 +1,6 @@
 import { PRODUCTS } from "../products";
 import type { Badge } from "../product/journey";
+import { SettingsDot } from "../selfupdate/RestartingScreen";
 import { arrowKeys } from "../ui/focus";
 import { BRANDING } from "./branding";
 
@@ -69,6 +70,7 @@ export function Sidebar({ view, badges, onSelect }: SidebarProps) {
           <circle cx="12" cy="12" r="6.5" />
         </svg>
         Settings
+        <SettingsDot />
       </button>
     </nav>
   );

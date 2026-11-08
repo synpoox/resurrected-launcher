@@ -1,0 +1,37 @@
+/* Launcher self-update (spec: Launcher self-update, variant C). Square, no shadows. */
+
+.su-dot {
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.su-restarting {
+  position: absolute;
+  inset: 0;
+  z-index: 4; /* above the product page (tabs are 3), under the title bar (5) */
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  background: var(--bg);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.su-restarting img {
+  margin-bottom: 8px;
+}
+
+.su-restarting b {
+  font-size: 18px;
+  color: var(--text);
+}
+
+.toast .link[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}

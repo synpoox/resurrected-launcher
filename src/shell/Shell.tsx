@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useApi } from "../api/context";
 import type { SceneOpen } from "../api/fixtures";
 import { DEFAULT_PRODUCT_ID, PRODUCTS, productById } from "../products";
@@ -6,6 +6,8 @@ import { badgeOf, journeyOf, type Badge } from "../product/journey";
 import { ProductPage, type Tab } from "../product/ProductPage";
 import { progressStats } from "../product/stats";
 import { useProducts } from "../product/store";
+import { RestartingScreen } from "../selfupdate/RestartingScreen";
+import { useSelfUpdate } from "../selfupdate/SelfUpdate";
 import { Settings } from "../settings";
 import { QuitDialog } from "./QuitDialog";
 import { Sidebar, type View } from "./Sidebar";
@@ -57,6 +59,14 @@ export function Shell({ product, open, tab }: ShellProps) {
     return out;
   }, [products]);
 
+  // Opening Settings clears the launcher-update dot (and keeps it clear while Settings is open).
+  const selfUpdate = useSelfUpdate();
+  const clearDot = selfUpdate?.clearDot;
+  const dot = selfUpdate?.dot;
+  useEffect(() => {
+    if (view.kind === "settings" && dot) clearDot?.();
+  }, [view.kind, dot, clearDot]);
+
   const current = view.kind === "product" ? productById(view.id)! : null;
   const busy = PRODUCTS.find((p) => products[p.id]?.state?.running);
   return (
@@ -77,6 +87,7 @@ export function Shell({ product, open, tab }: ShellProps) {
         ) : (
           <Settings />
         )}
+        <RestartingScreen />
         {quitOpen && busy && (
           <QuitDialog
             product={busy}

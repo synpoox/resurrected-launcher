@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ApiContext } from "./api/context";
 import { FIXTURE_KEYS, selectApi } from "./api/index";
 import { sceneByKey } from "./api/fixtures";
+import { selectSelfUpdate, selfUpdateEnabled } from "./selfupdate/flag";
+import { SelfUpdateProvider } from "./selfupdate/SelfUpdate";
 import { Shell } from "./shell/Shell";
 import { ToastProvider } from "./ui/Toast";
 
@@ -9,6 +11,8 @@ export interface AppProps {
   search: string;
   /** Dev builds allow `?fixture=<key>` (plus `&tab=notes`, and `&chrome=0` to hide the bar) and ← → cycling. */
   dev: boolean;
+  /** The launcher self-update flag (`VITE_SELF_UPDATE=1`); dev builds then allow `?selfupdate=<phase>`. */
+  selfUpdate?: boolean;
 }
 
 /** Arrow keys cycle fixtures only when nothing focusable claims them. */
@@ -19,10 +23,17 @@ function claimsArrows(target: EventTarget | null): boolean {
   );
 }
 
-export function App({ search, dev }: AppProps) {
+export function App({ search, dev, selfUpdate = selfUpdateEnabled() }: AppProps) {
   const [query, setQuery] = useState(search);
   const selection = useMemo(() => selectApi(query, dev), [query, dev]);
   useEffect(() => () => void (selection.ok && selection.api.dispose()), [selection]);
+  // Keyed on its own parameter, so ← → through product fixtures keeps the self-update phase.
+  const selfUpdateKey = dev ? new URLSearchParams(query).get("selfupdate") : null;
+  const update = useMemo(
+    () => selectSelfUpdate(selfUpdateKey ? `?selfupdate=${selfUpdateKey}` : "", dev, selfUpdate),
+    [selfUpdateKey, dev, selfUpdate],
+  );
+  useEffect(() => () => void (update?.ok && update.api.dispose()), [update]);
 
   useEffect(() => {
     if (!dev || !selection.ok) return;
@@ -31,19 +42,19 @@ export function App({ search, dev }: AppProps) {
       if ((e.key !== "ArrowLeft" && e.key !== "ArrowRight") || e.defaultPrevented || claimsArrows(e.target)) return;
       const i = FIXTURE_KEYS.indexOf(key);
       const n = (i + (e.key === "ArrowRight" ? 1 : -1) + FIXTURE_KEYS.length) % FIXTURE_KEYS.length;
-      const next = `?fixture=${FIXTURE_KEYS[n]}`;
+      const next = `?fixture=${FIXTURE_KEYS[n]}${selfUpdateKey ? `&selfupdate=${encodeURIComponent(selfUpdateKey)}` : ""}`;
       history.replaceState(null, "", next);
       setQuery(next);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dev, selection]);
+  }, [dev, selection, selfUpdateKey]);
 
-  if (!selection.ok) {
+  if (!selection.ok || update?.ok === false) {
     return (
       <div className="fixture-error" role="alert">
         <h1>Fixture error</h1>
-        <p>{selection.error}</p>
+        <p>{!selection.ok ? selection.error : update?.ok === false ? update.error : ""}</p>
       </div>
     );
   }
@@ -53,11 +64,18 @@ export function App({ search, dev }: AppProps) {
   return (
     <ApiContext.Provider value={selection.api}>
       <ToastProvider>
-        <Shell key={selection.key} product={scene.product} open={scene.open} tab={tab} />
+        {update ? (
+          <SelfUpdateProvider api={update.api}>
+            <Shell key={selection.key} product={scene.product} open={scene.open} tab={tab} />
+          </SelfUpdateProvider>
+        ) : (
+          <Shell key={selection.key} product={scene.product} open={scene.open} tab={tab} />
+        )}
       </ToastProvider>
       {dev && params.get("chrome") !== "0" && (
         <p className="fixture-bar" aria-live="polite">
-          Fixture: {selection.key} · ← →
+          Fixture: {selection.key}
+          {update ? ` · launcher ${update.key}` : ""} · ← →
         </p>
       )}
     </ApiContext.Provider>
