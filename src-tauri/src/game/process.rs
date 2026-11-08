@@ -25,12 +25,32 @@ pub fn running_under(root: &Path, host: &dyn GameHost) -> Result<Vec<RunningGame
         .collect())
 }
 
-/// Canonical, `\\?\`-free, upper-cased form for a case-insensitive component compare.
-/// A path that cannot be canonicalized (gone, access denied) is compared as given.
+/// Canonical, `\?\`-free, upper-cased form for a case-insensitive component compare.
+/// A path that cannot be canonicalized whole (gone, access denied) keeps its
+/// deepest ancestor that can be, plus the rest as given, so a missing image under
+/// an 8.3 short-name folder (`RUNNER~1`) still compares in long form with the root.
 fn fold(path: &Path) -> PathBuf {
-    let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let path = canonical_prefix(path);
     let text = path.to_string_lossy();
-    PathBuf::from(text.strip_prefix(r"\\?\").unwrap_or(&text).to_uppercase())
+    PathBuf::from(text.strip_prefix(r"\?\").unwrap_or(&text).to_uppercase())
+}
+
+fn canonical_prefix(path: &Path) -> PathBuf {
+    for base in path.ancestors() {
+        if base.as_os_str().is_empty() {
+            break;
+        }
+        if let Ok(canonical) = std::fs::canonicalize(base) {
+            // `base` is an ancestor of `path`, so the strip cannot fail.
+            let rest = path.strip_prefix(base).unwrap_or(Path::new(""));
+            return if rest.as_os_str().is_empty() {
+                canonical
+            } else {
+                canonical.join(rest)
+            };
+        }
+    }
+    path.to_path_buf()
 }
 
 /// Exit watcher: blocks, checking [`running_under`] every `poll`, until nothing runs
@@ -142,4 +162,32 @@ pub(super) fn system_processes() -> io::Result<Vec<RunningGame>> {
 pub(super) fn system_processes() -> io::Result<Vec<RunningGame>> {
     // shortcut: the product targets Windows only; non-Windows dev builds see no games.
     Ok(Vec::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_missing_file_folds_onto_its_existing_canonical_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let sub = root.path().join("Sub");
+        std::fs::create_dir(&sub).unwrap();
+        // Spelled through `..` and in another case: only canonicalizing the
+        // existing folder makes the two agree.
+        let roundabout = sub.join("..").join("SUB").join("missing.exe");
+        assert_eq!(fold(&roundabout), fold(&sub).join("MISSING.EXE"));
+        assert!(fold(&roundabout).starts_with(fold(root.path())));
+    }
+
+    #[test]
+    fn an_existing_path_folds_as_before() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("D2R.exe");
+        std::fs::write(&file, b"").unwrap();
+        let canonical = std::fs::canonicalize(&file).unwrap();
+        let text = canonical.to_string_lossy();
+        let expected = text.strip_prefix(r"\?\").unwrap_or(&text).to_uppercase();
+        assert_eq!(fold(&file), PathBuf::from(expected));
+    }
 }
