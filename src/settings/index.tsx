@@ -42,7 +42,8 @@ export function Settings({ initialTab = "game" }: { initialTab?: SettingsTab }) 
               role="tab"
               id={`${base}-${key}-tab`}
               aria-selected={tab === key}
-              aria-controls={`${base}-${key}`}
+              // Only the selected tab's panel is rendered.
+              aria-controls={tab === key ? `${base}-${key}` : undefined}
               tabIndex={tab === key ? 0 : -1}
               onClick={() => setTab(key)}
             >
@@ -52,7 +53,7 @@ export function Settings({ initialTab = "game" }: { initialTab?: SettingsTab }) 
         </div>
       </div>
       <div className="spanel" role="tabpanel" id={`${base}-${tab}`} aria-labelledby={`${base}-${tab}-tab`}>
-        {tab === "game" && <GamePanel product={product} state={state} />}
+        {tab === "game" && <GamePanel product={product} state={state} stateFailed={Boolean(products[product.id]?.error)} />}
         {tab === "launcher" && <LauncherPanel />}
         {tab === "folders" && <FoldersPanel product={product} state={state} />}
         {tab === "troubleshooting" && <TroubleshootingPanel product={product} />}

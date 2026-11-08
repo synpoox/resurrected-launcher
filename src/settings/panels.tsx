@@ -12,6 +12,7 @@ import {
   folderFailureText,
   folderName,
   GAME_RUNNING_REASON,
+  STATE_FAILED_REASON,
   isPluginFolder,
   recheckText,
   STORE_NAME,
@@ -27,12 +28,14 @@ export interface PanelProps {
 
 // ---- Game ----
 
-export function GamePanel({ product, state }: PanelProps) {
+export function GamePanel({ product, state, stateFailed = false }: PanelProps & { stateFailed?: boolean }) {
   const api = useApi();
   const [choosing, setChoosing] = useState(false);
   const [recheck, setRecheck] = useState<ProductState | null>(null);
   const location = state?.location ?? null;
   const running = state?.readiness.status === "running";
+  // The location can't be changed until product state has loaded; say so if loading failed.
+  const reason = running ? GAME_RUNNING_REASON : state === null && stateFailed ? STATE_FAILED_REASON : null;
   const why = useId();
 
   const closed = async (chosen: boolean) => {
@@ -50,7 +53,9 @@ export function GamePanel({ product, state }: PanelProps) {
       <Row
         label="Diablo II: Resurrected location"
         hint={
-          location ? (
+          state === null ? (
+            stateFailed ? "The D2R location couldn't be read." : "Checking…"
+          ) : location ? (
             <>
               <code className="path">{location.path}</code>
               <br />
@@ -65,14 +70,14 @@ export function GamePanel({ product, state }: PanelProps) {
           type="button"
           className="btn ghost small"
           disabled={running || state === null}
-          aria-describedby={running ? why : undefined}
+          aria-describedby={reason ? why : undefined}
           onClick={() => setChoosing(true)}
         >
           {location ? "Change…" : "Choose…"}
         </button>
-        {running && (
+        {reason && (
           <span id={why} className="why">
-            {GAME_RUNNING_REASON}
+            {reason}
           </span>
         )}
       </Row>

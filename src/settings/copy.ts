@@ -8,6 +8,7 @@ export const STORE_NAME: Record<GameLocation["store"], string> = {
 };
 
 export const GAME_RUNNING_REASON = "Quit the game to change this";
+export const STATE_FAILED_REASON = "Couldn't read the launcher's state. Reopen Settings to try again";
 
 /** What the recheck after a location change found, for the Game panel's notice. */
 export function recheckText(state: ProductState, product: Product): string {

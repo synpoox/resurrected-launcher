@@ -10,7 +10,7 @@ import { ToastProvider } from "../ui/Toast";
 
 let api: FixtureApi | null = null;
 
-async function openSettings(key: string, prepare?: (api: FixtureApi) => void) {
+async function openSettings(key: string, prepare?: (api: FixtureApi) => void, ready: RegExp = /build 3\.3\.0|wasn't found on this PC/) {
   api = createFixtureApi(key, { tick: 60_000 });
   prepare?.(api);
   const scene = sceneByKey(key)!;
@@ -24,7 +24,7 @@ async function openSettings(key: string, prepare?: (api: FixtureApi) => void) {
   );
   await user.click(screen.getByRole("button", { name: "Settings" }));
   // Product state has loaded once the location row shows a store or the "not found" hint.
-  await screen.findByText(/build 3\.3\.0|wasn't found on this PC/);
+  await screen.findByText(ready);
   return { api, user };
 }
 
@@ -49,6 +49,13 @@ describe("settings sub-nav", () => {
     expect(tab("Game").getAttribute("aria-selected")).toBe("true");
     expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
     expect(panel().getAttribute("aria-labelledby")).toBe(tab("Game").id);
+    // Every aria-controls points at a rendered panel.
+    for (const t of tabs) {
+      const controls = t.getAttribute("aria-controls");
+      if (controls) expect(document.getElementById(controls)).toBe(panel());
+    }
+    expect(tab("Game").getAttribute("aria-controls")).toBe(panel().id);
+    expect(tab("Launcher").hasAttribute("aria-controls")).toBe(false);
 
     await user.click(tab("Troubleshooting"));
     expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
@@ -118,6 +125,16 @@ describe("Game", () => {
     const change = screen.getByRole("button", { name: "Change…" }) as HTMLButtonElement;
     expect(change.disabled).toBe(true);
     const why = screen.getByText("Quit the game to change this");
+    expect(change.getAttribute("aria-describedby")).toBe(why.id);
+  });
+
+  it("explains why Change… is disabled when product state couldn't be read", async () => {
+    await openSettings("ready", (a) => {
+      a.getProductState = reject("internal");
+    }, /couldn't be read/);
+    const change = screen.getByRole("button", { name: /Change…|Choose…/ }) as HTMLButtonElement;
+    expect(change.disabled).toBe(true);
+    const why = screen.getByText(/Couldn't read the launcher's state/);
     expect(change.getAttribute("aria-describedby")).toBe(why.id);
   });
 
