@@ -16,3 +16,15 @@
   --rule: #ffffff24;
   --hero-copy: #cbc3c2;
 }
+
+/* Implementation tokens: translucent layers named in the spec (tabs frame, dialog backdrop) and
+   the hero gradient stops. Same rule: every colour comes from this file. */
+:root {
+  --frame: #101011b3; /* tabs frame: --bg at 70% */
+  --backdrop: #000000b3; /* dialog backdrop */
+  --scrim: #101011d9; /* notice panel over art: --bg at 85% */
+  --shade: #101011cc; /* hero gradient stop: --bg at 80% */
+  --clear: #10101100; /* hero gradient end: --bg at 0% */
+  --hover-tint: #ffffff0f; /* selected radio row */
+  --white: #fff; /* text on --button and --ribbon */
+}

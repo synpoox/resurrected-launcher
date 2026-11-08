@@ -1,0 +1,104 @@
+import { useEffect, useId, useRef, useState } from "react";
+import { arrowKeys } from "./focus";
+
+export interface MenuItem {
+  label: string;
+  onSelect: () => void;
+  /** "danger" uses `--detail`. */
+  tone?: "danger";
+  /** Draws a divider above this item. */
+  divider?: boolean;
+}
+
+export interface MenuProps {
+  /** The trigger's accessible name, e.g. "Manage PD2R". */
+  label: string;
+  items: MenuItem[];
+  defaultOpen?: boolean;
+  /** Extra class names for the trigger button. */
+  className?: string;
+}
+
+/** The square `⋯` menu. Arrow keys move, Esc closes, focus returns to `⋯`. */
+export function Menu({ label, items, defaultOpen = false, className = "" }: MenuProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const id = useId();
+
+  useEffect(() => {
+    if (open) list.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!list.current?.contains(t) && !trigger.current?.contains(t)) setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+
+  const close = (refocus: boolean) => {
+    setOpen(false);
+    if (refocus) trigger.current?.focus();
+  };
+
+  return (
+    <span className="menu-wrap">
+      <button
+        ref={trigger}
+        type="button"
+        className={`btn ghost square ${className}`}
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? id : undefined}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        <span aria-hidden="true">⋯</span>
+      </button>
+      {open && (
+        <div
+          ref={list}
+          id={id}
+          className="menu"
+          role="menu"
+          aria-label={label}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              close(true);
+            } else if (e.key === "Tab") close(false);
+            else arrowKeys("[role=menuitem]", "vertical")(e);
+          }}
+        >
+          {items.map((item) => (
+            <div key={item.label} role="none">
+              {item.divider && <hr />}
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                className={item.tone ?? undefined}
+                onClick={() => {
+                  close(true);
+                  item.onSelect();
+                }}
+              >
+                {item.label}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </span>
+  );
+}

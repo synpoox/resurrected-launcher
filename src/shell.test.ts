@@ -6,7 +6,7 @@ const read = (path: string) => readFileSync(path, "utf8");
 
 // Every source file under src/, recursively, excluding tests.
 const sources = readdirSync("src", { recursive: true, withFileTypes: true })
-  .filter((e) => e.isFile() && !e.name.endsWith(".test.ts"))
+  .filter((e) => e.isFile() && !/\.test\.tsx?$/.test(e.name))
   .map((e) => {
     const path = join(e.parentPath, e.name);
     return { name: path, text: read(path) };
@@ -15,7 +15,8 @@ const sources = readdirSync("src", { recursive: true, withFileTypes: true })
 // Properties that take a colour; their values must come from tokens.
 const COLOUR_PROPS =
   /(?:^|[;{\s])((?:background|color|border[\w-]*|outline[\w-]*|fill|stroke|box-shadow|text-shadow|caret-color|accent-color|text-decoration[\w-]*)\s*:\s*([^;}]+))/gi;
-const COLOURLESS = /^(?:none|inherit|initial|unset|transparent|currentcolor|0|[\d.]+(?:px|em|rem)?(?:\s+(?:solid|dashed|dotted))?)$/i;
+const COLOURLESS =
+  /^(?:none|inherit|initial|unset|transparent|currentcolor|underline|0|-?[\d.]+(?:px|em|rem|%)?(?:\s+(?:solid|dashed|dotted|double))?)$/i;
 
 describe("design tokens", () => {
   it("tokens.css defines every token from the launcher UI spec with its value", () => {
@@ -61,10 +62,71 @@ describe("design tokens", () => {
 });
 
 describe("display names", () => {
-  it("the umbrella display name comes from Rust, not the frontend", () => {
+  const BRANDING = join("src", "shell", "branding.ts");
+
+  it("the umbrella display name lives only in the swappable branding constant", () => {
     for (const { name, text } of sources) {
-      expect(text, name).not.toContain("Project Resurrected");
+      if (name !== BRANDING) expect(text, name).not.toContain("Project Resurrected");
       expect(text, name).not.toMatch(/PD2Resurrect\b/);
     }
+  });
+
+  it("the branding constant matches the name Rust reports", () => {
+    const rust = read("src-tauri/src/contract/mod.rs").match(/UMBRELLA_DISPLAY_NAME: &str = "([^"]+)"/);
+    expect(rust).not.toBeNull();
+    expect(read(BRANDING)).toContain(`name: "${rust![1]}"`);
+  });
+});
+
+describe("fixture boundaries", () => {
+  it("only src/ipc.ts imports @tauri-apps/api or calls invoke", () => {
+    for (const { name, text } of sources) {
+      if (name === join("src", "ipc.ts") || !/\.(tsx?|css)$/.test(name)) continue;
+      expect(text, name).not.toMatch(/(?:from\s+|import\(\s*)["']@tauri-apps\/api|\binvoke\s*[(<]/);
+    }
+  });
+
+  it("src/api imports ipc.ts for types only", () => {
+    for (const { name, text } of sources) {
+      if (!name.startsWith(join("src", "api"))) continue;
+      for (const [line] of text.matchAll(/^import[^;]*from "\.\.\/ipc";/gm)) {
+        expect(line, name).toMatch(/^import type /);
+      }
+    }
+  });
+
+  it("no remote URL appears in components or stylesheets", () => {
+    for (const { name, text } of sources) {
+      if (/\.(tsx|css)$/.test(name)) expect(text, name).not.toMatch(/https?:\/\//);
+    }
+  });
+});
+
+describe("motion", () => {
+  it("prefers-reduced-motion turns every animation and transition off", () => {
+    const css = read("src/styles.css");
+    const block = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
+    expect(block).toMatch(/animation: none !important;/);
+    expect(block).toMatch(/transition: none !important;/);
+  });
+
+  it("uses the specified durations", () => {
+    const css = sources.filter((s) => s.name.endsWith(".css")).map((s) => s.text).join("\n");
+    expect(css).toContain("animation: fade 450ms ease-out");
+    expect(css).toContain("animation: lift 450ms ease-out");
+    expect(css).toContain("transform 150ms");
+    expect(css).toContain("transition: width 300ms");
+    expect(css).toContain("pulse 1.6s");
+    expect(css).not.toMatch(/scroll-behavior:\s*smooth/);
+  });
+});
+
+describe("focus", () => {
+  it("every focusable element shows the 3px --focus ring at a 2px offset", () => {
+    expect(read("src/styles.css")).toMatch(/:focus-visible \{\s*outline: 3px solid var\(--focus\);\s*outline-offset: 2px;/);
+  });
+
+  it("window controls use an inset ring", () => {
+    expect(read("src/shell/shell.css")).toMatch(/\.win:focus-visible \{\s*outline-offset: -3px;/);
   });
 });

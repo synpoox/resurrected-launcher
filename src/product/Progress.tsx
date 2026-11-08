@@ -1,0 +1,57 @@
+import { useEffect, useId, useRef } from "react";
+
+export interface ProgressProps {
+  label: string;
+  percent: number | null;
+  detail: string;
+  cancelLabel: string;
+  /** Omit to disable Cancel; `detail` then says why. */
+  onCancel?: () => void;
+  /** The striped bar of a safe stop. */
+  striped?: boolean;
+  /** Patch Notes: a 250px bar with Cancel and no detail line. */
+  compact?: boolean;
+}
+
+/** Replaces Play while an operation runs: label, %, bar, detail and Cancel. */
+export function Progress({ label, percent, detail, cancelLabel, onCancel, striped, compact }: ProgressProps) {
+  const detailId = useId();
+  const fill = useRef<HTMLDivElement>(null);
+  const value = percent ?? 0;
+  useEffect(() => {
+    // CSSOM, not a style attribute: the CSP has `style-src 'self'`.
+    fill.current?.style.setProperty("width", `${value}%`);
+  }, [value]);
+  return (
+    <div className={`progress${compact ? " compact" : ""}`}>
+      <div className="progress-top">
+        <b>{label}</b>
+        {percent !== null && <span className="pct">{percent}%</span>}
+      </div>
+      <div
+        className="track"
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent ?? undefined}
+      >
+        <div ref={fill} className={`fill${striped ? " striped" : ""}`} />
+      </div>
+      <div className="progress-bottom">
+        <span id={detailId} className="detail">
+          {detail}
+        </span>
+        <button
+          type="button"
+          className="btn ghost small"
+          disabled={!onCancel}
+          aria-describedby={onCancel ? undefined : detailId}
+          onClick={onCancel}
+        >
+          {cancelLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
