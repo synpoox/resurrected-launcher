@@ -22,7 +22,13 @@ const MANAGED: &str = "PD2Resurrected.mpq/data/global/excel/armor.txt";
 /// A repair killed mid-activation: the launcher process "dies" at
 /// `StagedMovedToLive` (injected crash, no rollback), leaving its journal.
 fn crash_mid_repair(rig: &Rig) {
-    fs::remove_file(rig.root().join(MANAGED)).unwrap();
+    crash_mid_repair_removing(rig, MANAGED);
+}
+
+/// [`crash_mid_repair`] after removing the managed file `managed` (phase B uses
+/// one of the real release's files).
+pub(crate) fn crash_mid_repair_removing(rig: &Rig, managed: &str) {
+    fs::remove_file(rig.root().join(managed)).unwrap();
     let launcher: std::sync::Arc<Launcher> = rig.launcher();
     let installed = rig.releases.0.lock().unwrap().last().unwrap().clone();
     assert!(Boundary::sequence(OperationKind::Repair).contains(&Boundary::StagedMovedToLive));

@@ -681,15 +681,35 @@ fn a_panicking_operation_frees_the_product_and_reports_failure() {
     assert!(rig.state().installed.is_none());
 }
 
+/// Phase B of the slice 3 gate (#61): a real D2R folder's `mods\<folder>` is
+/// writable, but never through a junction. Here `mods` is a junction to a
+/// folder elsewhere, so the write would land outside the chosen D2R folder.
+#[cfg(windows)]
 #[test]
-fn commands_never_write_a_product_root_without_the_disposable_sentinel() {
+fn commands_never_write_a_product_root_reached_through_a_junction() {
     let rig = Rig::new();
     let r1 = rig.publish(PD2R_1);
-    // A real-looking root: present, but no sentinel.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let mods = rig.game.d2r().join("mods");
+    fs::remove_dir_all(&mods).unwrap();
+    let made = std::process::Command::new("cmd")
+        .arg("/C")
+        .arg("mklink")
+        .arg("/J")
+        .arg(&mods)
+        .arg(elsewhere.path())
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !made {
+        eprintln!("SKIPPED: mklink /J failed");
+        return;
+    }
+    // A real-looking root: present, but no sentinel, through the junction.
     fs::create_dir_all(rig.root(&r1)).unwrap();
     let outcome = rig.run("install", json!({}));
     assert_eq!(outcome["error"]["code"], "product_root_not_disposable");
     assert_eq!(fs::read_dir(rig.root(&r1)).unwrap().count(), 0);
+    assert_eq!(fs::read_dir(elsewhere.path()).unwrap().count(), 1);
     assert!(rig.state().installed.is_none());
 }
 
