@@ -687,14 +687,12 @@ pub async fn start_operation<R: Runtime>(
     inspection_token: String,
 ) -> Result<(), LauncherError> {
     let req = request.into_current()?;
-    let resolved = launcher.resolve(&req)?;
     let cancel = Arc::new(AtomicBool::new(false));
+    // Reserved under the app operation lock before anything is read, so two
+    // starts cannot both pass and no Play or location change starts from here on.
     let reservation = {
         let mut running = launcher.running();
         running.refuse(&req.product_id)?;
-        // Under the app operation lock, so a Play cannot slip in between.
-        launcher.refuse_if_game_running(&resolved.d2r)?;
-        // Reserved first so two starts cannot both pass; inspected outside the lock.
         running
             .ops
             .insert(req.product_id.clone(), (cancel.clone(), req.kind));
@@ -703,6 +701,10 @@ pub async fn start_operation<R: Runtime>(
             product_id: req.product_id.clone(),
         }
     };
+    // While reserved the selected D2R root cannot change (#97), so the root
+    // resolved and checked here is the one the operation runs on.
+    let resolved = launcher.resolve(&req)?;
+    launcher.refuse_if_game_running(&resolved.d2r)?;
     match launcher.inspect(&resolved) {
         Ok((_, token)) if token == inspection_token => {}
         Ok(_) => {
