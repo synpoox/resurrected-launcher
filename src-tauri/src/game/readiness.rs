@@ -59,17 +59,3 @@ pub fn assess(
 ) -> Result<Readiness, LauncherError> {
     todo!("#57")
 }
-
-/// Whether installing loader `new_version` at `location` keeps every product in
-/// `managed` (the manifests of all launcher-managed products installed there)
-/// playable, i.e. `new_version` is in each one's `compatibility.loader_versions`.
-///
-/// Errors: [`crate::contract::ErrorCode::LoaderChangeUnsafe`], naming the products
-/// that would break.
-pub fn loader_change_safe(
-    location: &GameLocation,
-    new_version: &str,
-    managed: &[&ReleaseManifest],
-) -> Result<(), LauncherError> {
-    todo!("#57")
-}

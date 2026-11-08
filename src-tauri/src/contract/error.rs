@@ -60,13 +60,6 @@ pub enum ErrorCode {
     LoaderNotReady,
     /// Play was requested for a product with no installed release.
     ProductNotInstalled,
-    /// Changing the loader version would break another launcher-managed product at
-    /// this D2R location.
-    LoaderChangeUnsafe,
-    /// The loader installer was started without the token of the offer shown.
-    LoaderSetupConsentRequired,
-    /// The loader installer could not be started, was declined, or failed.
-    LoaderSetupFailed,
     /// Starting `D2RLoader.exe` failed.
     LaunchFailed,
 }

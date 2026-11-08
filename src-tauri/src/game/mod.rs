@@ -1,5 +1,6 @@
-//! Game module: detect or select D2R, assess game/loader readiness, hand off to the
-//! pinned loader installer, launch a product explicitly and track running processes.
+//! Game module: detect or select D2R, assess game/loader readiness, guide the
+//! player to the official loader download, launch a product explicitly and track
+//! running processes. The launcher never downloads or runs the loader installer.
 //!
 //! Returns actionable readiness reasons rather than spreading checks into React.
 //! Offline single-player only: launch takes no mode, server or extra argument.
@@ -13,7 +14,7 @@
 //! | `winapi` | #57 | Registry and PE version FFI behind [`SystemGameHost`] |
 //! | [`process`] | #58 | Processes under the D2R root, exit watching |
 //! | [`launch`] | #58 | `D2RLoader.exe -mod <folder>` from the root |
-//! | [`loader_setup`] | #59 | Pinned official D2RLoader installer handoff |
+//! | [`loader_setup`] | #59 | Guidance to the official D2RLoader download page |
 //!
 //! Nothing here writes to a D2R installation; [`crate::contract::WriteGuard`]
 //! still refuses real roots until the slice 3 gate (#61) phase B.
@@ -53,11 +54,6 @@ pub trait GameHost: Send + Sync {
     /// Starts `exe` with exactly `args` and working directory `cwd`: no shell, no
     /// elevation, not tied to the launcher's lifetime. Returns the new process ID.
     fn spawn(&self, exe: &Path, args: &[String], cwd: &Path) -> io::Result<u32>;
-
-    /// Opens `exe` with `ShellExecuteExW` verb "open" and no arguments, so its own
-    /// UAC prompt may appear (the launcher never elevates), then blocks until it
-    /// exits. Returns its exit code; a declined UAC prompt is an error.
-    fn run_installer(&self, exe: &Path) -> io::Result<u32>;
 }
 
 /// The real machine. Each method delegates to the submodule that owns its FFI.
@@ -79,9 +75,5 @@ impl GameHost for SystemGameHost {
 
     fn spawn(&self, exe: &Path, args: &[String], cwd: &Path) -> io::Result<u32> {
         launch::system_spawn(exe, args, cwd)
-    }
-
-    fn run_installer(&self, exe: &Path) -> io::Result<u32> {
-        loader_setup::system_run_installer(exe)
     }
 }

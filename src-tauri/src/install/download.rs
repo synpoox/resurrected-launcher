@@ -45,11 +45,13 @@ fn cancelled() -> LauncherError {
 }
 
 /// Copies `src` to `sink` (if any) while hashing, checking `cancel` before every
-/// read and failing as soon as more than `limit` bytes arrive.
+/// read and failing as soon as more than `limit` bytes arrive. Progress reports
+/// `total` (0 when unknown).
 fn pump(
     src: &mut dyn Read,
-    mut sink: Option<&mut File>,
+    mut sink: Option<&mut dyn Write>,
     limit: u64,
+    total: u64,
     read_failed: &dyn Fn(std::io::Error) -> LauncherError,
     cancel: &AtomicBool,
     progress: &mut dyn FnMut(u64, u64),
@@ -76,7 +78,7 @@ fn pump(
             file.write_all(&buf[..n])
                 .map_err(|e| failed(format!("writing the download: {e}")))?;
         }
-        progress(done, limit);
+        progress(done, total);
     }
     Ok((done, hasher.finalize().into()))
 }
@@ -92,6 +94,7 @@ pub(crate) fn hash_file(
         &mut file,
         None,
         u64::MAX,
+        0,
         &read_failed,
         cancel,
         &mut |_, _| {},
@@ -251,8 +254,7 @@ impl Downloader {
         let result = self
             .download_to(url, partial, expect, cancel, progress)
             .and_then(|(n, digest)| {
-                let digest = Sha256Digest::from_bytes(digest)
-                    .ok_or_else(|| mismatch("download hashed to the all-zero placeholder"))?;
+                let digest = nonzero(digest)?;
                 fs::rename(partial, dest).map_err(|e| io_error("renaming download to", dest, e))?;
                 Ok((n, digest))
             });
@@ -262,10 +264,40 @@ impl Downloader {
         result
     }
 
+    /// Downloads `url` into memory, for metadata State caches directly (the feed,
+    /// manifests). Same HTTPS, cap and hash rules as [`Downloader::fetch_to`];
+    /// returns the bytes and their SHA-256.
+    pub fn fetch_bytes(
+        &self,
+        url: &str,
+        expect: Expect<'_>,
+        cancel: &AtomicBool,
+    ) -> Result<(Vec<u8>, Sha256Digest), LauncherError> {
+        let mut bytes = Vec::new();
+        let (_, digest) = self.download(url, &mut bytes, expect, cancel, &mut |_, _| {})?;
+        Ok((bytes, nonzero(digest)?))
+    }
+
     fn download_to(
         &self,
         url: &str,
         partial: &Path,
+        expect: Expect<'_>,
+        cancel: &AtomicBool,
+        progress: &mut dyn FnMut(u64, u64),
+    ) -> Result<(u64, [u8; 32]), LauncherError> {
+        // create truncates: an incomplete earlier download restarts from zero.
+        let mut file = File::create(partial).map_err(|e| io_error("creating", partial, e))?;
+        let got = self.download(url, &mut file, expect, cancel, progress)?;
+        file.sync_all()
+            .map_err(|e| io_error("flushing", partial, e))?;
+        Ok(got)
+    }
+
+    fn download(
+        &self,
+        url: &str,
+        sink: &mut dyn Write,
         expect: Expect<'_>,
         cancel: &AtomicBool,
         progress: &mut dyn FnMut(u64, u64),
@@ -287,14 +319,18 @@ impl Downloader {
                 )));
             }
         }
-        // create truncates: an incomplete earlier download restarts from zero.
-        let mut file = File::create(partial).map_err(|e| io_error("creating", partial, e))?;
+        let total = if sha256.is_some() {
+            limit
+        } else {
+            announced.unwrap_or(0)
+        };
         let mut body = response.into_body().into_reader();
         let read_failed = |e| failed(format!("download interrupted: {e}"));
         let (n, digest) = pump(
             &mut body,
-            Some(&mut file),
+            Some(sink),
             limit,
+            total,
             &read_failed,
             cancel,
             progress,
@@ -304,16 +340,20 @@ impl Downloader {
                 return Err(mismatch(format!("received {n} bytes, expected {limit}")));
             }
             if &digest != sha256.as_bytes() {
-                return Err(mismatch("SHA-256 does not match the release manifest"));
+                return Err(mismatch("SHA-256 does not match the expected hash"));
             }
         }
-        file.sync_all()
-            .map_err(|e| io_error("flushing", partial, e))?;
         Ok((n, digest))
     }
 }
 
-/// What [`Downloader::fetch_to`] requires of the downloaded bytes.
+fn nonzero(digest: [u8; 32]) -> Result<Sha256Digest, LauncherError> {
+    Sha256Digest::from_bytes(digest)
+        .ok_or_else(|| mismatch("download hashed to the all-zero placeholder"))
+}
+
+/// What [`Downloader::fetch_to`] and [`Downloader::fetch_bytes`] require of the
+/// downloaded bytes.
 #[derive(Debug, Clone, Copy)]
 pub enum Expect<'a> {
     /// Exactly `size` bytes with this SHA-256 (a manifest, the loader installer).
@@ -708,5 +748,64 @@ pub(crate) mod tests {
             .unwrap_err();
         assert_eq!(err.code, ErrorCode::DownloadFailed, "{err}");
         assert!(!partial.exists());
+    }
+
+    #[test]
+    fn fetch_to_with_unknown_size_reports_the_announced_total_not_the_cap() {
+        let bytes = archive_bytes();
+        let fixture = serve_archive(bytes.clone());
+        let dir = tempfile::tempdir().unwrap();
+        let mut last = (0, 0);
+        fixture
+            .downloader()
+            .fetch_to(
+                &fixture.url("/archive"),
+                &dir.path().join("feed.json"),
+                Expect::AtMost(10 * bytes.len() as u64),
+                &AtomicBool::new(false),
+                &mut |done, total| last = (done, total),
+            )
+            .unwrap();
+        assert_eq!(last, (bytes.len() as u64, bytes.len() as u64));
+    }
+
+    #[test]
+    fn fetch_bytes_returns_verified_metadata_in_memory() {
+        let bytes = archive_bytes();
+        let fixture = serve_archive(bytes.clone());
+        let fetch_bytes = |url: &str, expect| {
+            fixture
+                .downloader()
+                .fetch_bytes(url, expect, &AtomicBool::new(false))
+        };
+        let digest = sha256(&bytes);
+        let size = bytes.len() as u64;
+
+        let got = fetch_bytes(&fixture.url("/moved"), Expect::AtMost(size)).unwrap();
+        assert_eq!(got, (bytes.clone(), digest));
+        let exact = Expect::Exact {
+            size,
+            sha256: &digest,
+        };
+        assert_eq!(
+            fetch_bytes(&fixture.url("/archive"), exact).unwrap().0,
+            bytes
+        );
+
+        let err = fetch_bytes(&fixture.url("/archive"), Expect::AtMost(size - 1)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::VerificationFailed, "{err}");
+        let other = sha256(b"another manifest");
+        let err = fetch_bytes(
+            &fixture.url("/archive"),
+            Expect::Exact {
+                size,
+                sha256: &other,
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::VerificationFailed, "{err}");
+        let plain = fixture.url("/archive").replace("https:", "http:");
+        let err = fetch_bytes(&plain, Expect::AtMost(size)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::DownloadFailed, "{err}");
     }
 }

@@ -93,24 +93,21 @@ impl Readiness {
     }
 }
 
-/// What starting the pinned official D2RLoader installer would do, shown before
-/// the player consents. Built from the manifest's `loader` pin; never rehosted.
+/// Guidance shown when D2RLoader is missing or unsupported. The launcher never
+/// downloads or runs the loader installer: the player installs it from the
+/// official page, then uses "Check again", which reassesses readiness.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LoaderSetupOffer {
-    /// The upstream release tag of the installer.
-    pub installer_version: String,
-    /// The loader version that installer installs.
-    pub installs_loader_version: String,
-    /// Download size in bytes.
-    pub size: u64,
-    /// Whether the installer is Authenticode-signed. The UI discloses `false`.
-    pub signed: bool,
-    /// The official download URL, named in the notice and the manual steps.
-    pub source_url: String,
-    /// Consent token: starting the installer requires this exact value, and is
-    /// refused if a fresh offer for the same product has a different token.
-    pub token: String,
+pub struct LoaderGuidance {
+    /// The disallowed ProductVersion found, `None` when the loader is missing.
+    pub found: Option<String>,
+    /// The loader versions the release allows (`compatibility.loader_versions`).
+    pub allowed: Vec<String>,
+    /// Always [`LOADER_DOWNLOAD_PAGE`].
+    pub download_page: String,
 }
+
+/// The official D2RLoader download page, the only place guidance points to.
+pub const LOADER_DOWNLOAD_PAGE: &str = "https://d2rloader.net/download.html";
 
 /// One process whose image is under the selected D2R root.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -217,9 +214,6 @@ mod tests {
             ErrorCode::GameBuildUnsupported,
             ErrorCode::LoaderNotReady,
             ErrorCode::ProductNotInstalled,
-            ErrorCode::LoaderChangeUnsafe,
-            ErrorCode::LoaderSetupConsentRequired,
-            ErrorCode::LoaderSetupFailed,
             ErrorCode::LaunchFailed,
         ])
         .unwrap();
@@ -230,34 +224,24 @@ mod tests {
                 "game_build_unsupported",
                 "loader_not_ready",
                 "product_not_installed",
-                "loader_change_unsafe",
-                "loader_setup_consent_required",
-                "loader_setup_failed",
                 "launch_failed"
             ])
         );
     }
 
     #[test]
-    fn loader_setup_offer_and_running_game_wire_shape() {
-        let offer = LoaderSetupOffer {
-            installer_version: "v0.1.0".into(),
-            installs_loader_version: "1.3.1-beta".into(),
-            size: 4096,
-            signed: false,
-            source_url: "https://github.com/D2RLoader/Installer/releases/download/v0.1.0/setup.exe"
-                .into(),
-            token: "ab12".into(),
+    fn loader_guidance_and_running_game_wire_shape() {
+        let guidance = LoaderGuidance {
+            found: None,
+            allowed: vec!["1.3.1-beta".into()],
+            download_page: LOADER_DOWNLOAD_PAGE.into(),
         };
         round_trip(
-            &offer,
+            &guidance,
             json!({
-                "installer_version": "v0.1.0",
-                "installs_loader_version": "1.3.1-beta",
-                "size": 4096,
-                "signed": false,
-                "source_url": "https://github.com/D2RLoader/Installer/releases/download/v0.1.0/setup.exe",
-                "token": "ab12"
+                "found": null,
+                "allowed": ["1.3.1-beta"],
+                "download_page": "https://d2rloader.net/download.html"
             }),
         );
         let game = RunningGame {
