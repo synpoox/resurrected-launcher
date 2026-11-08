@@ -84,6 +84,27 @@ describe("settings sub-nav", () => {
     await user.tab();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Change…" }));
   });
+
+  // #127: the owner pressed ← → on the vertical section list and nothing happened.
+  it("moves between sections with the left and right arrow keys too, wrapping at the ends", async () => {
+    const { user } = await openSettings("ready");
+    tab("Game").focus();
+    await user.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(tab("Launcher"));
+    expect(tab("Launcher").getAttribute("aria-selected")).toBe("true");
+    expect(within(panel()).getByRole("switch", { name: "Start with Windows" })).toBeTruthy();
+    await user.keyboard("{ArrowRight}{ArrowRight}");
+    expect(document.activeElement).toBe(tab("Troubleshooting"));
+    expect(within(panel()).getByRole("button", { name: "Export diagnostics…" })).toBeTruthy();
+    await user.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(tab("Game"));
+    await user.keyboard("{ArrowLeft}");
+    expect(document.activeElement).toBe(tab("Troubleshooting"));
+    await user.keyboard("{ArrowLeft}");
+    expect(tab("Folders and plugins").getAttribute("aria-selected")).toBe("true");
+    expect(tab("Folders and plugins").tabIndex).toBe(0);
+    expect(tab("Troubleshooting").tabIndex).toBe(-1);
+  });
 });
 
 describe("Game", () => {
