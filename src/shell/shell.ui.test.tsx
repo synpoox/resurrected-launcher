@@ -527,6 +527,42 @@ describe("journey states", () => {
     expect(await screen.findByText("alpha 0.4.2 · 3.6 GB free space needed")).toBeTruthy();
   });
 
+  // issue 126: a product folder the launcher has no record of.
+  it("an existing install of the offered release is adopted, not downloaded", async () => {
+    const { api, user } = mount("adopt");
+    expect(await screen.findByText("alpha 0.4.2 is already in your game folder · Adopt uses it without downloading")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Install$/ })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Adopt" }));
+    await waitFor(() => expect(names(api)).toContain("startOperation"));
+    const start = api.calls.find((c) => c.name === "startOperation")!;
+    expect(start.args[0]).toMatchObject({ kind: "adopt" });
+  });
+
+  it("an existing install that differs offers Clean install with consent, never a failing Install", async () => {
+    const { api, user } = mount("clean-install");
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/doesn't match 0\.4\.2/)).toBeTruthy();
+    expect(within(dialog).getByText("d2rloader/config/d2rloader.toml")).toBeTruthy();
+    expect(within(dialog).getByText(/100 other files stay only in the backup/)).toBeTruthy();
+    expect(names(api)).not.toContain("startOperation");
+    await user.click(within(dialog).getByRole("button", { name: "Not now" }));
+    expect(screen.queryByRole("button", { name: /^Install$/ })).toBeNull();
+    expect(screen.getByText(/isn't alpha 0\.4\.2/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Clean install…" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Clean install" }));
+    await waitFor(() => expect(names(api)).toContain("startOperation"));
+    const start = api.calls.find((c) => c.name === "startOperation")!;
+    expect(start.args[0]).toMatchObject({ kind: "clean_install", consent_clean_install: true });
+  });
+
+  it("an existing install missing files says Install adds them", async () => {
+    mount("install", (a) => {
+      a.scene.inspections = { install: { files_added: 1, files_kept: 2340 } };
+    });
+    expect(await screen.findByText("alpha 0.4.2 · 1 file missing from the PD2R in your game folder · 3.6 GB free space needed")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Install" })).toBeTruthy();
+  });
+
   it("offline keeps Play and names the verified release", async () => {
     mount("offline");
     expect(await screen.findByText("Offline · alpha 0.4.1 verified · can't check for updates")).toBeTruthy();

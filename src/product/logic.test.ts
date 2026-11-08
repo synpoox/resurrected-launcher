@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ProgressEvent } from "../api/types";
+import type { Inspection, ProgressEvent } from "../api/types";
 import { formatBytes, formatTimeLeft, relativeDate, releaseLabel, startedAgo } from "./format";
-import { badgeOf, hasNotice } from "./journey";
+import { badgeOf, existingOf, hasNotice } from "./journey";
 import { heading, MAX_NOTES_CHARS, parseInline, parseNotes } from "./notesMarkdown";
 import { progressStats, type Sample } from "./stats";
 
@@ -247,5 +247,32 @@ describe("parseInline", () => {
     expect(parseInline("+2/10/18 * 3")).toEqual([t("+2/10/18 * 3")]);
     expect(parseInline(String.raw`\*not em\*`)).toEqual([t("*not em*")]);
     expect(parseInline("a ** b")).toEqual([t("a ** b")]);
+  });
+});
+
+describe("existingOf (issue 126)", () => {
+  const insp = (o: Partial<Inspection>): Inspection => ({
+    product_id: "pd2r",
+    kind: "install",
+    release: { release_id: "pd2r-0.2.0-alpha", display_version: "0.2.0-alpha", save_breaking: false },
+    files_replaced_or_removed: 0,
+    files_added: 0,
+    files_kept: 0,
+    preserved: [],
+    backup_only: [],
+    conflicts: [],
+    save_breaking_notice: null,
+    space_needed: 0,
+    token: "t",
+    ...o,
+  });
+  it("reads the install inspection of a product folder the launcher has no record of", () => {
+    expect(existingOf(null)).toBe("none");
+    expect(existingOf(insp({ files_added: 1543 }))).toBe("none");
+    expect(existingOf(insp({ files_kept: 1543 }))).toBe("adoptable");
+    expect(existingOf(insp({ files_kept: 1542, files_added: 1 }))).toBe("incomplete");
+    // The owner's clone: 0.1.0 files while 0.2.0 is offered.
+    const charstats = { type: "unknown_file" as const, path: "PD2Resurrected.mpq/data/global/excel/charstats.txt" };
+    expect(existingOf(insp({ files_kept: 476, files_added: 967, conflicts: [charstats] }))).toBe("different");
   });
 });

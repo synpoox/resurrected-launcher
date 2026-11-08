@@ -1538,3 +1538,90 @@ fn nothing_starts_after_quit_is_accepted() {
     assert_eq!(code(choose.unwrap_err()), "operation_in_progress");
     assert!(rig.state().installed.is_none());
 }
+
+// ---- #126: a product folder the launcher has no record of ----
+//
+// The UI decides between Adopt, Install and Clean install from the install
+// inspection: nothing to add or replace means the files already are the
+// recommended release (Adopt); conflicts mean they are some other release or
+// edited managed files (Clean install); otherwise Install adds what is missing.
+
+#[test]
+fn unmanaged_install_of_the_recommended_release_inspects_as_adoptable() {
+    let rig = Rig::new();
+    let r1 = rig.publish(PD2R_1);
+    rig.game.installed(&r1);
+    assert!(rig.state().installed.is_none());
+
+    let insp = rig.inspect("install", json!({})).unwrap();
+    assert!(insp.conflicts.is_empty(), "{:?}", insp.conflicts);
+    assert_eq!((insp.files_added, insp.files_replaced_or_removed), (0, 0));
+    assert_eq!(insp.files_kept, r1.payload.len());
+
+    let outcome = rig.run("adopt", json!({}));
+    assert_eq!(outcome["status"], "succeeded", "{outcome}");
+    assert_eq!(rig.state().installed.unwrap().release_id, PD2R_1);
+}
+
+#[test]
+fn unmanaged_install_of_an_older_release_inspects_as_needing_a_clean_install() {
+    // The owner's #126 clone: 0.1.0 files on disk, the feed recommends 0.2.0.
+    let rig = Rig::new();
+    rig.game.installed(&release(PD2R_1));
+    let r2 = rig.publish(PD2R_2);
+
+    let insp = rig.inspect("install", json!({})).unwrap();
+    assert!(!insp.conflicts.is_empty(), "the old managed files differ");
+    assert!(insp.files_kept > 0, "unchanged files are recognised");
+    let refused = rig.run("install", json!({}));
+    assert_eq!(refused["status"], "failed", "{refused}");
+    assert!(rig.state().installed.is_none());
+
+    let clean = rig.inspect("clean_install", json!({})).unwrap();
+    assert!(clean.conflicts.is_empty(), "{:?}", clean.conflicts);
+    let outcome = rig.run("clean_install", json!({ "consent_clean_install": true }));
+    assert_eq!(outcome["status"], "succeeded", "{outcome}");
+    assert_eq!(
+        outcome["report"]["clean_install_backups"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(rig.state().installed.unwrap().release_id, PD2R_2);
+    // Managed files are 2's; a differing shipped default (the old loot filter)
+    // is carried forward like a player edit, and its original stays in the backup.
+    for (rel, bytes) in &r2.payload {
+        if is_managed(&r2, rel) {
+            assert_eq!(&fs::read(rig.root(&r2).join(rel)).unwrap(), bytes, "{rel}");
+        }
+    }
+}
+
+fn is_managed(release: &FixtureRelease, rel: &str) -> bool {
+    release
+        .manifest
+        .ownership_of(&RelativePath::new(rel).unwrap())
+        == resurrected_launcher_lib::catalog::Ownership::Managed
+}
+
+#[test]
+fn unmanaged_install_missing_a_file_inspects_as_an_install_that_adds_it() {
+    let rig = Rig::new();
+    let r1 = rig.publish(PD2R_1);
+    let root = rig.game.installed(&r1);
+    let (missing, bytes) = r1
+        .payload
+        .iter()
+        .find(|(rel, _)| is_managed(&r1, rel))
+        .unwrap();
+    fs::remove_file(root.join(missing)).unwrap();
+
+    let insp = rig.inspect("install", json!({})).unwrap();
+    assert!(insp.conflicts.is_empty(), "{:?}", insp.conflicts);
+    assert_eq!(insp.files_added, 1);
+    assert_eq!(insp.files_kept, r1.payload.len() - 1);
+    let outcome = rig.run("install", json!({}));
+    assert_eq!(outcome["status"], "succeeded", "{outcome}");
+    assert_eq!(&fs::read(root.join(missing)).unwrap(), bytes);
+}

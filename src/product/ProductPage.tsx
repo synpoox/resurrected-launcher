@@ -2,16 +2,25 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { useApi } from "../api/context";
 import { subscribe } from "../api/subscribe";
 import type { SceneOpen } from "../api/fixtures";
-import type { Inspection, NewsState, OperationKind, OutcomeReport, ProductState, ReleaseNotes, TrayRequest } from "../api/types";
+import type {
+  Inspection,
+  NewsState,
+  OperationKind,
+  OperationRequest,
+  OutcomeReport,
+  ProductState,
+  ReleaseNotes,
+  TrayRequest,
+} from "../api/types";
 import type { Product } from "../products";
 import { arrowKeys } from "../ui/focus";
 import { Menu, type MenuItem } from "../ui/Menu";
 import { Notice } from "../ui/Notice";
 import { useToast } from "../ui/Toast";
-import { LocationDialog, SaveBreakingDialog, UninstallDialog } from "./dialogs";
+import { CleanInstallDialog, LocationDialog, SaveBreakingDialog, UninstallDialog } from "./dialogs";
 import { formatBytes, formatCount, formatTimeLeft, releaseLabel, startedAgo } from "./format";
 import { HeroArt, HeroCopy } from "./Hero";
-import { hasNotice, journeyOf, type Journey } from "./journey";
+import { existingOf, hasNotice, journeyOf, type Journey } from "./journey";
 import { NewsFeed } from "./NewsFeed";
 import { PatchNotes } from "./PatchNotes";
 import { Progress } from "./Progress";
@@ -35,6 +44,7 @@ type DialogState =
   | { kind: "locate" }
   | { kind: "save-breaking"; inspection: Inspection }
   | { kind: "uninstall"; inspection: Inspection; report: OutcomeReport | null }
+  | { kind: "clean-install"; inspection: Inspection }
   | null;
 
 export interface ProductPageProps {
@@ -203,12 +213,9 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   }, [api, product.id, fail, refresh]);
 
   const start = useCallback(
-    async (kind: OperationKind, inspection: Inspection, acknowledge = false) => {
+    async (kind: OperationKind, inspection: Inspection, consent: Partial<OperationRequest> = {}) => {
       try {
-        await api.startOperation(
-          { product_id: product.id, kind, ...(acknowledge ? { acknowledge_save_breaking: true } : {}) },
-          inspection,
-        );
+        await api.startOperation({ product_id: product.id, kind, ...consent }, inspection);
         await refresh();
       } catch (e) {
         fail(e);
@@ -227,6 +234,10 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         }
         if (kind === "uninstall") {
           setDialog({ kind: "uninstall", inspection, report: null });
+          return;
+        }
+        if (kind === "clean_install") {
+          setDialog({ kind: "clean-install", inspection });
           return;
         }
         if (kind === "repair") setRepairInspection(inspection);
@@ -265,6 +276,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
       "save-breaking": "update",
       uninstall: "uninstall",
       repair: "repair",
+      "clean-install": "clean_install",
     };
     const kind = kinds[open];
     // The same path the button takes; it only sets state after the API answers.
@@ -346,19 +358,45 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
             {!compact && ghost("Check again", () => void checkAgain())}
           </>
         );
-      case "install":
+      case "install": {
+        // issue 126: the install inspection also says whether the product folder already holds a release.
+        const existing = existingOf(installInspection);
+        if (existing === "adoptable") {
+          return (
+            <>
+              {primary("Adopt", () => void run("adopt"))}
+              {!compact && line("ok", `${offered} is already in your game folder · Adopt uses it without downloading`)}
+            </>
+          );
+        }
+        if (existing === "different") {
+          return (
+            <>
+              {primary("Clean install…", () => void run("clean_install"))}
+              {!compact &&
+                line("warn", `The ${product.short} in your game folder isn't ${offered} · older or changed files`)}
+            </>
+          );
+        }
+        const missing = existing === "incomplete" && installInspection ? installInspection.files_added : 0;
         return (
           <>
             {primary("Install", () => void run("install"))}
             {!compact &&
               line(
                 "idle",
-                [offered, installInspection && `${formatBytes(installInspection.space_needed)} free space needed`]
+                [
+                  offered,
+                  missing > 0 &&
+                    `${formatCount(missing)} ${missing === 1 ? "file" : "files"} missing from the ${product.short} in your game folder`,
+                  installInspection && `${formatBytes(installInspection.space_needed)} free space needed`,
+                ]
                   .filter(Boolean)
                   .join(" · "),
               )}
           </>
         );
+      }
       case "downloading":
         return (
           <Progress
@@ -632,7 +670,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           onClose={closeDialog}
           onConfirm={() => {
             closeDialog();
-            void start("update", dialog.inspection, true);
+            void start("update", dialog.inspection, { acknowledge_save_breaking: true });
           }}
         />
       )}
@@ -643,6 +681,17 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           report={dialog.report}
           onClose={closeDialog}
           onConfirm={() => void start("uninstall", dialog.inspection)}
+        />
+      )}
+      {dialog?.kind === "clean-install" && (
+        <CleanInstallDialog
+          product={product}
+          inspection={dialog.inspection}
+          onClose={closeDialog}
+          onConfirm={() => {
+            closeDialog();
+            void start("clean_install", dialog.inspection, { consent_clean_install: true });
+          }}
         />
       )}
     </div>
