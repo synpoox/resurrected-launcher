@@ -1,6 +1,6 @@
 /* Settings and troubleshooting (spec: Settings, layout B). Square, no shadows. */
 
-.settings {
+.settings-page {
   position: absolute;
   inset: 0;
   display: grid;
@@ -88,7 +88,7 @@
   color: var(--text);
 }
 
-.settings .hint {
+.settings-page .hint {
   display: block;
   margin-top: 3px;
   font-size: 12px;
@@ -103,16 +103,16 @@
   text-align: right;
 }
 
-.settings code,
+.settings-page code,
 .dialog .report {
   font-family: Consolas, monospace;
 }
 
-.settings .path {
+.settings-page .path {
   word-break: break-all;
 }
 
-.settings .notice {
+.settings-page .notice {
   max-width: none;
   margin: 12px 0 0;
 }

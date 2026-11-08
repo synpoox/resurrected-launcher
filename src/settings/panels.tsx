@@ -28,7 +28,13 @@ export interface PanelProps {
 
 // ---- Game ----
 
-export function GamePanel({ product, state, stateFailed = false }: PanelProps & { stateFailed?: boolean }) {
+export interface GamePanelProps extends PanelProps {
+  stateFailed?: boolean;
+  /** Rereads Settings' product state, so the location row shows the new choice (issue 123). */
+  refresh: () => Promise<void>;
+}
+
+export function GamePanel({ product, state, stateFailed = false, refresh }: GamePanelProps) {
   const api = useApi();
   const [choosing, setChoosing] = useState(false);
   const [recheck, setRecheck] = useState<ProductState | null>(null);
@@ -41,6 +47,8 @@ export function GamePanel({ product, state, stateFailed = false }: PanelProps & 
   const closed = async (chosen: boolean) => {
     setChoosing(false);
     if (!chosen) return;
+    // The row reads Settings' copy of product state: reread it, don't only show the recheck.
+    void refresh();
     try {
       setRecheck(await api.getProductState(product.id));
     } catch {

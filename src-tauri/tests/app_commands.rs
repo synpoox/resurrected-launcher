@@ -946,6 +946,37 @@ fn choose_game_location_remembers_only_a_valid_picked_folder() {
     assert_eq!(detected[0].path, other.path());
 }
 
+/// #123: Settings and the product page each hold their own copy of product
+/// state; only `product-state-changed` tells the one that didn't ask to reread.
+/// A remembered location emits it; a cancelled or refused choice does not.
+#[test]
+fn a_location_change_emits_product_state_changed() {
+    let rig = Rig::new();
+    rig.publish(PD2R_1);
+    let quiet = |what: &str| assert!(rig.states.try_recv().is_err(), "{what} emitted");
+    let choose = || rig.invoke("choose_game_location", json!({}));
+
+    choose().unwrap();
+    quiet("a cancelled picker");
+    let other = tempfile::tempdir().unwrap();
+    *rig.desktop.pick.lock().unwrap() = Some(other.path().to_owned());
+    choose().unwrap_err();
+    quiet("a refused folder");
+
+    fake_game_files(other.path());
+    choose().unwrap();
+    rig.state_event();
+    quiet("a second event for one choice");
+
+    rig.invoke("detect_game_locations", json!({})).unwrap();
+    rig.invoke("select_game_location", json!({ "index": 0 }))
+        .unwrap();
+    rig.state_event();
+    rig.invoke("select_game_location", json!({ "index": 9 }))
+        .unwrap_err();
+    quiet("an out-of-range selection");
+}
+
 #[cfg(windows)]
 #[test]
 fn choose_game_location_refuses_a_junctioned_root() {
