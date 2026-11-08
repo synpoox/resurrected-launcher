@@ -1,0 +1,476 @@
+/* Product page: Overview (layout E) and Patch Notes (spec: Layout, Journey states). */
+
+.page,
+.tabpanel {
+  position: absolute;
+  inset: 0;
+}
+
+/* Hero */
+.art {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-size: cover;
+  animation: fade 450ms ease-out;
+}
+
+.shade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, var(--shade) 0, var(--clear) 120px),
+    linear-gradient(0deg, var(--bg) 4%, var(--shade) 30%, var(--clear) 62%),
+    linear-gradient(90deg, var(--shade) 0%, var(--clear) 50%);
+}
+
+.copy {
+  position: absolute;
+  z-index: 1;
+  left: 44px;
+  top: 44%;
+  translate: 0 -50%;
+  max-width: 560px;
+  animation: lift 450ms ease-out;
+}
+
+.ribbon {
+  display: inline-block;
+  padding: 5px 14px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--white);
+  background: var(--ribbon);
+  clip-path: polygon(4% 0, 100% 0, 96% 100%, 0 100%);
+}
+
+.ribbon.soon {
+  background: var(--line);
+}
+
+/* Always exactly two lines: the size follows the main area's width instead of wrapping. */
+.title {
+  margin: 14px 0 10px;
+  font-weight: 900;
+  letter-spacing: -1.5px;
+  line-height: 1.06;
+  white-space: nowrap;
+  font-size: clamp(30px, calc((100cqi - 370px) / 11.5), 50px);
+}
+
+.title span {
+  display: block;
+}
+
+.description {
+  max-width: 560px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--hero-copy);
+}
+
+/* Bottom: notices + action row on the left, the 250px news feed on the right. */
+.bottom {
+  position: absolute;
+  z-index: 2;
+  left: 44px;
+  right: 44px;
+  bottom: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 250px;
+  gap: 32px;
+  align-items: end;
+}
+
+.act {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  row-gap: 12px;
+}
+
+.act .btn.primary {
+  min-width: 260px;
+  min-height: 60px;
+  font-size: 16px;
+}
+
+.act .btn.ghost {
+  min-height: 60px;
+}
+
+/* With a secondary button beside it, the primary narrows so the row fits at 1024. */
+.act:has(> .btn.ghost) .btn.primary {
+  min-width: 200px;
+}
+
+.btn.primary.playing {
+  opacity: 1;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--detail);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.ready-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--detail);
+}
+
+.dot.warn {
+  background: var(--accent);
+}
+
+.dot.idle {
+  background: var(--muted);
+}
+
+.dot.new {
+  background: var(--text);
+}
+
+.dot.none {
+  display: none;
+}
+
+/* Progress */
+.progress {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 8px;
+}
+
+.progress-top {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+}
+
+.progress .pct {
+  font-family: Consolas, monospace;
+  color: var(--detail);
+}
+
+.track {
+  height: 6px;
+  background: var(--line);
+}
+
+.fill {
+  width: 0;
+  height: 100%;
+  background: var(--button);
+  transition: width 300ms;
+}
+
+.fill.striped {
+  background: repeating-linear-gradient(90deg, var(--button) 0 12px, var(--button-hover) 12px 24px);
+}
+
+.progress-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.progress.compact {
+  width: 250px;
+  gap: 6px;
+}
+
+.progress.compact .progress-top {
+  font-size: 12px;
+}
+
+.progress.compact .detail {
+  display: none;
+}
+
+/* News feed: text only. */
+.feed {
+  display: grid;
+  border-top: 1px solid var(--rule);
+}
+
+.feed h2 {
+  padding: 10px 0;
+}
+
+.feed ul {
+  list-style: none;
+}
+
+.feed-item {
+  width: 100%;
+  display: grid;
+  gap: 3px;
+  padding: 12px 0;
+  text-align: left;
+  border-bottom: 1px solid var(--rule);
+}
+
+.feed-item:hover .feed-title {
+  text-decoration: underline;
+}
+
+.feed-meta {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.feed-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.feed-empty {
+  padding: 12px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Overview | Patch Notes: top-centre, in a square frame, clear of the title bar. */
+.tabs {
+  position: absolute;
+  z-index: 3;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--frame);
+  border: 1px solid var(--line);
+}
+
+.tabs [role="tab"] {
+  padding: 9px 18px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+}
+
+.tabs [role="tab"]:hover {
+  color: var(--text);
+}
+
+.tabs [role="tab"][aria-selected="true"] {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: inset 0 -2px var(--accent);
+}
+
+.attention {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  vertical-align: top;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Patch Notes: the whole main area, scrolling under a solid top fade. */
+.notes {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: 136px 44px 56px;
+  scrollbar-color: var(--muted) transparent;
+}
+
+.notes:focus-visible {
+  outline-offset: -3px;
+}
+
+.notes article {
+  max-width: 680px;
+  margin: 0 auto 64px;
+}
+
+.notes header {
+  text-align: center;
+  padding-bottom: 18px;
+  border-bottom: 3px double var(--line);
+  margin-bottom: 8px;
+}
+
+.notes-title {
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: -1px;
+  line-height: 1.06;
+  text-transform: uppercase;
+}
+
+.notes-summary {
+  max-width: 560px;
+  margin: 12px auto 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--hero-copy);
+}
+
+.notes-meta {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding-top: 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.notes-meta .k {
+  padding-right: 12px;
+  color: var(--detail);
+  border-right: 1px solid var(--line);
+}
+
+/* Plain text: line breaks kept, nothing parsed. */
+.notes-body {
+  padding: 22px 0;
+  white-space: pre-line;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--hero-copy);
+}
+
+.notes-offline,
+.notes-empty {
+  padding: 22px 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.fade {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 14px;
+  top: 0;
+  height: 124px;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--bg) 45%, var(--clear));
+}
+
+/* The state's main action moves top-left, clear of the title bar. */
+.topact {
+  position: absolute;
+  z-index: 3;
+  top: 40px;
+  left: 32px;
+}
+
+.topact .act {
+  flex-wrap: nowrap;
+}
+
+.topact .act .btn.primary {
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 30px;
+  font-size: 14px;
+}
+
+/* Dialog bits */
+.choices {
+  display: grid;
+  gap: 8px;
+}
+
+.choices label {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.choices label:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--hover-tint);
+}
+
+.choices span {
+  display: grid;
+  gap: 2px;
+}
+
+.choices .path {
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  word-break: break-all;
+  color: var(--text);
+}
+
+.choices em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.browse {
+  justify-self: start;
+}
+
+.inline-error {
+  font-size: 13px;
+  color: var(--detail);
+}
+
+.ack {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.tip {
+  font-size: 13px;
+}
+
+.kept {
+  display: grid;
+  gap: 6px;
+  padding-left: 18px;
+}
+
+.kept .paths {
+  margin-top: 4px;
+  padding-left: 18px;
+}
+
+.act .progress .btn.ghost {
+  min-height: 32px;
+}

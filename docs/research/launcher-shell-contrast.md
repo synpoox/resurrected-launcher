@@ -121,3 +121,33 @@ Both mean the 10px uppercase labels must not sit in fixed-size boxes that clip. 
 2. **Play hover, white on `--button-hover`.** 4.35:1, needed 4.5:1, because 16px bold is not large text. Fix: `--button-hover: #e0303b` (same hue, slightly darker) gives **4.51:1**. It is still lighter than `--button` (1.21:1 between the two), so the hover change stays visible. The `translateY(-2px)` lift also signals hover.
 
 Everything else passes. The tightest margins are the window-control glyphs over 09 and Forever (4.54–4.75) and `--accent` on `--rail` (4.54, which only needs 3:1).
+
+## Patch Notes (implementation, #76)
+
+Measured for [#76](https://github.com/synpoox/resurrected-launcher/issues/76) against the implemented `src/product/product.css` and `src/tokens.css`, with the same formulas and compositing as above (the script asserts black/white = 21 and #777/#fff = 4.48). The Patch Notes tab has no hero art: everything sits on flat `--bg`, so each pair is a single value. The spec's "Not specified" table asked for these checks during implementation.
+
+| Element | Foreground | Background | Ratio | Req. | Result |
+|---|---|---|---|---|---|
+| Release title, 40px weight 900 (large) | `--text` | `--bg` | 16.89 | 3 | pass |
+| Summary line, 15px | `--hero-copy` | `--bg` | 10.98 | 4.5 | pass |
+| Notes body, 14px plain text | `--hero-copy` | `--bg` | 10.98 | 4.5 | pass |
+| "Patch notes" meta label, 12px | `--detail` | `--bg` | 5.88 | 4.5 | pass |
+| Release date, 12px | `--muted` | `--bg` | 8.55 | 4.5 | pass |
+| Offline line "Patch notes for newer releases need a connection.", 14px | `--muted` | `--bg` | 8.55 | 4.5 | pass |
+| Retry link | `--text` | `--bg` | 16.89 | 4.5 | pass |
+| "Can't play yet. Overview says why." next to a disabled action, 12px | `--muted` | `--bg` | 8.55 | 4.5 | pass |
+| Top-left action label (Play, Update…), 14px bold | white | `--button` / `--button-hover` | 5.44 / 4.51 | 4.5 | pass |
+| Compact progress %, 12px | `--detail` | `--bg` | 5.88 | 4.5 | pass |
+| Unselected tab, 12px bold | `--muted` | tabs frame (`#101011b3` over `--bg` = `#101011`) | 8.55 | 4.5 | pass |
+| Selected tab, 12px bold | `--text` | `--panel` | 14.96 | 4.5 | pass |
+| Selected-tab underline, 2px (UI component) | `--accent` | `--panel` | 3.88 | 3 | pass |
+| Overview attention dot, 6px (graphic, labelled "needs attention") | `--accent` | frame / `--bg` | 4.39 | 3 | pass |
+| Primary action boundary | `--button` | `--bg` | 3.49 | 3 | pass |
+| Scrollbar thumb (UI component) | `--muted` | `--bg` | 8.55 | 3 | pass (see below) |
+| Focus ring | `--focus` | `--bg` / next to `--button` | 19.02 / 5.44 | 3 | pass |
+| Double rule under each release header | `--line` | `--bg` | 1.50 | n/a | decorative separator; 1.4.11 does not apply |
+| Progress fill against its track | `--button` | `--line` | 2.33 | n/a | the bar repeats the % shown as text next to it, so it is not required for understanding (1.4.11); the fill against `--bg` is 3.49 |
+
+- **Scrollbar thumb.** The prototype drew it in `--line`, which is 1.50:1 on `--bg` and fails 1.4.11 for a UI component. The implementation uses `--muted` (8.55:1). The scrollbar is still dark: the track stays transparent over `--bg`.
+- **Top fade.** Content passes under a solid `--bg` fade at the top of the tab. Text under the fade is intentionally obscured while scrolled, and the fade never covers the focused element: the tab list and the top-left action sit above it (z-index), and a focused link scrolls into the readable area.
+- **Disabled controls** (for example Play while blocked, at opacity 0.45: 2.93:1) are exempt from 1.4.3. Each one keeps its visible label and has its reason as visible text next to it.

@@ -1,0 +1,264 @@
+/* Shared primitives: buttons, links, notice, dialog, menu, toast, switch. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 22px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  transition:
+    background 150ms,
+    transform 150ms;
+}
+
+.btn.primary {
+  background: var(--button);
+  color: var(--white);
+}
+
+.btn.primary:not([disabled]):hover {
+  background: var(--button-hover);
+  transform: translateY(-2px);
+}
+
+.btn.ghost {
+  border: 1px solid var(--muted);
+  color: var(--text);
+}
+
+.btn.ghost:not([disabled]):hover {
+  background: var(--panel);
+}
+
+.btn.small {
+  min-height: 32px;
+  padding: 0 14px;
+  font-size: 11px;
+}
+
+.btn.square {
+  min-width: 60px;
+  min-height: 60px;
+  padding: 0;
+  font-size: 20px;
+}
+
+.btn[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.link {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.why {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Notice */
+.notice {
+  max-width: 560px;
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  background: var(--scrim);
+  border-left: 2px solid var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--hero-copy);
+}
+
+.notice.error {
+  border-left-color: var(--accent);
+}
+
+.notice b,
+.notice code {
+  color: var(--text);
+}
+
+.notice .fix {
+  margin: 8px 0 0 18px;
+}
+
+/* Dialog */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  background: var(--backdrop);
+}
+
+.dialog {
+  width: 520px;
+  max-width: calc(100% - 48px);
+  max-height: calc(100% - 96px);
+  overflow-y: auto;
+  display: grid;
+  gap: 14px;
+  padding: 26px 28px;
+  background: var(--panel);
+  border-top: 2px solid var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--hero-copy);
+}
+
+.dialog.risk {
+  border-top-color: var(--accent);
+}
+
+.dialog h2 {
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -0.4px;
+  line-height: 1.2;
+}
+
+.dialog b,
+.dialog code {
+  color: var(--text);
+}
+
+.dialog code {
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.dialog input {
+  accent-color: var(--button);
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  flex: none;
+}
+
+/* Menu */
+.menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu {
+  position: absolute;
+  z-index: 4;
+  /* Opens up and to the left of ⋯, so it never covers the news feed. */
+  right: 0;
+  bottom: 68px;
+  min-width: 220px;
+  display: grid;
+  padding: 6px 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--accent);
+}
+
+.menu [role="menuitem"] {
+  width: 100%;
+  text-align: left;
+  padding: 10px 16px;
+  font-size: 13px;
+}
+
+.menu [role="menuitem"]:hover,
+.menu [role="menuitem"]:focus-visible {
+  background: var(--line);
+}
+
+.menu [role="menuitem"]:focus-visible {
+  outline-offset: -3px;
+}
+
+.menu hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 6px 0;
+}
+
+.menu .danger {
+  color: var(--detail);
+}
+
+/* Toast */
+.toasts {
+  position: fixed;
+  z-index: 7;
+  right: 24px;
+  bottom: 24px;
+  width: 340px;
+  display: grid;
+  gap: 8px;
+}
+
+.toast {
+  padding: 12px 16px;
+  background: var(--panel);
+  border-left: 2px solid var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--hero-copy);
+}
+
+.toast.error {
+  border-left-color: var(--accent);
+}
+
+.toast-actions {
+  display: flex;
+  gap: 14px;
+  margin-top: 6px;
+}
+
+/* Switch */
+.switch-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  background: var(--rail);
+  border: 1px solid var(--muted);
+}
+
+.switch .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--muted);
+  transition: transform 150ms;
+}
+
+.switch[aria-checked="true"] {
+  background: var(--button);
+  border-color: var(--button);
+}
+
+.switch[aria-checked="true"] .knob {
+  transform: translateX(18px);
+  background: var(--white);
+}

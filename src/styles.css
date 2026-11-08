@@ -1,10 +1,124 @@
-body {
+@import "./ui/ui.css";
+@import "./shell/shell.css";
+@import "./product/product.css";
+
+/* Base. Square corners and no shadows inside the window (spec: Tokens). */
+* {
+  box-sizing: border-box;
   margin: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
   background: var(--bg);
   color: var(--text);
   font-family: Arial, Helvetica, sans-serif;
+  overflow: hidden;
 }
 
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+ul,
+ol {
+  padding: 0;
+}
+
+code,
+.mono {
+  font-family: Consolas, monospace;
+}
+
+/* Every focusable element shows the 3px --focus ring at a 2px offset. */
 :focus-visible {
-  outline: 2px solid var(--focus);
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Motion (spec: Motion). Switching tabs and scrolling are instant. */
+html {
+  scroll-behavior: auto;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes lift {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* Under prefers-reduced-motion: reduce, every animation and transition is off. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .btn.primary:hover {
+    transform: none;
+  }
+}
+
+/* Dev-only fixture harness. */
+.fixture-bar {
+  position: fixed;
+  z-index: 9;
+  left: 50%;
+  bottom: 6px;
+  transform: translateX(-50%);
+  padding: 3px 10px;
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--rail);
+  border: 1px solid var(--line);
+  pointer-events: none;
+}
+
+.fixture-error {
+  padding: 48px;
+  display: grid;
+  gap: 12px;
+  color: var(--detail);
 }
