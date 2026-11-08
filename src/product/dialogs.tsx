@@ -247,3 +247,68 @@ export function UninstallDialog({ product, inspection, report, onConfirm, onClos
     </Dialog>
   );
 }
+
+export interface CleanInstallProps {
+  product: Product;
+  inspection: Inspection;
+  onConfirm: () => void;
+  onClose: () => void;
+}
+
+/** issue 126: the product folder holds files the offered release doesn't (an older version, or edited
+ *  managed files), so Install would be refused. Clean install, with this consent, moves the folder
+ *  aside as a labelled backup, installs the release and carries edited settings forward. */
+export function CleanInstallDialog({ product, inspection, onConfirm, onClose }: CleanInstallProps) {
+  const version = inspection.release.display_version;
+  const kept = inspection.preserved;
+  const backupOnly = inspection.backup_only.length;
+  return (
+    <Dialog
+      title={`Replace the ${product.short} files in your game folder?`}
+      tone="risk"
+      onClose={onClose}
+      actions={
+        <>
+          <button type="button" className="btn primary" onClick={onConfirm}>
+            Clean install
+          </button>
+          <button type="button" className="btn ghost" onClick={onClose} data-autofocus="">
+            Not now
+          </button>
+        </>
+      }
+    >
+      <p>
+        {product.short} is already in your game folder, but it doesn't match {version}: it's an older version, or some of
+        its files were changed. It can't be updated in place.
+      </p>
+      <ul className="kept">
+        <li>
+          <b>Backup:</b> clean install moves the whole {product.short} folder aside, next to it in <code>mods</code>, and
+          never deletes it. Then it installs {version}.
+        </li>
+        <li>
+          <b>Carried forward:</b> {kept.length > 0 ? "your edited settings." : "nothing; no edited settings were found."}
+          {kept.length > 0 && (
+            <ul className="paths">
+              {kept.map((p) => (
+                <li key={p}>
+                  <code>{p}</code>
+                </li>
+              ))}
+            </ul>
+          )}
+        </li>
+        {backupOnly > 0 && (
+          <li>
+            <b>Only in the backup:</b> {backupOnly} other {backupOnly === 1 ? "file stays" : "files stay"} only in the
+            backup.
+          </li>
+        )}
+        <li>
+          <b>Not touched:</b> your saves, Diablo II: Resurrected, D2RLoader and other products.
+        </li>
+      </ul>
+    </Dialog>
+  );
+}

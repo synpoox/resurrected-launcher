@@ -27,6 +27,8 @@ describe("fixtures", () => {
       uninstall: "ready",
       "coming-soon": "ready",
       "quit-busy": "downloading",
+      adopt: "install",
+      "clean-install": "install",
     };
     for (const s of SCENES) {
       expect(journeyOf(s.state, (s.progressAtEnd ? s.progress?.at(-1) : s.progress?.[0]) ?? null), s.key).toBe(overlays[s.key] ?? s.key);

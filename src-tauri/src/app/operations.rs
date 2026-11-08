@@ -501,6 +501,9 @@ pub struct InspectionView {
     pub files_replaced_or_removed: usize,
     /// Release files put in place.
     pub files_added: usize,
+    /// Release files already in place and left as they are (#126): with no
+    /// installed release, an existing installation the launcher did not make.
+    pub files_kept: usize,
     pub preserved: Vec<RelativePath>,
     /// Clean install: files that stay only in the labelled backup.
     pub backup_only: Vec<RelativePath>,
@@ -519,6 +522,7 @@ impl InspectionView {
             release: ReleaseSummary::of(&release.manifest),
             files_replaced_or_removed: insp.plan.to_backup.len(),
             files_added: insp.plan.to_live.len(),
+            files_kept: insp.kept,
             preserved: insp.preserved,
             backup_only: insp.backup_only,
             conflicts: insp
