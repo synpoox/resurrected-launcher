@@ -67,6 +67,10 @@ pub fn run() {
             .decorations(false)
             .inner_size(1280.0, 720.0)
             .min_inner_size(1024.0, 640.0)
+            // A fixed maximum, like the Riot Client, and no maximise (#135): the
+            // layout is designed between these two sizes.
+            .max_inner_size(1600.0, 900.0)
+            .maximizable(false)
             .visible(!autostart)
             .build()?;
         tray::start(app.handle())?;

@@ -44,7 +44,7 @@ use crate::contract::{PingResponse, Versioned, UMBRELLA_DISPLAY_NAME};
 pub use game::{
     CatalogState, Desktop, LocationView, ProductState, StartupFailed, SystemDesktop, STATE_EVENT,
 };
-pub use news::{product_pages, NewsItem, NewsState, DEFAULT_NEWS_URL};
+pub use news::{product_pages, NewsItem, NewsState, COMMUNITY_URL, DEFAULT_NEWS_URL};
 pub use operations::{
     CachedReleases, ConflictView, InspectionView, Launcher, RecoveryView, Refusal, Release,
     ReleaseSummary, Releases, OUTCOME_EVENT, PROGRESS_EVENT,
@@ -93,7 +93,6 @@ pub fn invoke_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync 
         settings::get_start_with_windows,
         settings::set_start_with_windows,
         window::minimize_window,
-        window::toggle_maximize_window,
         window::close_window,
         window::start_window_drag,
         window::quit_launcher,
@@ -106,7 +105,8 @@ pub fn invoke_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync 
         selfupdate::set_launcher_auto_download,
         news::get_news,
         news::open_news_link,
-        news::open_product_page
+        news::open_product_page,
+        news::open_community_page
     ]
 }
 
@@ -317,7 +317,6 @@ mod tests {
         "get_start_with_windows",
         "set_start_with_windows",
         "minimize_window",
-        "toggle_maximize_window",
         "close_window",
         "start_window_drag",
         "quit_launcher",
@@ -331,6 +330,7 @@ mod tests {
         "get_news",
         "open_news_link",
         "open_product_page",
+        "open_community_page",
     ];
 
     fn root_file(rel: &str) -> String {

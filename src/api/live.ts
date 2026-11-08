@@ -27,7 +27,6 @@ export function createLiveApi() {
     setStartWithWindows: ipc.setStartWithWindows,
 
     minimizeWindow: ipc.minimizeWindow,
-    toggleMaximizeWindow: ipc.toggleMaximizeWindow,
     closeWindow: ipc.closeWindow,
     startWindowDrag: ipc.startWindowDrag,
     quitLauncher: ipc.quitLauncher,
@@ -35,6 +34,7 @@ export function createLiveApi() {
     getNews: ipc.getNews,
     openNewsLink: ipc.openNewsLink,
     openProductPage: ipc.openProductPage,
+    openCommunityPage: ipc.openCommunityPage,
 
     onStateChanged: ipc.onStateChanged,
     onProgress: ipc.onProgress,

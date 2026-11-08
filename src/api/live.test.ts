@@ -29,13 +29,11 @@ describe("live adapter", () => {
     const live = createLiveApi();
     invoke.mockResolvedValue(undefined);
     await live.minimizeWindow();
-    await live.toggleMaximizeWindow();
     await live.closeWindow();
     await live.startWindowDrag();
     await live.quitLauncher();
     expect(invoke.mock.calls.map((c) => c[0])).toEqual([
       "minimize_window",
-      "toggle_maximize_window",
       "close_window",
       "start_window_drag",
       "quit_launcher",
@@ -67,10 +65,12 @@ describe("live adapter", () => {
     invoke.mockResolvedValue(undefined);
     await live.openNewsLink("pd2r", 2);
     await live.openProductPage("pd2r");
+    await live.openCommunityPage();
     expect(invoke.mock.calls).toEqual([
       ["get_news", { product_id: "pd2r" }],
       ["open_news_link", { product_id: "pd2r", index: 2 }],
       ["open_product_page", { product_id: "pd2r" }],
+      ["open_community_page"],
     ]);
   });
 });

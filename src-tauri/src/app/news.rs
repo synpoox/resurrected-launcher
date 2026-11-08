@@ -26,6 +26,10 @@ pub const DEFAULT_NEWS_URL: &str =
 /// these products). Forever and 09 have no public repository yet.
 const PRODUCT_PAGES_JSON: &str = include_str!("../../../src/product-pages.json");
 
+/// The project Discord, offered by the in-launcher About dialog of products without
+/// a page (#135). Bundled, never fetched; passes [`news::link`] (tested).
+pub const COMMUNITY_URL: &str = "https://discord.gg/4mKqKXMRy9";
+
 /// [`PRODUCT_PAGES_JSON`] as `(product id, URL)`, sorted by id. Each URL passes
 /// [`news::link`] (tested).
 pub fn product_pages() -> &'static [(String, String)] {
@@ -194,6 +198,13 @@ pub async fn open_product_page(
     open(&launcher, url.to_owned()).await
 }
 
+/// `open_community_page`: opens the bundled project Discord ([`COMMUNITY_URL`]).
+/// Takes nothing.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn open_community_page(launcher: State<'_, Arc<Launcher>>) -> Result<(), LauncherError> {
+    open(&launcher, COMMUNITY_URL.to_owned()).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +217,11 @@ mod tests {
         }
         assert_eq!(product_page(&ProductId("project-forever".into())), None);
         assert_eq!(product_page(&ProductId("project-09".into())), None);
+    }
+
+    #[test]
+    fn community_url_passes_the_link_rule() {
+        assert!(news::link("community", COMMUNITY_URL.to_owned()).is_ok());
     }
 
     #[test]
