@@ -9,6 +9,7 @@ mod boundary;
 mod dto;
 mod error;
 mod fault;
+mod game;
 mod guard;
 mod inventory;
 mod recovery;
@@ -20,6 +21,9 @@ pub use dto::{
 };
 pub use error::{ErrorCode, LauncherError};
 pub use fault::{FailAt, FaultInjector, FaultPoint, InjectedFault, NoFaults};
+pub use game::{
+    GameLocation, GameStore, LoaderGuidance, Readiness, RunningGame, LOADER_DOWNLOAD_PAGE,
+};
 pub use guard::{WriteGuard, DISPOSABLE_SENTINEL};
 pub use inventory::{
     ExpectedFile, ExpectedInventory, InventoryError, PathError, RelativePath, Sha256Digest,

@@ -51,6 +51,17 @@ pub enum ErrorCode {
     RecoveryRequired,
     /// A bug or unexpected I/O error; see `message`.
     Internal,
+    /// No D2R location is selected, or the folder has no regular `D2R.exe` with
+    /// readable version info. The player chooses the folder that holds `D2R.exe`.
+    D2rNotFound,
+    /// `D2R.exe` matches no build the release is verified with.
+    GameBuildUnsupported,
+    /// D2RLoader is missing or its version is not one the release allows.
+    LoaderNotReady,
+    /// Play was requested for a product with no installed release.
+    ProductNotInstalled,
+    /// Starting `D2RLoader.exe` failed.
+    LaunchFailed,
 }
 
 /// Error with a stable [`ErrorCode`] and a diagnostic message.
