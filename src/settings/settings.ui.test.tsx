@@ -286,6 +286,30 @@ describe("Troubleshooting", () => {
     expect(document.activeElement).toBe(exportButton);
   });
 
+  it("locks the log checkbox while saving, so the file matches the previewed text", async () => {
+    let finish: (saved: boolean) => void = () => {};
+    const { api, user } = await openSettings("ready", (a) => {
+      a.saveDiagnostics = (includeLog) => {
+        a.calls.push({ name: "saveDiagnostics", args: [includeLog] });
+        return new Promise<boolean>((resolve) => (finish = resolve));
+      };
+    });
+    await user.click(tab("Troubleshooting"));
+    await user.click(within(panel()).getByRole("button", { name: "Export diagnostics…" }));
+    const dialog = await screen.findByRole("dialog");
+    const save = within(dialog).getByRole("button", { name: "Save as file…" }) as HTMLButtonElement;
+    const log = within(dialog).getByRole("checkbox", { name: "Include the launcher log" }) as HTMLInputElement;
+    await waitFor(() => expect(save.disabled).toBe(false));
+    await user.click(save);
+    expect(log.disabled).toBe(true);
+    await user.click(log);
+    expect(log.checked).toBe(false);
+    expect(api.calls.filter((c) => c.name === "previewDiagnostics").map((c) => c.args)).toEqual([[false]]);
+    finish(false);
+    await waitFor(() => expect(log.disabled).toBe(false));
+    expect(api.calls.find((c) => c.name === "saveDiagnostics")?.args).toEqual([false]);
+  });
+
   it("stays open when the save dialog is cancelled", async () => {
     const { api, user } = await openSettings("ready", (a) => {
       a.saveDiagnostics = () => Promise.resolve(false);

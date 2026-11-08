@@ -89,7 +89,12 @@ export function DiagnosticsDialog({ onClose }: { onClose: () => void }) {
         </div>
       )}
       <label className="ack">
-        <input type="checkbox" checked={includeLog} onChange={(e) => setIncludeLog(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={includeLog}
+          disabled={saving}
+          onChange={(e) => setIncludeLog(e.target.checked)}
+        />
         <span>Include the launcher log</span>
       </label>
       {saveError && (
