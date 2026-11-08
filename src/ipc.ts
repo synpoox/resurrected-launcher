@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 /** Must equal `contract::CONTRACT_VERSION` in Rust. */
-export const CONTRACT_VERSION = 1;
+export const CONTRACT_VERSION = 2;
 
 /** Mirrors `contract::Versioned<T>`. */
 export interface Versioned<T> {
@@ -103,6 +103,8 @@ export interface GameLocation {
   /** `D2R.exe`'s ProductVersion, for display only. */
   build: string;
   store: "battle_net" | "unknown";
+  /** Product ids whose install folder exists under this root. */
+  installed_products: string[];
 }
 
 /** Mirrors `contract::Readiness`: the first reason Play is refused, or ready. */
@@ -153,6 +155,10 @@ export interface ProductState {
   running_game: RunningGame | null;
   loader_guidance: LoaderGuidance | null;
   catalog: CatalogState;
+  /** A cancel was requested and the operation hasn't ended yet. */
+  cancelling: boolean;
+  /** The tracked game exited within 30 s of Play; the next Play clears it. */
+  startup_failed: { exit_code: number | null } | null;
 }
 
 /** Mirrors `app::ConflictView`. */
@@ -192,13 +198,27 @@ export interface ProgressEvent {
   kind: OperationKind;
   phase: Phase;
   boundary: string | null;
+  /** Filled while downloading, at most 10 events per second plus the final one. */
   bytes_done: number | null;
   bytes_total: number | null;
+  /** Filled while Repair verifies. */
+  files_done: number | null;
+  files_total: number | null;
+}
+
+/** Mirrors `contract::OutcomeReport`. */
+export interface OutcomeReport {
+  /** Relative paths kept or carried forward. */
+  preserved: string[];
+  /** Uninstall: files left in the product root. */
+  remaining: string[];
+  /** Absolute paths, display only. */
+  clean_install_backups: string[];
 }
 
 /** Mirrors `contract::OperationOutcome`, sent as `operation-outcome`. */
 export type OperationOutcome =
-  | { status: "succeeded"; product_id: string; kind: OperationKind }
+  | { status: "succeeded"; product_id: string; kind: OperationKind; report: OutcomeReport }
   | { status: "cancelled"; product_id: string; kind: OperationKind }
   | { status: "failed"; product_id: string; kind: OperationKind; error: LauncherError };
 
@@ -232,6 +252,13 @@ export async function recoverProduct(productId: string): Promise<Recovery> {
 /** Valid D2R locations, the remembered one first. */
 export async function detectGameLocations(): Promise<GameLocation[]> {
   return current(await invoke<Versioned<GameLocation[]>>("detect_game_locations"));
+}
+
+/** Selects entry `index` of the latest detectGameLocations() reply, validated again.
+ *  Refused with invalid_request if the index is out of range or nothing was detected,
+ *  and with game_running while the game runs. */
+export async function selectGameLocation(index: number): Promise<GameLocation> {
+  return current(await invoke<Versioned<GameLocation>>("select_game_location", { index }));
 }
 
 /** Opens the native folder picker; null when the player cancels. Sends no path. */
@@ -268,4 +295,94 @@ export function onProgress(handler: (event: ProgressEvent) => void): Promise<Unl
 
 export function onOutcome(handler: (outcome: OperationOutcome) => void): Promise<UnlistenFn> {
   return listen<Versioned<OperationOutcome>>("operation-outcome", (e) => handler(current(e.payload)));
+}
+
+// ---- Slice 4 command gaps (#74). Mirror `app::settings`, `app::window`. ----
+
+/** Mirrors `app::ReleaseNotes`. */
+export interface ReleaseNotes {
+  release_id: string;
+  display_version: string;
+  /** YYYY-MM-DD */
+  release_date: string;
+  status: "alpha" | "beta" | "release";
+  /** null: a newer release whose manifest isn't cached (offline). */
+  notes: string | null;
+}
+
+/** Newest first: the recommended release (if newer) and the installed release.
+ *  The installed release's notes come from its cached manifest, so they work offline. */
+export async function getReleaseNotes(productId: string): Promise<ReleaseNotes[]> {
+  return current(await invoke<Versioned<ReleaseNotes[]>>("get_release_notes", { product_id: productId }));
+}
+
+/** Mirrors `app::Folder`. */
+export type Folder = "saves" | "settings" | "product_plugins" | "global_plugins";
+
+/** Opens a folder in Explorer; pass `null` as the product for global plugins only.
+ *  A missing plugins folder is created first. Rejects with `access_denied` or
+ *  `product_not_installed`. */
+export async function openFolder(productId: string | null, folder: Folder): Promise<void> {
+  await invoke("open_folder", { product_id: productId, folder });
+}
+
+/** Mirrors `state::DiagnosticsReport`. */
+export interface DiagnosticsPreview {
+  text: string;
+  never_included: string[];
+}
+
+export async function previewDiagnostics(includeLog: boolean): Promise<DiagnosticsPreview> {
+  return current(await invoke<Versioned<DiagnosticsPreview>>("preview_diagnostics", { include_log: includeLog }));
+}
+
+/** Native save dialog, opened from Rust; false when the player cancels. */
+export async function saveDiagnostics(includeLog: boolean): Promise<boolean> {
+  return current(await invoke<Versioned<boolean>>("save_diagnostics", { include_log: includeLog }));
+}
+
+/** Opens Explorer with the last saved report selected. */
+export async function showDiagnosticsInFolder(): Promise<void> {
+  await invoke("show_diagnostics_in_folder");
+}
+
+export async function getStartWithWindows(): Promise<boolean> {
+  return current(await invoke<Versioned<boolean>>("get_start_with_windows"));
+}
+
+export async function setStartWithWindows(enabled: boolean): Promise<void> {
+  await invoke("set_start_with_windows", { enabled });
+}
+
+export async function minimizeWindow(): Promise<void> {
+  await invoke("minimize_window");
+}
+
+export async function toggleMaximizeWindow(): Promise<void> {
+  await invoke("toggle_maximize_window");
+}
+
+/** A normal close, which hides the launcher to the tray. */
+export async function closeWindow(): Promise<void> {
+  await invoke("close_window");
+}
+
+export async function startWindowDrag(): Promise<void> {
+  await invoke("start_window_drag");
+}
+
+/** Exits the launcher; refused with `operation_in_progress` while an operation runs. */
+export async function quitLauncher(): Promise<void> {
+  await invoke("quit_launcher");
+}
+
+/** Mirrors `contract::TrayRequest`. */
+export interface TrayRequest {
+  action: "save_breaking" | "show_what_happened" | "quit_while_busy";
+  product_id: string;
+}
+
+/** Event "tray-request", Versioned like the others. */
+export function onTrayRequest(handler: (r: TrayRequest) => void): Promise<UnlistenFn> {
+  return listen<Versioned<TrayRequest>>("tray-request", (e) => handler(current(e.payload)));
 }

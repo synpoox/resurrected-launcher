@@ -2,7 +2,9 @@
 //! window/tray/single-instance lifecycle.
 //!
 //! Commands are [`ping`], the install operation commands in [`operations`] (#40)
-//! and the D2R location, readiness, catalog and Play commands in [`game`] (#60).
+//! and the D2R location, readiness, catalog and Play commands in [`game`] (#60),
+//! the Settings and troubleshooting commands in [`settings`] and the window
+//! controls in [`window`] (#74).
 //! There is no generic shell, filesystem, path, URL, download or execute command,
 //! and there must never be one: arguments from the frontend are product IDs,
 //! intents, consents and inspection tokens only, and Rust validates every request.
@@ -26,6 +28,9 @@
 
 mod game;
 mod operations;
+mod settings;
+mod winapi;
+mod window;
 
 use std::sync::Arc;
 
@@ -39,11 +44,15 @@ use crate::install::extract::SevenZip;
 use crate::install::preflight::SystemHost;
 use crate::state::StateStore;
 
-pub use game::{CatalogState, Desktop, ProductState, SystemDesktop, STATE_EVENT};
+pub use game::{
+    CatalogState, Desktop, LocationView, ProductState, StartupFailed, SystemDesktop, STATE_EVENT,
+};
 pub use operations::{
     CachedReleases, ConflictView, InspectionView, Launcher, RecoveryView, Release, ReleaseSummary,
     Releases, OUTCOME_EVENT, PROGRESS_EVENT,
 };
+pub use settings::{Folder, ReleaseNotes};
+pub use window::TRAY_EVENT;
 
 /// `ping` command: contract version, launcher version and the umbrella display name.
 #[tauri::command]
@@ -69,7 +78,20 @@ pub fn invoke_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync 
         game::choose_game_location,
         game::refresh_catalog,
         game::play_product,
-        game::open_loader_download_page
+        game::open_loader_download_page,
+        game::select_game_location,
+        settings::get_release_notes,
+        settings::open_folder,
+        settings::preview_diagnostics,
+        settings::save_diagnostics,
+        settings::show_diagnostics_in_folder,
+        settings::get_start_with_windows,
+        settings::set_start_with_windows,
+        window::minimize_window,
+        window::toggle_maximize_window,
+        window::close_window,
+        window::start_window_drag,
+        window::quit_launcher
     ]
 }
 
@@ -259,6 +281,19 @@ mod tests {
         "refresh_catalog",
         "play_product",
         "open_loader_download_page",
+        "select_game_location",
+        "get_release_notes",
+        "open_folder",
+        "preview_diagnostics",
+        "save_diagnostics",
+        "show_diagnostics_in_folder",
+        "get_start_with_windows",
+        "set_start_with_windows",
+        "minimize_window",
+        "toggle_maximize_window",
+        "close_window",
+        "start_window_drag",
+        "quit_launcher",
     ];
 
     fn root_file(rel: &str) -> String {

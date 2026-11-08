@@ -147,11 +147,15 @@ impl Steps for OpSteps<'_> {
         }
         let m = self.req.release;
         match b {
-            Boundary::DownloadComplete => self
-                .env
-                .downloader
-                .fetch(&m.archive, &tx, cancel, &mut |_, _| {})
-                .map(drop),
+            Boundary::DownloadComplete => {
+                let injector = self.env.injector;
+                self.env
+                    .downloader
+                    .fetch(&m.archive, &tx, cancel, &mut |done, total| {
+                        injector.bytes(done, total)
+                    })
+                    .map(drop)
+            }
             Boundary::Staged => extract(self.env.seven_zip, m, &tx, cancel),
             Boundary::StagedInventoryVerified => {
                 verify_staging(&tx, &m.inventory, cancel)?;
@@ -187,7 +191,18 @@ impl Steps for OpSteps<'_> {
                         "the product folder changed during the operation",
                     )
                 })?;
-                plan::verify_live(&paths.root, &self.insp.expect)
+                if self.req.kind != OperationKind::Repair {
+                    return plan::verify_live(&paths.root, &self.insp.expect);
+                }
+                // One file at a time, so Repair can report files checked.
+                let expect = &self.insp.expect;
+                let total = expect.len() as u64;
+                self.env.injector.files(0, total);
+                for (i, entry) in expect.iter().enumerate() {
+                    plan::verify_live(&paths.root, std::slice::from_ref(entry))?;
+                    self.env.injector.files(i as u64 + 1, total);
+                }
+                Ok(())
             }
             _ => Err(LauncherError::new(
                 ErrorCode::Internal,

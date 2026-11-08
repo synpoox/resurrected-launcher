@@ -58,8 +58,17 @@ impl std::error::Error for InjectedFault {}
 /// Consulted by the transaction at every [`FaultPoint::all`] point of every boundary
 /// it crosses, forward ([`Boundary::sequence`]) and rollback ([`Boundary::ROLLBACK`]),
 /// including during startup recovery.
+///
+/// The progress hooks let the app's progress observer, which is also an injector,
+/// see counts inside a step; injectors ignore them by default.
 pub trait FaultInjector: Send + Sync {
     fn check(&self, boundary: Boundary, point: FaultPoint) -> Result<(), InjectedFault>;
+
+    /// Bytes of the release archive downloaded so far, of `total`.
+    fn bytes(&self, _done: u64, _total: u64) {}
+
+    /// Live files Repair has verified so far, of `total`.
+    fn files(&self, _done: u64, _total: u64) {}
 }
 
 /// Production injector: never fails.

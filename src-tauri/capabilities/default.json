@@ -14,6 +14,19 @@
     "allow-choose-game-location",
     "allow-refresh-catalog",
     "allow-play-product",
-    "allow-open-loader-download-page"
+    "allow-open-loader-download-page",
+    "allow-select-game-location",
+    "allow-get-release-notes",
+    "allow-open-folder",
+    "allow-preview-diagnostics",
+    "allow-save-diagnostics",
+    "allow-show-diagnostics-in-folder",
+    "allow-get-start-with-windows",
+    "allow-set-start-with-windows",
+    "allow-minimize-window",
+    "allow-toggle-maximize-window",
+    "allow-close-window",
+    "allow-start-window-drag",
+    "allow-quit-launcher"
   ]
 }

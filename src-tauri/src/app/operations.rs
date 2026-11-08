@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -15,9 +16,9 @@ use tauri::{AppHandle, Emitter, Runtime, State};
 use crate::catalog::DEFAULT_FEED_URL;
 use crate::catalog::{Availability, Feed, ReleaseManifest};
 use crate::contract::{
-    Boundary, CancelRequest, ErrorCode, FaultInjector, FaultPoint, InjectedFault, LauncherError,
-    NoFaults, OperationKind, OperationOutcome, OperationRequest, Phase, ProductId, ProgressEvent,
-    RelativePath, RunningGame, Sha256Digest, Versioned,
+    Boundary, CancelRequest, ErrorCode, FaultInjector, FaultPoint, GameLocation, InjectedFault,
+    LauncherError, NoFaults, OperationKind, OperationOutcome, OperationRequest, OutcomeReport,
+    Phase, ProductId, ProgressEvent, RelativePath, RunningGame, Sha256Digest, Versioned,
 };
 use crate::game::process::running_under;
 use crate::game::readiness::BuildHashCache;
@@ -30,7 +31,14 @@ use crate::install::preflight::Host;
 use crate::install::transaction::Recovery;
 use crate::state::{InstalledRelease, StateStore};
 
-use super::game::{CatalogState, Desktop};
+use super::game::{CatalogState, Desktop, StartupFailed};
+use super::settings::Exported;
+
+/// Byte and file counts are emitted at most this often, plus the final one.
+const COUNT_INTERVAL: Duration = Duration::from_millis(100);
+
+/// How many recent operation errors diagnostics keep.
+const RECENT_ERRORS: usize = 10;
 
 /// Event carrying `Versioned<ProgressEvent>` while an operation runs.
 pub const PROGRESS_EVENT: &str = "operation-progress";
@@ -158,6 +166,14 @@ pub struct Launcher {
     pub(super) catalog: Mutex<CatalogState>,
     /// Set once startup recovery finished; Play is refused before.
     pub(super) recovered: AtomicBool,
+    /// The last `detect_game_locations` reply, for `select_game_location`.
+    pub(super) detected: Mutex<Vec<GameLocation>>,
+    /// Products whose last Play ended within the startup window.
+    pub(super) startup: Mutex<HashMap<ProductId, StartupFailed>>,
+    /// Recent operation errors, oldest first, for diagnostics.
+    pub(super) recent_errors: Mutex<Vec<LauncherError>>,
+    /// The last previewed and the last saved diagnostics report.
+    pub(super) exported: Mutex<Exported>,
 }
 
 /// What runs per product, behind the app operation lock.
@@ -167,15 +183,37 @@ pub(super) struct Running {
     pub(super) ops: HashMap<ProductId, (Arc<AtomicBool>, OperationKind)>,
     /// Products whose restart recovery is running.
     pub(super) recovering: HashSet<ProductId>,
+    /// Set for good by Quit: `AppHandle::exit` only requests the exit, so nothing
+    /// may start while the event loop winds down.
+    pub(super) quitting: bool,
+}
+
+fn quitting() -> LauncherError {
+    LauncherError::new(ErrorCode::OperationInProgress, "the launcher is quitting")
 }
 
 impl Running {
-    fn busy(&self, product: &ProductId) -> bool {
-        self.ops.contains_key(product) || self.recovering.contains(product)
+    /// [`ErrorCode::OperationInProgress`] while `product` has an operation or
+    /// recovery running, or the launcher is quitting.
+    fn refuse(&self, product: &ProductId) -> Result<(), LauncherError> {
+        if self.quitting {
+            return Err(quitting());
+        }
+        if self.ops.contains_key(product) || self.recovering.contains(product) {
+            return Err(LauncherError::new(
+                ErrorCode::OperationInProgress,
+                format!("{} already has an operation running", product.0),
+            ));
+        }
+        Ok(())
     }
 
-    /// [`ErrorCode::OperationInProgress`] while any operation or recovery runs.
+    /// [`ErrorCode::OperationInProgress`] while any operation or recovery runs,
+    /// or the launcher is quitting.
     pub(super) fn refuse_any(&self) -> Result<(), LauncherError> {
+        if self.quitting {
+            return Err(quitting());
+        }
         match self.ops.keys().chain(&self.recovering).next() {
             Some(p) => Err(LauncherError::new(
                 ErrorCode::OperationInProgress,
@@ -267,7 +305,18 @@ impl Launcher {
             hashes: BuildHashCache::default(),
             catalog: Mutex::new(CatalogState::NotRefreshed),
             recovered: AtomicBool::new(false),
+            detected: Mutex::default(),
+            startup: Mutex::default(),
+            recent_errors: Mutex::default(),
+            exported: Mutex::default(),
         }
+    }
+
+    fn note_error(&self, error: &LauncherError) {
+        let mut recent = self.recent_errors.lock().unwrap_or_else(|e| e.into_inner());
+        recent.push(error.clone());
+        let excess = recent.len().saturating_sub(RECENT_ERRORS);
+        recent.drain(..excess);
     }
 
     fn env<'a>(
@@ -478,12 +527,64 @@ pub enum RecoveryView {
     RolledForward,
 }
 
-/// Turns the transaction's boundary checks into progress events; never injects.
+/// Turns the transaction's boundary checks and counts into progress events;
+/// never injects.
 struct Progress<F> {
     product_id: ProductId,
     kind: OperationKind,
     reached: Mutex<Option<Boundary>>,
+    /// When a count was last emitted, for [`COUNT_INTERVAL`].
+    counted: Mutex<Option<Instant>>,
     emit: F,
+}
+
+impl<F: Fn(ProgressEvent)> Progress<F> {
+    fn new(product_id: ProductId, kind: OperationKind, emit: F) -> Self {
+        Self {
+            product_id,
+            kind,
+            reached: Mutex::new(None),
+            counted: Mutex::new(None),
+            emit,
+        }
+    }
+
+    fn event(&self, phase: Phase, boundary: Option<Boundary>) -> ProgressEvent {
+        ProgressEvent {
+            product_id: self.product_id.clone(),
+            kind: self.kind,
+            phase,
+            boundary,
+            bytes_done: None,
+            bytes_total: None,
+            files_done: None,
+            files_total: None,
+        }
+    }
+
+    /// Emits `(done, total)` as bytes or files, rate-limited except the final one.
+    fn count(&self, phase: Phase, done: u64, total: u64, files: bool) {
+        let boundary = match self.reached.lock() {
+            Ok(r) => *r,
+            Err(_) => return,
+        };
+        let Ok(mut counted) = self.counted.lock() else {
+            return;
+        };
+        let recent = counted.is_some_and(|t| t.elapsed() < COUNT_INTERVAL);
+        // An unknown total (0) is rate-limited throughout.
+        if recent && (total == 0 || done < total) {
+            return;
+        }
+        *counted = Some(Instant::now());
+        let mut e = self.event(phase, boundary);
+        if files {
+            (e.files_done, e.files_total) = (Some(done), Some(total));
+        } else {
+            (e.bytes_done, e.bytes_total) = (Some(done), Some(total));
+        }
+        (self.emit)(e)
+    }
 }
 
 fn phase(b: Boundary) -> Phase {
@@ -511,18 +612,19 @@ impl<F: Fn(ProgressEvent) + Send + Sync> FaultInjector for Progress<F> {
             return Ok(());
         };
         match point {
-            FaultPoint::BeforeStep => (self.emit)(ProgressEvent {
-                product_id: self.product_id.clone(),
-                kind: self.kind,
-                phase: phase(b),
-                boundary: *reached,
-                bytes_done: None,
-                bytes_total: None,
-            }),
+            FaultPoint::BeforeStep => (self.emit)(self.event(phase(b), *reached)),
             FaultPoint::AfterStep => *reached = Some(b),
             _ => {}
         }
         Ok(())
+    }
+
+    fn bytes(&self, done: u64, total: u64) {
+        self.count(Phase::Downloading, done, total, false)
+    }
+
+    fn files(&self, done: u64, total: u64) {
+        self.count(Phase::Verifying, done, total, true)
     }
 }
 
@@ -561,12 +663,7 @@ pub async fn start_operation<R: Runtime>(
     let cancel = Arc::new(AtomicBool::new(false));
     let reservation = {
         let mut running = launcher.running();
-        if running.busy(&req.product_id) {
-            return Err(LauncherError::new(
-                ErrorCode::OperationInProgress,
-                format!("{} already has an operation running", req.product_id.0),
-            ));
-        }
+        running.refuse(&req.product_id)?;
         // Under the app operation lock, so a Play cannot slip in between.
         launcher.refuse_if_game_running(&resolved.d2r)?;
         // Reserved first so two starts cannot both pass; inspected outside the lock.
@@ -604,28 +701,34 @@ pub async fn start_operation<R: Runtime>(
             game: &*launcher.game,
             d2r: &resolved.d2r,
         };
-        let progress = Progress {
-            product_id: product_id.clone(),
-            kind,
-            reached: Mutex::new(None),
-            emit: move |e| {
-                let _ = app.emit(PROGRESS_EVENT, Versioned::new(e));
-            },
-        };
+        let progress = Progress::new(product_id.clone(), kind, move |e| {
+            let _ = app.emit(PROGRESS_EVENT, Versioned::new(e));
+        });
         let result = ops::run(
             &launcher.env(&host, &progress, &cancel),
             &resolved.request(),
         );
         finish.outcome = Some(match result {
-            Ok(_) => OperationOutcome::Succeeded { product_id, kind },
+            Ok(r) => OperationOutcome::Succeeded {
+                product_id,
+                kind,
+                report: OutcomeReport {
+                    preserved: r.preserved,
+                    remaining: r.remaining,
+                    clean_install_backups: r.clean_install_backups,
+                },
+            },
             Err(e) if e.code == ErrorCode::Cancelled => {
                 OperationOutcome::Cancelled { product_id, kind }
             }
-            Err(error) => OperationOutcome::Failed {
-                product_id,
-                kind,
-                error,
-            },
+            Err(error) => {
+                launcher.note_error(&error);
+                OperationOutcome::Failed {
+                    product_id,
+                    kind,
+                    error,
+                }
+            }
         });
     });
     Ok(())
@@ -707,27 +810,15 @@ impl Launcher {
     pub(super) fn recover(&self, product_id: &ProductId) -> Result<RecoveryView, LauncherError> {
         let d2r = {
             let mut running = self.running();
-            if running.busy(product_id) {
-                return Err(LauncherError::new(
-                    ErrorCode::OperationInProgress,
-                    format!("{} has an operation running", product_id.0),
-                ));
-            }
+            running.refuse(product_id)?;
             let d2r = self.d2r_root(&*locked(&self.state)?)?;
             self.refuse_if_game_running(&d2r)?;
             running.recovering.insert(product_id.clone());
             d2r
         };
         let _reserved = Recovering(self, product_id);
-        let manifest = {
-            let mut state = locked(&self.state)?;
-            // Any manifest of the product names its install root.
-            let release = match state.installed_release(product_id).cloned() {
-                Some(record) => self.releases.installed(&mut state, &record)?,
-                None => self.releases.recommended(&mut state, product_id)?,
-            };
-            release.manifest
-        };
+        // Any manifest of the product names its install root.
+        let manifest = self.manifest_of(product_id)?.manifest;
         let cancel = AtomicBool::new(false);
         let host = GameAware {
             host: &*self.host,
