@@ -3,9 +3,11 @@
 //! The frontend sends user intents (product ID + operation kind + explicit consents),
 //! never paths, URLs, tools or arguments. Wire names are snake_case.
 
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
-use super::{Boundary, ErrorCode, LauncherError, OperationKind, CONTRACT_VERSION};
+use super::{Boundary, ErrorCode, LauncherError, OperationKind, RelativePath, CONTRACT_VERSION};
 
 /// Envelope carrying [`CONTRACT_VERSION`] with every request, response and event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,8 +102,24 @@ pub struct ProgressEvent {
     pub phase: Phase,
     /// Last boundary durably reached, if any.
     pub boundary: Option<Boundary>,
+    /// Filled while downloading: at most 10 events a second, plus the final one.
     pub bytes_done: Option<u64>,
     pub bytes_total: Option<u64>,
+    /// Filled while Repair verifies the live files, with the same rate limit.
+    pub files_done: Option<u64>,
+    pub files_total: Option<u64>,
+}
+
+/// What a committed operation kept and left behind (#53 item 2).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutcomeReport {
+    /// Player-edited shipped defaults kept or carried forward, and changed files
+    /// update and uninstall left in place.
+    pub preserved: Vec<RelativePath>,
+    /// Uninstall: every file still in the product root, relative to it.
+    pub remaining: Vec<String>,
+    /// Labelled clean-install backups beside the product root. Display only.
+    pub clean_install_backups: Vec<PathBuf>,
 }
 
 /// Final result event of an operation.
@@ -112,6 +130,7 @@ pub enum OperationOutcome {
     Succeeded {
         product_id: ProductId,
         kind: OperationKind,
+        report: OutcomeReport,
     },
     /// Cancelled; the previous complete installation is in place.
     Cancelled {
@@ -125,6 +144,25 @@ pub enum OperationOutcome {
         kind: OperationKind,
         error: LauncherError,
     },
+}
+
+/// What a tray menu item asks the window to show (#75 emits it as
+/// `tray-request`, `Versioned` like every event).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrayAction {
+    /// Update was chosen for a save-breaking release: show its dialog (ADR 0001).
+    SaveBreaking,
+    /// Show what happened after a failure.
+    ShowWhatHappened,
+    /// Quit was chosen while an operation runs.
+    QuitWhileBusy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrayRequest {
+    pub action: TrayAction,
+    pub product_id: ProductId,
 }
 
 #[cfg(test)]
@@ -155,7 +193,7 @@ mod tests {
             });
             assert!(serde_json::from_value::<Versioned<OperationRequest>>(wire).is_err());
         }
-        let wire = json!({ "contract_version": 1, "data": { "product_id": "pd2r" }, "x": 1 });
+        let wire = json!({ "contract_version": CONTRACT_VERSION, "data": { "product_id": "pd2r" }, "x": 1 });
         assert!(serde_json::from_value::<Versioned<CancelRequest>>(wire).is_err());
     }
 
@@ -179,5 +217,21 @@ mod tests {
         let v = serde_json::to_value(Versioned::new(outcome)).unwrap();
         assert_eq!(v["data"]["status"], "failed");
         assert_eq!(v["data"]["error"]["code"], "insufficient_space");
+    }
+
+    #[test]
+    fn succeeded_outcome_carries_its_report() {
+        let outcome = OperationOutcome::Succeeded {
+            product_id: ProductId("pd2r".into()),
+            kind: OperationKind::Uninstall,
+            report: OutcomeReport {
+                remaining: vec!["Save/x.d2s".into()],
+                ..OutcomeReport::default()
+            },
+        };
+        let v = serde_json::to_value(&outcome).unwrap();
+        assert_eq!(v["status"], "succeeded");
+        assert_eq!(v["report"]["remaining"][0], "Save/x.d2s");
+        assert_eq!(v["report"]["preserved"], serde_json::json!([]));
     }
 }

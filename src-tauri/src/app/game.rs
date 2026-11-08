@@ -7,12 +7,13 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
-use super::operations::{locked, Launcher, Release, ReleaseSummary, Running};
+use super::operations::{invalid, locked, Launcher, Release, ReleaseSummary, Running};
+use super::winapi::{self, ProcessHandle};
 use crate::catalog::{
     manifest_identity, refresh_with, Availability, Feed, FEED_IDENTITY, MAX_FEED_SIZE,
 };
@@ -35,12 +36,33 @@ pub const STATE_EVENT: &str = "product-state-changed";
 /// How often the exit watcher looks for processes under the D2R root.
 const EXIT_POLL: Duration = Duration::from_secs(1);
 
+/// A game that exits this soon after Play failed to start.
+/// shortcut: a fixed threshold; make it configurable only if real crashes show otherwise.
+const STARTUP_WINDOW: Duration = Duration::from_secs(30);
+
 /// The native UI the commands use. Production: [`SystemDesktop`]; tests a fake.
 pub trait Desktop: Send + Sync {
     /// The native folder picker; `None` when the player cancels.
     fn pick_folder(&self) -> Option<PathBuf>;
     /// Opens [`LOADER_DOWNLOAD_PAGE`] in the default browser. No other URL.
     fn open_loader_download_page(&self) -> io::Result<()>;
+    /// Opens `dir` in Explorer. Paths are built natively only.
+    fn open_folder(&self, dir: &Path) -> io::Result<()>;
+    /// Opens Explorer with `file` selected.
+    fn show_in_folder(&self, file: &Path) -> io::Result<()>;
+    /// The native save dialog for a diagnostics report; `None` when cancelled.
+    fn pick_save_file(&self, default_name: &str) -> Option<PathBuf>;
+    /// The `Saved Games` known folder.
+    fn saved_games(&self) -> io::Result<PathBuf>;
+    /// The launcher's value under the per-user Run key, `None` when absent.
+    fn run_value(&self) -> io::Result<Option<String>>;
+    /// Writes the launcher's Run value, or deletes it for `None`.
+    fn set_run_value(&self, value: Option<&str>) -> io::Result<()>;
+}
+
+fn explorer() -> std::process::Command {
+    let windows = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
+    std::process::Command::new(Path::new(&windows).join("explorer.exe"))
 }
 
 /// The real desktop: the dialog plugin's folder picker (Rust side only; no JS
@@ -61,12 +83,64 @@ impl Desktop for SystemDesktop {
 
     fn open_loader_download_page(&self) -> io::Result<()> {
         // explorer.exe hands an https URL to the default browser; no shell parses it.
-        let windows = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
-        std::process::Command::new(Path::new(&windows).join("explorer.exe"))
-            .arg(LOADER_DOWNLOAD_PAGE)
-            .spawn()
-            .map(drop)
+        explorer().arg(LOADER_DOWNLOAD_PAGE).spawn().map(drop)
     }
+
+    fn open_folder(&self, dir: &Path) -> io::Result<()> {
+        explorer().arg(dir).spawn().map(drop)
+    }
+
+    fn show_in_folder(&self, file: &Path) -> io::Result<()> {
+        let mut cmd = explorer();
+        // Explorer wants `/select,"<path>"` verbatim; Windows paths cannot hold `"`.
+        #[cfg(windows)]
+        std::os::windows::process::CommandExt::raw_arg(
+            &mut cmd,
+            format!("/select,\"{}\"", file.display()),
+        );
+        cmd.spawn().map(drop)
+    }
+
+    fn pick_save_file(&self, default_name: &str) -> Option<PathBuf> {
+        use tauri_plugin_dialog::DialogExt;
+        self.0
+            .dialog()
+            .file()
+            .set_title("Save diagnostics")
+            .set_file_name(default_name)
+            .add_filter("Text", &["txt"])
+            .blocking_save_file()?
+            .into_path()
+            .ok()
+    }
+
+    fn saved_games(&self) -> io::Result<PathBuf> {
+        winapi::saved_games()
+    }
+
+    fn run_value(&self) -> io::Result<Option<String>> {
+        winapi::hkcu_value(winapi::RUN_KEY, &self.0.config().identifier)
+    }
+
+    fn set_run_value(&self, value: Option<&str>) -> io::Result<()> {
+        winapi::set_hkcu_value(winapi::RUN_KEY, &self.0.config().identifier, value)
+    }
+}
+
+/// A [`GameLocation`] as the commands reply with it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocationView {
+    #[serde(flatten)]
+    pub location: GameLocation,
+    /// Products whose install folder exists under this root.
+    pub installed_products: Vec<ProductId>,
+}
+
+/// The tracked game exited within [`STARTUP_WINDOW`] of Play.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartupFailed {
+    /// From `GetExitCodeProcess` when the started process could be opened.
+    pub exit_code: Option<i32>,
 }
 
 /// The last catalog refresh in this launcher run.
@@ -95,14 +169,18 @@ pub struct ProductState {
     pub recommended: Option<ReleaseSummary>,
     /// The operation running on this product, if any.
     pub running: Option<OperationKind>,
+    /// A cancel was requested and the running operation has not ended yet.
+    pub cancelling: bool,
     /// The selected D2R location, `None` when none is selected or it no longer validates.
-    pub location: Option<GameLocation>,
+    pub location: Option<LocationView>,
     pub readiness: Readiness,
     /// The earliest-started process under the D2R root, any product.
     pub running_game: Option<RunningGame>,
     /// Set when readiness is `loader_missing` or `loader_unsupported`.
     pub loader_guidance: Option<LoaderGuidance>,
     pub catalog: CatalogState,
+    /// The last Play's game exited within 30 s; the next Play clears it.
+    pub startup_failed: Option<StartupFailed>,
 }
 
 /// What one fresh assessment found.
@@ -205,8 +283,53 @@ impl Launcher {
         })
     }
 
+    /// Every product State knows: installed ones, then the cached feed's.
+    fn known_products(&self) -> Vec<ProductId> {
+        let mut products: Vec<ProductId> = Vec::new();
+        if let Ok(mut s) = locked(&self.state) {
+            products.extend(s.installed_releases().iter().map(|r| r.product_id.clone()));
+            let feed = s
+                .cached(FEED_IDENTITY)
+                .and_then(|c| Feed::parse(&c.bytes).ok());
+            for p in feed.into_iter().flat_map(|f| f.products) {
+                if !products.contains(&p.product_id) {
+                    products.push(p.product_id);
+                }
+            }
+        }
+        products
+    }
+
+    /// `location` with the known products whose install folder exists under it.
+    pub(super) fn view(&self, location: GameLocation) -> LocationView {
+        let installed_products = self
+            .known_products()
+            .into_iter()
+            .filter(|p| {
+                self.manifest_of(p)
+                    .is_ok_and(|r| product_root(&location.path, &r.manifest).is_dir())
+            })
+            .collect();
+        LocationView {
+            location,
+            installed_products,
+        }
+    }
+
+    /// The installed release's manifest, else the recommended one.
+    pub(super) fn manifest_of(&self, product: &ProductId) -> Result<Release, LauncherError> {
+        let mut state = locked(&self.state)?;
+        match state.installed_release(product).cloned() {
+            Some(record) => self.releases.installed(&mut state, &record),
+            None => self.releases.recommended(&mut state, product),
+        }
+    }
+
     pub(super) fn state_of(&self, product: &ProductId) -> Result<ProductState, LauncherError> {
-        let running = self.running().ops.get(product).map(|(_, kind)| *kind);
+        let (running, cancelling) = match self.running().ops.get(product) {
+            Some((cancel, kind)) => (Some(*kind), cancel.load(Ordering::Relaxed)),
+            None => (None, false),
+        };
         let assessed = self.assess(product)?;
         let catalog = self
             .catalog
@@ -220,11 +343,13 @@ impl Launcher {
                 .recommended
                 .map(|r| ReleaseSummary::of(&r.manifest)),
             running,
-            location: assessed.location,
+            cancelling,
+            location: assessed.location.map(|l| self.view(l)),
             readiness: assessed.readiness,
             running_game: assessed.running.into_iter().min_by_key(|g| g.since),
             loader_guidance: assessed.guidance,
             catalog,
+            startup_failed: locked(&self.startup)?.get(product).copied(),
         })
     }
 
@@ -245,6 +370,7 @@ impl Launcher {
         self.refuse_location_change(&running)?;
         let location = detect::validate(picked, &*self.game)?;
         refuse_linked_root(&location.path)?;
+        self.refuse_if_game_running(&location.path)?;
         let mut state = locked(&self.state)?;
         let prefs = Preferences {
             d2r_location: Some(location.path.clone()),
@@ -280,16 +406,37 @@ impl Launcher {
             },
         )?;
         drop(running);
-        self.watch_exit(app, location.path.clone());
+        // Opened at once, so the exit code is still readable after the exit.
+        let tracked = Tracked {
+            product: product.clone(),
+            started: Instant::now(),
+            process: ProcessHandle::open(game.pid),
+        };
+        locked(&self.startup)?.remove(product);
+        self.watch_exit(app, location.path.clone(), Some(tracked));
         Ok(game)
     }
 
-    /// Emits [`STATE_EVENT`] once nothing runs under `root` any more.
-    fn watch_exit<R: Runtime>(self: &Arc<Self>, app: &AppHandle<R>, root: PathBuf) {
+    /// Emits [`STATE_EVENT`] once nothing runs under `root` any more. A `tracked`
+    /// Play that ended within [`STARTUP_WINDOW`] is recorded as a startup failure.
+    fn watch_exit<R: Runtime>(
+        self: &Arc<Self>,
+        app: &AppHandle<R>,
+        root: PathBuf,
+        tracked: Option<Tracked>,
+    ) {
         let (launcher, app) = (Arc::clone(self), app.clone());
         std::thread::spawn(move || {
             // An enumeration failure ends the watch; the UI then reads the state.
-            let _ = wait_until_exited(&root, &*launcher.game, EXIT_POLL);
+            let exited = wait_until_exited(&root, &*launcher.game, EXIT_POLL).is_ok();
+            if let Some(t) = tracked.filter(|t| exited && t.started.elapsed() < STARTUP_WINDOW) {
+                let failed = StartupFailed {
+                    exit_code: t.process.and_then(|p| p.exit_code()),
+                };
+                if let Ok(mut startup) = locked(&launcher.startup) {
+                    startup.insert(t.product, failed);
+                }
+            }
             let _ = app.emit(STATE_EVENT, Versioned::new(()));
         });
     }
@@ -300,19 +447,7 @@ impl Launcher {
     /// game already running under the root, and refreshes the catalog in the
     /// background.
     pub fn start_up<R: Runtime>(self: &Arc<Self>, app: &AppHandle<R>) {
-        let mut products: Vec<ProductId> = Vec::new();
-        if let Ok(mut s) = locked(&self.state) {
-            products.extend(s.installed_releases().iter().map(|r| r.product_id.clone()));
-            let feed = s
-                .cached(FEED_IDENTITY)
-                .and_then(|c| Feed::parse(&c.bytes).ok());
-            for p in feed.into_iter().flat_map(|f| f.products) {
-                if !products.contains(&p.product_id) {
-                    products.push(p.product_id);
-                }
-            }
-        }
-        for product in &products {
+        for product in &self.known_products() {
             // A failure leaves the journal; readiness then reports recovery_required.
             let _ = self.recover(product);
         }
@@ -322,7 +457,7 @@ impl Launcher {
             .and_then(|s| s.preferences().d2r_location.clone());
         if let Some(root) = root {
             if self.games_under(&root).is_ok_and(|g| !g.is_empty()) {
-                self.watch_exit(app, root);
+                self.watch_exit(app, root, None);
             }
         }
         let _ = app.emit(STATE_EVENT, Versioned::new(()));
@@ -388,6 +523,13 @@ impl Launcher {
     }
 }
 
+/// A Play whose game the exit watcher times against [`STARTUP_WINDOW`].
+pub(super) struct Tracked {
+    product: ProductId,
+    started: Instant,
+    process: Option<ProcessHandle>,
+}
+
 /// `get_product_state`: installed and recommended releases, the running operation,
 /// the selected location, readiness, the running game, loader guidance and the
 /// catalog state. Assessed fresh on every call ("Check again").
@@ -400,16 +542,34 @@ pub async fn get_product_state(
 }
 
 /// `detect_game_locations`: valid D2R locations, the remembered one first, then
-/// Battle.net's. Writes nothing.
+/// Battle.net's. Writes nothing; `select_game_location` picks from this reply.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn detect_game_locations(
     launcher: State<'_, Arc<Launcher>>,
-) -> Result<Versioned<Vec<GameLocation>>, LauncherError> {
+) -> Result<Versioned<Vec<LocationView>>, LauncherError> {
     let remembered = locked(&launcher.state)?.preferences().d2r_location.clone();
-    Ok(Versioned::new(detect::candidates(
-        remembered.as_deref(),
-        &*launcher.game,
-    )))
+    let found = detect::candidates(remembered.as_deref(), &*launcher.game);
+    *locked(&launcher.detected)? = found.clone();
+    Ok(Versioned::new(
+        found.into_iter().map(|l| launcher.view(l)).collect(),
+    ))
+}
+
+/// `select_game_location`: remembers entry `index` of the last
+/// `detect_game_locations` reply, validated again. `InvalidRequest` for an index
+/// out of range (or before any detection); otherwise the same refusals as
+/// `choose_game_location`, including `GameRunning` under either location.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn select_game_location(
+    launcher: State<'_, Arc<Launcher>>,
+    index: usize,
+) -> Result<Versioned<LocationView>, LauncherError> {
+    let picked = locked(&launcher.detected)?
+        .get(index)
+        .map(|l| l.path.clone())
+        .ok_or_else(|| invalid(format!("no detected location {index}; detect again")))?;
+    let location = launcher.set_location(&picked)?;
+    Ok(Versioned::new(launcher.view(location)))
 }
 
 /// `choose_game_location`: opens the native folder picker and remembers the
@@ -420,7 +580,7 @@ pub async fn detect_game_locations(
 #[tauri::command(rename_all = "snake_case")]
 pub async fn choose_game_location(
     launcher: State<'_, Arc<Launcher>>,
-) -> Result<Versioned<Option<GameLocation>>, LauncherError> {
+) -> Result<Versioned<Option<LocationView>>, LauncherError> {
     launcher.refuse_location_change(&launcher.running())?;
     let picker = Arc::clone(&launcher);
     let picked = tauri::async_runtime::spawn_blocking(move || picker.desktop.pick_folder())
@@ -429,7 +589,7 @@ pub async fn choose_game_location(
     match picked {
         Some(path) => launcher
             .set_location(&path)
-            .map(|l| Versioned::new(Some(l))),
+            .map(|l| Versioned::new(Some(launcher.view(l)))),
         None => Ok(Versioned::new(None)),
     }
 }

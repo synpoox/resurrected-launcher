@@ -16,6 +16,19 @@ fn main() {
         "refresh_catalog",
         "play_product",
         "open_loader_download_page",
+        "select_game_location",
+        "get_release_notes",
+        "open_folder",
+        "preview_diagnostics",
+        "save_diagnostics",
+        "show_diagnostics_in_folder",
+        "get_start_with_windows",
+        "set_start_with_windows",
+        "minimize_window",
+        "toggle_maximize_window",
+        "close_window",
+        "start_window_drag",
+        "quit_launcher",
     ]);
     let attributes = tauri_build::Attributes::new()
         .windows_attributes(windows)
