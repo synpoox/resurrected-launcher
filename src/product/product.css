@@ -422,7 +422,8 @@
 }
 
 .notes-offline,
-.notes-empty {
+.notes-empty,
+.notes-truncated {
   padding: 22px 0;
   text-align: center;
   font-size: 14px;

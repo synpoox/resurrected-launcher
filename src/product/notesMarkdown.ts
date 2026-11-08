@@ -24,7 +24,12 @@ export interface ParsedNotes {
   /** The opening paragraph, when the notes start with one. */
   summary: Inline[] | null;
   sections: NotesSection[];
+  /** The notes were longer than MAX_NOTES_CHARS and only their start is shown. */
+  truncated: boolean;
 }
+
+/** Longest notes parsed; manifests may be 8 MB and the parse runs on the UI thread. */
+export const MAX_NOTES_CHARS = 100_000;
 
 const HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
 const BULLET = /^ {0,3}[-*+][ \t]+(.*)$/;
@@ -42,6 +47,14 @@ export function parseInline(src: string): Inline[] {
     text = "";
     if (t) out.push({ kind, text: kind === "code" ? t : unescape(t) } as Inline);
   };
+  // Forward-only cursors: every scan for a closing character resumes where the last one stopped,
+  // so unclosed `[`, `(` or backticks cost linear time, not a rescan to the end per opener.
+  const nextClose = cursor(src, (ch) => ch === "]");
+  const nextParen = cursor(src, (ch) => ch === ")");
+  const nextSpace = cursor(src, (ch) => /\s/.test(ch));
+  const nextNonSpace = cursor(src, (ch) => !/\s/.test(ch));
+  const nextQuote = cursor(src, (ch) => ch === '"' || ch === "\n");
+  const fences = new Map<number, number>();
   let i = 0;
   while (i < src.length) {
     const c = src[i];
@@ -51,23 +64,32 @@ export function parseInline(src: string): Inline[] {
       continue;
     }
     if (c === "`") {
-      const run = /^`+/.exec(src.slice(i))![0];
-      const end = src.indexOf(run, i + run.length);
+      let len = 1;
+      while (src[i + len] === "`") len += 1;
+      const run = "`".repeat(len);
+      let end = fences.get(len);
+      if (end === undefined || (end >= 0 && end < i + len)) {
+        end = src.indexOf(run, i + len);
+        fences.set(len, end);
+      }
       if (end > 0) {
-        push("code", src.slice(i + run.length, end).trim());
-        i = end + run.length;
+        push("code", src.slice(i + len, end).trim());
+        i = end + len;
         continue;
       }
       text += run;
-      i += run.length;
+      i += len;
       continue;
     }
-    // [text](url) and ![alt](url): the text only, never a link or an image.
-    const link = /^!?\[([^\]]*)\]\([^)\s]*(?:\s+"[^"]*")?\)/.exec(src.slice(i));
-    if (link) {
-      text += unescape(link[1]);
-      i += link[0].length;
-      continue;
+    // [text](url) and ![alt](url) / ![alt](url "title"): the text only, never a link or an image.
+    const open = c === "[" ? i : c === "!" && src[i + 1] === "[" ? i + 1 : -1;
+    if (open >= 0) {
+      const end = linkEnd(src, open, nextClose, nextParen, nextSpace, nextNonSpace, nextQuote);
+      if (end > 0) {
+        text += unescape(src.slice(open + 1, nextClose(open + 1)));
+        i = end + 1;
+        continue;
+      }
     }
     if (c === "*" || c === "_") {
       const double = src[i + 1] === c;
@@ -92,6 +114,45 @@ export function parseInline(src: string): Inline[] {
   }
   if (text) out.push({ kind: "text", text });
   return out;
+}
+
+type Cursor = (from: number) => number;
+
+/**
+ * The index of the first character at or after `from` matching `pred` (or `src.length`).
+ * Queries must not go backwards; the scan position only moves forward, so all queries cost O(n).
+ */
+function cursor(src: string, pred: (ch: string) => boolean): Cursor {
+  let at = -1;
+  return (from) => {
+    if (at < from) {
+      at = from;
+      while (at < src.length && !pred(src[at])) at += 1;
+    }
+    return at;
+  };
+}
+
+/** For `[` at `open`, the index of the `)` ending `[text](url)` or `[text](url "title")`, else -1. */
+function linkEnd(
+  src: string,
+  open: number,
+  nextClose: Cursor,
+  nextParen: Cursor,
+  nextSpace: Cursor,
+  nextNonSpace: Cursor,
+  nextQuote: Cursor,
+): number {
+  const close = nextClose(open + 1);
+  if (src[close + 1] !== "(") return -1;
+  const paren = nextParen(close + 2);
+  if (paren >= src.length) return -1;
+  const space = nextSpace(close + 2);
+  if (space > paren) return paren; // (url): no space before the `)`
+  const quote = nextNonSpace(space);
+  if (src[quote] !== '"') return -1;
+  const endQuote = nextQuote(quote + 1);
+  return src[endQuote] === '"' && endQuote + 1 === paren ? paren : -1;
 }
 
 function findClose(src: string, marker: string, from: number): number {
@@ -175,11 +236,23 @@ export function parseBlocks(notes: string): Block[] {
  * starts a section; deeper headings stay inside it as sub-headings.
  */
 export function parseNotes(notes: string): ParsedNotes {
-  const blocks = parseBlocks(notes.trim());
+  let text = notes.trim();
+  const truncated = text.length > MAX_NOTES_CHARS;
+  if (truncated) {
+    // Cut at the last line break inside the limit, so no line is split.
+    const cut = text.lastIndexOf("\n", MAX_NOTES_CHARS);
+    text = text.slice(0, cut > 0 ? cut : MAX_NOTES_CHARS);
+  }
+  const blocks = parseBlocks(text);
   let summary: Inline[] | null = null;
-  if (blocks[0]?.kind === "paragraph") summary = (blocks.shift() as { inlines: Inline[] }).inlines;
-  const levels = blocks.flatMap((b) => (b.kind === "heading" ? [b.level] : []));
-  const top = levels.length ? Math.min(...levels) : 0;
+  const first = blocks[0];
+  if (first?.kind === "paragraph") {
+    summary = first.inlines;
+    blocks.shift();
+  }
+  // A loop, not Math.min(...levels): spreading 200k arguments overflows the stack.
+  let top = 0;
+  for (const b of blocks) if (b.kind === "heading" && (top === 0 || b.level < top)) top = b.level;
   const sections: NotesSection[] = [];
   for (const b of blocks) {
     if (b.kind === "heading" && b.level === top) sections.push({ heading: b.inlines, blocks: [] });
@@ -188,5 +261,5 @@ export function parseNotes(notes: string): ParsedNotes {
       sections[sections.length - 1].blocks.push(b);
     }
   }
-  return { summary, sections };
+  return { summary, sections, truncated };
 }

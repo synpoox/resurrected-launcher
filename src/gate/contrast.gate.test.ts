@@ -77,6 +77,7 @@ describe("Patch Notes contrast (WCAG 2.2 AA, on --bg)", () => {
     [".notes-body", rule(product, ".notes-body")],
     [".notes-offline", rule(product, ".notes-offline")],
     [".notes-empty", rule(product, ".notes-empty")],
+    [".notes-truncated", rule(product, ".notes-truncated")],
     [".tabs [role=\"tab\"] (unselected)", rule(product, '.tabs [role="tab"]')],
     [".link (Retry)", rule(ui, ".link")],
   ];

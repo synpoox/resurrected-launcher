@@ -269,6 +269,15 @@ describe("product page", () => {
     expect(document.querySelector(".notes-summary")).toBeNull();
   });
 
+  it("Patch Notes too long to parse show their start and say they were cut", async () => {
+    const { user } = mount("ready", (a) => {
+      a.scene.notes = [{ ...a.scene.notes[0], notes: "#### Items\n" + "- line\n".repeat(20_000) }];
+    });
+    await user.click(within(await loaded()).getByRole("tab", { name: "Patch Notes" }));
+    expect(await screen.findByText("These notes are too long to show in full.")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Items" })).toBeTruthy();
+  });
+
   it("the release title names the status once when the display version already carries it", async () => {
     const { user } = mount("ready", (a) => {
       a.scene.notes = [{ ...a.scene.notes[0], display_version: "0.2.0-alpha", status: "alpha" }];

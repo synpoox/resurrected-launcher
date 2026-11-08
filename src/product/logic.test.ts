@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ProgressEvent } from "../api/types";
 import { formatBytes, formatTimeLeft, relativeDate, releaseLabel, startedAgo } from "./format";
 import { badgeOf, hasNotice } from "./journey";
-import { parseInline, parseNotes } from "./notesMarkdown";
+import { MAX_NOTES_CHARS, parseInline, parseNotes } from "./notesMarkdown";
 import { progressStats, type Sample } from "./stats";
 
 const MB = 1024 ** 2;
@@ -107,6 +107,7 @@ describe("parseNotes", () => {
     ].join("\n");
     expect(parseNotes(notes)).toEqual({
       summary: null,
+      truncated: false,
       sections: [
         {
           heading: [t("Items")],
@@ -118,9 +119,10 @@ describe("parseNotes", () => {
   });
 
   it("takes an opening paragraph as the summary; plain text without headings is one untitled section", () => {
-    expect(parseNotes("PD2 Resurrected 0.1.0-alpha.")).toEqual({ summary: [t("PD2 Resurrected 0.1.0-alpha.")], sections: [] });
+    expect(parseNotes("PD2 Resurrected 0.1.0-alpha.")).toEqual({ summary: [t("PD2 Resurrected 0.1.0-alpha.")], sections: [], truncated: false });
     expect(parseNotes(["Summary", "", "A line", "- b"].join("\n"))).toEqual({
       summary: [t("Summary")],
+      truncated: false,
       sections: [{ heading: null, blocks: [{ kind: "paragraph", inlines: [t("A line")] }, { kind: "list", ordered: false, items: [[t("b")]] }] }],
     });
   });
@@ -144,6 +146,52 @@ describe("parseNotes", () => {
   });
 });
 
+// Review of #132: a manifest may be 8 MB, and Patch Notes parse on the UI thread.
+describe("parseNotes on huge or malformed notes", () => {
+  const timed = <T,>(f: () => T): [T, number] => {
+    const start = performance.now();
+    const out = f();
+    return [out, performance.now() - start];
+  };
+
+  it("200k headings neither overflow the stack nor take a second", () => {
+    const [parsed, ms] = timed(() => parseNotes("# h\n".repeat(200_000)));
+    expect(parsed.truncated).toBe(true);
+    expect(parsed.sections.length).toBeGreaterThan(20_000);
+    expect(ms).toBeLessThan(1000);
+  });
+
+  it("the deepest-first heading level is found without spreading every level into Math.min", () => {
+    const notes = "### a\n".repeat(15_000) + "## top\n";
+    expect(notes.length).toBeLessThan(MAX_NOTES_CHARS);
+    const { sections } = parseNotes(notes);
+    expect(sections.map((s) => s.heading)).toEqual([null, [t("top")]]);
+  });
+
+  it.each([
+    ["unclosed [", "[".repeat(200_000)],
+    ["unclosed ![a](", "![a](".repeat(40_000)],
+    ["[a](url without a )", "[a](x ".repeat(35_000)],
+    ['[a](u "unclosed title', '[a](u "t '.repeat(25_000)],
+    ["unclosed backtick runs", "` `` ".repeat(40_000)],
+  ])("200 KB of %s parses in linear time", (_, src) => {
+    const [inline, ms] = timed(() => parseInline(src));
+    expect(inline.map((n) => n.text).join("").length).toBeGreaterThan(0);
+    expect(ms).toBeLessThan(1000);
+    expect(timed(() => parseNotes(src))[1]).toBeLessThan(1000);
+  });
+
+  it("cuts notes over the limit at a line break and says so", () => {
+    const line = "- " + "x".repeat(98) + "\n";
+    const { sections, truncated } = parseNotes("#### Items\n" + line.repeat(2_000));
+    expect(truncated).toBe(true);
+    const items = (sections[0].blocks[0] as { items: unknown[] }).items;
+    expect(items.length).toBe(Math.floor((MAX_NOTES_CHARS - 10) / 101));
+    expect(items.every((i) => JSON.stringify(i) === JSON.stringify([t("x".repeat(98))]))).toBe(true);
+    expect(parseNotes("#### Items\n- a").truncated).toBe(false);
+  });
+});
+
 describe("parseInline", () => {
   it("reads strong, em and code", () => {
     expect(parseInline("**Bold** and *em* and _em_ and `x_y`")).toEqual([
@@ -159,6 +207,9 @@ describe("parseInline", () => {
 
   it("keeps HTML, links and images as text: no tag, URL or remote image survives", () => {
     expect(parseInline('<img src=x> [site](https://e.com) ![art](https://e.com/a.png "t")')).toEqual([t("<img src=x> site art")]);
+    // Not links: a space in the URL without a title, a ] not followed by (, an unclosed (.
+    expect(parseInline("[a](b c) [d] e [f](g")).toEqual([t("[a](b c) [d] e [f](g")]);
+    expect(parseInline("[[x](y)] ![](z)")).toEqual([t("[x] ")]);
   });
 
   it("leaves snake_case, lone markers and escapes alone", () => {
