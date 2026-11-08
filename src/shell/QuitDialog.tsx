@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useApi } from "../api/context";
 import type { Product } from "../products";
 import { Dialog } from "../ui/Dialog";
@@ -16,7 +16,13 @@ export function QuitDialog({ product, hasInstalled, onClose }: QuitDialogProps) 
   const api = useApi();
   const toast = useToast();
   const [stopping, setStopping] = useState(false);
+  // Read through a ref, so a parent re-render (live progress) doesn't restart the stop below.
+  const close = useRef(onClose);
+  useEffect(() => {
+    close.current = onClose;
+  }, [onClose]);
 
+  // Once per stop: listen for the outcome, then cancel; quit after the cancelled (or finished) outcome.
   useEffect(() => {
     if (!stopping) return;
     let live = true;
@@ -27,7 +33,7 @@ export function QuitDialog({ product, hasInstalled, onClose }: QuitDialogProps) 
         if (o.status === "cancelled" || o.status === "succeeded") void api.quitLauncher().catch((e) => toast.show({ tone: "error", text: asError(e).message }));
         else {
           toast.show({ tone: "error", text: asError(o.error).message });
-          onClose();
+          close.current();
         }
       })
       .then((un) => (live ? (stop = un) : un()))
@@ -40,7 +46,7 @@ export function QuitDialog({ product, hasInstalled, onClose }: QuitDialogProps) 
       live = false;
       stop?.();
     };
-  }, [stopping, api, product.id, toast, onClose]);
+  }, [stopping, api, product.id, toast]);
 
   return (
     <Dialog

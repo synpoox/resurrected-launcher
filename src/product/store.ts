@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { LauncherApi, LauncherError, ProductState } from "../api/types";
 import { isLauncherError } from "../api/types";
 import { PRODUCTS } from "../products";
@@ -8,11 +8,13 @@ export interface ProductData {
   state: ProductState | null;
   error: LauncherError | null;
   samples: Sample[];
+  /** Clean-install backup locations from the last outcome report (display only), until dismissed. */
+  backups: string[];
 }
 
 export type ProductMap = Record<string, ProductData>;
 
-const empty: ProductData = { state: null, error: null, samples: [] };
+const empty: ProductData = { state: null, error: null, samples: [], backups: [] };
 const withRelease = PRODUCTS.filter((p) => p.hasRelease);
 
 const asError = (e: unknown): LauncherError =>
@@ -29,6 +31,7 @@ export function startup(api: LauncherApi): Promise<void> {
   let done = startups.get(api);
   if (!done) {
     done = Promise.all(withRelease.map((p) => api.recoverProduct(p.id).catch(() => undefined))).then(() => {
+      // A failed refresh is reported in state: every product's `catalog` says `failed`.
       api.refreshCatalog().catch(() => undefined);
     });
     startups.set(api, done);
@@ -37,52 +40,79 @@ export function startup(api: LauncherApi): Promise<void> {
 }
 
 /**
- * Product state and progress for every product with a release. After startup recovery, re-reads
- * state on `product-state-changed`, `operation-progress` and `operation-outcome` (coalesced: at
- * most one read in flight and one queued), and collects progress events while an operation runs.
+ * Coalesces state reads: at most one in flight and one queued, so reads never overlap and an older
+ * reply can't overwrite a newer one. Every read waits for startup recovery first.
  */
-export function useProducts(api: LauncherApi): { products: ProductMap; refresh: () => Promise<void> } {
+function coalesce(read: () => Promise<void>, gate: () => Promise<void>): () => Promise<void> {
+  let inFlight: Promise<void> | null = null;
+  let queued: Promise<void> | null = null;
+  const run = (): Promise<void> => {
+    const p = gate()
+      .then(read)
+      .finally(() => {
+        if (inFlight === p) inFlight = null;
+      });
+    inFlight = p;
+    return p;
+  };
+  return () => {
+    if (queued) return queued;
+    if (inFlight) {
+      queued = inFlight.then(() => {
+        queued = null;
+        return run();
+      });
+      return queued;
+    }
+    return run();
+  };
+}
+
+export interface Products {
+  products: ProductMap;
+  /** Re-reads every product's state, after startup recovery and coalesced with event re-reads. */
+  refresh: () => Promise<void>;
+  dismissBackups: (productId: string) => void;
+}
+
+/**
+ * Product state and progress for every product with a release. After startup recovery, re-reads
+ * state on `product-state-changed`, `operation-progress` and `operation-outcome`, collects
+ * progress events while an operation runs, and keeps clean-install backup locations until dismissed.
+ */
+export function useProducts(api: LauncherApi): Products {
   const [products, setProducts] = useState<ProductMap>(() =>
     Object.fromEntries(withRelease.map((p) => [p.id, empty])),
   );
 
-  const refresh = useCallback(async () => {
-    await Promise.all(
-      withRelease.map(async (p) => {
-        try {
-          const state = await api.getProductState(p.id);
-          setProducts((m) => ({
-            ...m,
-            [p.id]: { state, error: null, samples: state.running ? m[p.id].samples : [] },
-          }));
-        } catch (e) {
-          setProducts((m) => ({ ...m, [p.id]: { ...m[p.id], error: asError(e) } }));
-        }
-      }),
-    );
+  const refresh = useMemo(() => {
+    const readAll = async () => {
+      await Promise.all(
+        withRelease.map(async (p) => {
+          try {
+            const state = await api.getProductState(p.id);
+            setProducts((m) => ({
+              ...m,
+              [p.id]: { ...m[p.id], state, error: null, samples: state.running ? m[p.id].samples : [] },
+            }));
+          } catch (e) {
+            setProducts((m) => ({ ...m, [p.id]: { ...m[p.id], error: asError(e) } }));
+          }
+        }),
+      );
+    };
+    return coalesce(readAll, () => startup(api));
   }, [api]);
+
+  const dismissBackups = useCallback(
+    (id: string) => setProducts((m) => (m[id] ? { ...m, [id]: { ...m[id], backups: [] } } : m)),
+    [],
+  );
 
   useEffect(() => {
     let live = true;
     const stops: (() => void)[] = [];
-    let ready = false;
-    let reading = false;
-    let again = false;
-    const reread = () => {
-      if (!live) return;
-      if (!ready || reading) {
-        again = true;
-        return;
-      }
-      reading = true;
-      void refresh().finally(() => {
-        reading = false;
-        if (again) {
-          again = false;
-          reread();
-        }
-      });
-    };
+    const reread = () => void (live && refresh());
     const keep = (p: Promise<() => void>) => p.then((un) => (live ? stops.push(un) : un()));
     keep(api.onStateChanged(reread));
     keep(
@@ -96,19 +126,23 @@ export function useProducts(api: LauncherApi): { products: ProductMap; refresh: 
         reread();
       }),
     );
-    keep(api.onOutcome(reread));
-    void startup(api).then(() => {
-      ready = true;
-      again = false;
-      reread();
-    });
+    keep(
+      api.onOutcome((o) => {
+        if (o.status === "succeeded" && o.report.clean_install_backups.length > 0) {
+          const backups = o.report.clean_install_backups;
+          setProducts((m) => (m[o.product_id] ? { ...m, [o.product_id]: { ...m[o.product_id], backups } } : m));
+        }
+        reread();
+      }),
+    );
+    reread();
     return () => {
       live = false;
       stops.forEach((un) => un());
     };
   }, [api, refresh]);
 
-  return { products, refresh };
+  return { products, refresh, dismissBackups };
 }
 
 export { asError };

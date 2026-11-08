@@ -34,7 +34,7 @@ export interface ShellProps {
 /** The window: seamless title bar, sidebar, and the product page or Settings in the main area. */
 export function Shell({ product, open, tab }: ShellProps) {
   const api = useApi();
-  const { products, refresh } = useProducts(api);
+  const { products, refresh, dismissBackups } = useProducts(api);
   const [view, setView] = useState<View>(() => ({ kind: "product", id: initialProduct(product) }));
   const [quitOpen, setQuitOpen] = useState(open === "quit");
   /** The product a tray Quit asked about; otherwise the busy one. */
@@ -103,6 +103,11 @@ export function Shell({ product, open, tab }: ShellProps) {
     if (view.kind === "settings" && dot) clearDot?.();
   }, [view.kind, dot, clearDot]);
 
+  const closeQuit = useCallback(() => {
+    setQuitOpen(false);
+    setQuitFor(null);
+  }, []);
+
   const current = view.kind === "product" ? productById(view.id)! : null;
   const busy = (quitFor ? productById(quitFor) : undefined) ?? PRODUCTS.find((p) => products[p.id]?.state?.running);
   return (
@@ -120,6 +125,7 @@ export function Shell({ product, open, tab }: ShellProps) {
             tab={sceneOpen === open ? tab : undefined}
             trayFocus={trayFocus?.product_id === current.id ? trayFocus : undefined}
             onOpenSettings={() => select({ kind: "settings" })}
+            onDismissBackups={() => dismissBackups(current.id)}
           />
         ) : (
           <Settings />
@@ -129,10 +135,7 @@ export function Shell({ product, open, tab }: ShellProps) {
           <QuitDialog
             product={busy}
             hasInstalled={Boolean(products[busy.id]?.state?.installed)}
-            onClose={() => {
-              setQuitOpen(false);
-              setQuitFor(null);
-            }}
+            onClose={closeQuit}
           />
         )}
       </main>

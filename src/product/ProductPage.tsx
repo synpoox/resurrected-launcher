@@ -46,6 +46,8 @@ export interface ProductPageProps {
   tab?: Tab;
   trayFocus?: TrayFocus;
   onOpenSettings: () => void;
+  /** Clears this product's clean-install backup notice. */
+  onDismissBackups?: () => void;
 }
 
 export function ProductPage(props: ProductPageProps) {
@@ -120,7 +122,7 @@ function initialTab(productId: string, installedId: string | undefined): Tab {
   return installedId && seen !== null && seen !== installedId ? "notes" : "overview";
 }
 
-function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpenSettings, state }: ProductPageProps & { state: ProductState }) {
+function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpenSettings, onDismissBackups, state }: ProductPageProps & { state: ProductState }) {
   const api = useApi();
   const toast = useToast();
   const feed = useNews(product.id);
@@ -131,13 +133,12 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   const [installInspection, setInstallInspection] = useState<Inspection | null>(null);
   const [repairInspection, setRepairInspection] = useState<Inspection | null>(null);
   const [showFix, setShowFix] = useState(false);
-  /** Clean-install backup locations from the last outcome report (display only). */
-  const [backups, setBackups] = useState<string[]>([]);
   const opened = useRef(false);
   const focused = useRef(0);
   const ids = { overview: useId(), notes: useId(), notice: useId(), line: useId(), why: useId() };
 
   const samples = data?.samples ?? [];
+  const backups = data?.backups ?? [];
   const last = samples.at(-1)?.event ?? null;
   const journey: Journey = journeyOf(state, last);
   const stats = progressStats(samples);
@@ -177,9 +178,6 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
       .onOutcome((o) => {
         if (o.product_id !== product.id) return;
         if (o.status === "failed") fail(o.error);
-        if (o.status === "succeeded" && o.report.clean_install_backups.length > 0) {
-          setBackups(o.report.clean_install_backups);
-        }
         if (o.status === "succeeded" && o.kind === "uninstall") {
           setDialog((d) => (d?.kind === "uninstall" ? { ...d, report: o.report } : d));
         }
@@ -593,7 +591,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
                     </span>
                   ))}
                   .{" "}
-                  <button type="button" className="link" onClick={() => setBackups([])}>
+                  <button type="button" className="link" onClick={onDismissBackups}>
                     Dismiss
                   </button>
                 </Notice>

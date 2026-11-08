@@ -66,6 +66,39 @@ describe("startup", () => {
     expect(await screen.findByRole("button", { name: "Play" })).toBeTruthy();
   });
 
+  it("a tray request during recovery reads no state until recovery answers", async () => {
+    let finish!: () => void;
+    api = createFixtureApi("blocked");
+    const recover = api.recoverProduct;
+    api.recoverProduct = (id) => new Promise((ok) => (finish = () => ok(recover(id))));
+    render(
+      <ApiContext.Provider value={api}>
+        <ToastProvider>
+          <Shell />
+        </ToastProvider>
+      </ApiContext.Provider>,
+    );
+    await waitFor(() => expect(finish).toBeDefined());
+    const a = api;
+    await act(async () => a.emitTrayRequest({ action: "show_what_happened", product_id: "pd2r", error: null }));
+    await act(async () =>
+      a.emitProgress({
+        product_id: "pd2r",
+        kind: "install",
+        phase: "downloading",
+        boundary: null,
+        bytes_done: null,
+        bytes_total: null,
+        files_done: null,
+        files_total: null,
+      }),
+    );
+    expect(names(a)).not.toContain("getProductState");
+    await act(async () => finish());
+    await loaded();
+    expect(names(a).indexOf("recoverProduct")).toBeLessThan(names(a).indexOf("getProductState"));
+  });
+
   it("a failed recovery still shows state", async () => {
     api = createFixtureApi("ready");
     api.recoverProduct = () => Promise.reject({ code: "internal", message: "x" } satisfies LauncherError);
@@ -160,7 +193,56 @@ describe("tray requests", () => {
   });
 });
 
+describe("quit while busy", () => {
+  it("re-renders during a slow stop cancel once, then quit after the cancelled outcome", async () => {
+    const { api, user } = mount("downloading");
+    await loaded();
+    let cancels = 0;
+    let quits = 0;
+    api.cancelOperation = () => {
+      cancels += 1;
+      return Promise.resolve();
+    };
+    api.quitLauncher = () => {
+      quits += 1;
+      return Promise.resolve();
+    };
+    await act(async () => api.emitTrayRequest({ action: "quit_while_busy", product_id: "pd2r", error: null }));
+    const dialog = await screen.findByRole("dialog", { name: "Quit while PD2R is downloading?" });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel download and quit" }));
+    await waitFor(() => expect(cancels).toBe(1));
+    // Live progress keeps re-rendering the shell while the stop waits.
+    for (let i = 0; i < 10; i++) {
+      await act(async () => api.emitProgress(api.scene.progress![0]));
+    }
+    await waitFor(() => expect(count(api, "getProductState")).toBeGreaterThan(2));
+    expect(cancels).toBe(1);
+    expect(quits).toBe(0);
+    expect(within(dialog).getByRole("button", { name: "Stopping safely…" })).toBeTruthy();
+    await act(async () => api.emitOutcome({ status: "cancelled", product_id: "pd2r", kind: "install" }));
+    await waitFor(() => expect(quits).toBe(1));
+    expect(cancels).toBe(1);
+  });
+});
+
 describe("outcome report", () => {
+  it("keeps clean-install backup locations that arrive while the product page isn't shown", async () => {
+    const { api, user } = mount("ready");
+    await loaded();
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const backup = String.raw`C:\Games\D2R\mods\pd2r.backup-2`;
+    await act(async () =>
+      api.emitOutcome({
+        status: "succeeded",
+        product_id: "pd2r",
+        kind: "clean_install",
+        report: { preserved: [], remaining: [], clean_install_backups: [backup] },
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Project Diablo 2: Resurrected" }));
+    expect(await screen.findByText(backup)).toBeTruthy();
+  });
+
   it("shows clean-install backup locations", async () => {
     const { api, user } = mount("ready");
     await loaded();
