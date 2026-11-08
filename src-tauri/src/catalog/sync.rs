@@ -13,10 +13,11 @@ use crate::contract::{ErrorCode, LauncherError, ProductId, Sha256Digest};
 use crate::install::download::{Downloader, Expect};
 use crate::state::StateStore;
 
-/// The publisher's mutable feed: GitHub redirects `latest/download` to the newest
-/// release's asset, then to its object storage (#62).
+/// The publisher's mutable feed: the `feed.json` asset of the launcher repo's
+/// `catalog` release, replaced in place on each publication. GitHub redirects the
+/// download to its object storage (#62, #119).
 pub const DEFAULT_FEED_URL: &str =
-    "https://github.com/synpoox/pd2-resurrected/releases/latest/download/feed.json";
+    "https://github.com/synpoox/resurrected-launcher/releases/download/catalog/feed.json";
 
 /// Cache identity of the feed.
 pub const FEED_IDENTITY: &str = "feed";
@@ -166,15 +167,20 @@ pub fn apply(state: &mut StateStore, fetched: Fetched) -> Result<Feed, LauncherE
 mod tests {
     use super::*;
 
-    /// Live check that GitHub's `latest/download` redirects (to the tag, then to
-    /// object storage) download over HTTPS. Network; run with `--ignored`.
+    /// Live check that the published feed downloads over HTTPS through GitHub's
+    /// redirect to object storage and is a valid feed. Product checksums live on
+    /// each product's release, not on the catalog release. Network; run with
+    /// `--ignored`.
     #[test]
     #[ignore = "network: github.com"]
-    fn default_feed_host_redirects_reach_object_storage() {
-        let url = DEFAULT_FEED_URL.replace("feed.json", "SHA256SUMS");
+    fn default_feed_downloads_through_redirects_and_parses() {
         let (bytes, _) = Downloader::new()
-            .fetch_bytes(&url, Expect::AtMost(MAX_FEED_SIZE), &AtomicBool::new(false))
+            .fetch_bytes(
+                DEFAULT_FEED_URL,
+                Expect::AtMost(MAX_FEED_SIZE),
+                &AtomicBool::new(false),
+            )
             .unwrap();
-        assert!(String::from_utf8(bytes).unwrap().contains(".7z"));
+        Feed::parse(&bytes).unwrap();
     }
 }
