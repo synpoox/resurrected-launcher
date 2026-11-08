@@ -1,0 +1,171 @@
+/* Window, seamless title bar and sidebar (spec: Window, Layout). */
+
+.window {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  min-width: 1024px;
+  min-height: 640px;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Content runs to the top edge; the controls float top-right over it. */
+.titlebar {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  display: flex;
+  user-select: none;
+}
+
+.titlebar .drag {
+  order: 0;
+  flex: 1;
+}
+
+.window-controls {
+  order: 1;
+  display: flex;
+}
+
+.win {
+  width: 46px;
+  height: 32px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.win:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.win.close:hover {
+  background: var(--button);
+  color: var(--text);
+}
+
+/* An outset ring would be clipped at the window's top edge. */
+.win:focus-visible {
+  outline-offset: -3px;
+}
+
+.sidebar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 40px 0 34px;
+  background: var(--rail);
+  border-right: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px 34px;
+}
+
+.brand .glyph {
+  color: var(--accent);
+  font-size: 44px;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.brand .name {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  line-height: 1.25;
+}
+
+.products {
+  list-style: none;
+}
+
+.sidebar .item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 24px;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+.sidebar .item:hover {
+  color: var(--text);
+}
+
+.sidebar .item[aria-current] {
+  color: var(--text);
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+/* Items touch the window's left edge, so their ring is inset too. */
+.sidebar .item:focus-visible {
+  outline-offset: -3px;
+}
+
+.sidebar .settings {
+  margin-top: auto;
+  gap: 10px;
+}
+
+.cog {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.badge {
+  margin-left: auto;
+  flex: none;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--text);
+  background: var(--line);
+}
+
+.badge-progress {
+  font-family: Consolas, monospace;
+}
+
+.badge-error {
+  background: var(--button);
+}
+
+.main {
+  position: relative;
+  overflow: hidden;
+  container-type: inline-size;
+}
+
+.settings-placeholder {
+  padding: 72px 44px;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  color: var(--hero-copy);
+}
+
+.settings-placeholder h1 {
+  color: var(--text);
+  font-weight: 900;
+}
