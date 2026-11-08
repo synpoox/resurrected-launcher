@@ -136,7 +136,7 @@ describe("product page", () => {
     const notes = screen.getByRole("tab", { name: "Patch Notes" });
     expect(focused()).toBe(notes);
     expect(notes.getAttribute("aria-selected")).toBe("true");
-    expect(await screen.findByRole("heading", { name: "PD2R alpha 0.4.2" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Project Diablo 2: Resurrected Patch 0.4.2 notes" })).toBeTruthy();
   });
 
   it("the hero title is always exactly two lines and the art has an accessible name", async () => {
@@ -264,9 +264,82 @@ describe("product page", () => {
       "<b>raw</b> art",
     ]);
     expect(within(items).getByText("normal").tagName).toBe("STRONG");
-    expect(document.querySelector(".notes img, .notes b, .notes a")).toBeNull();
+    expect(document.querySelector(".notes-body img, .notes b, .notes a")).toBeNull();
     expect(screen.queryByText(/####/)).toBeNull();
     expect(document.querySelector(".notes-summary")).toBeNull();
+  });
+
+  it("Patch Notes open on the product's bundled art as a banner, never a remote image", async () => {
+    const { user } = mount("ready");
+    await user.click(within(await loaded()).getByRole("tab", { name: "Patch Notes" }));
+    const banner = (await screen.findAllByRole("img")).find((i) => i.classList.contains("notes-banner"));
+    expect(banner?.getAttribute("alt")).toMatch(/Project Diablo 2: Resurrected/);
+    expect(banner?.getAttribute("src")).not.toMatch(/^(https?:)?\/\//);
+  });
+
+  it("each release: two-line title, summary, divider and tag · date", async () => {
+    const { user } = mount("ready", (a) => {
+      a.scene.notes = [
+        { ...a.scene.notes[0], display_version: "0.2.0-alpha", status: "alpha", release_date: "2026-11-04", notes: "Big patch.\n\n## Items\n- a" },
+      ];
+    });
+    await user.click(within(await loaded()).getByRole("tab", { name: "Patch Notes" }));
+    const title = await screen.findByRole("heading", { level: 2 });
+    // The status is not repeated (#128): it is the tag, and the title says "Patch 0.2.0 notes".
+    expect([...title.children].map((s) => s.textContent)).toEqual(["Project Diablo 2: Resurrected", "Patch 0.2.0 notes"]);
+    expect(screen.getByText("Big patch.").className).toBe("notes-summary");
+    const meta = document.querySelector(".notes-meta")!;
+    expect(meta.querySelector(".k")?.textContent).toBe("Alpha");
+    expect(meta.querySelector("time")?.textContent).toBe("4 November 2026");
+  });
+
+  it("the table of contents opens with +/−, lists every section and moves to one", async () => {
+    const notes = ["## Items", "- a", "## Skills", "- b", "## Uber bosses", "- c"].join("\n");
+    const { user } = mount("ready", (a) => {
+      a.scene.notes = [{ ...a.scene.notes[0], notes }];
+    });
+    await user.click(within(await loaded()).getByRole("tab", { name: "Patch Notes" }));
+    const toc = await screen.findByRole("navigation", { name: "Table of contents" });
+    const toggle = within(toc).getByRole("button", { name: /Table of contents/ });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.textContent).toContain("+");
+    expect(within(toc).queryByRole("button", { name: "Skills" })).toBeNull();
+    // Keyboard only: focus the toggle, Enter opens it, Tab reaches an entry, Enter moves there.
+    toggle.focus();
+    await user.keyboard("{Enter}");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle.textContent).toContain("−");
+    expect(within(toc).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Items", "Skills", "Uber bosses"]);
+    await user.tab();
+    await user.tab();
+    expect(focused()?.textContent).toBe("Skills");
+    await user.keyboard("{Enter}");
+    expect(focused()).toBe(screen.getByRole("heading", { level: 3, name: "Skills" }));
+    await user.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("a section box: its description or quote, a divider, then sub-headings and nested bullets", async () => {
+    const notes = [
+      "## Large changes",
+      "> Large, like this patch's download size.",
+      "",
+      "### Traits",
+      "- Blossom",
+      "  - AD/AP: 12/30/50/55% to 12/30/55/65%",
+      "- Elderwood",
+    ].join("\n");
+    const { user } = mount("ready", (a) => {
+      a.scene.notes = [{ ...a.scene.notes[0], notes }];
+    });
+    await user.click(within(await loaded()).getByRole("tab", { name: "Patch Notes" }));
+    const section = await screen.findByRole("region", { name: "Large changes" });
+    const box = section.querySelector(".notes-box")!;
+    expect([...box.children].map((c) => c.tagName)).toEqual(["BLOCKQUOTE", "HR", "H4", "UL"]);
+    expect(within(section).getByRole("heading", { level: 4, name: "Traits" })).toBeTruthy();
+    const blossom = within(section).getAllByRole("listitem")[0];
+    expect(within(blossom).getByRole("list")).toBeTruthy();
+    expect(within(blossom).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["AD/AP: 12/30/50/55% to 12/30/55/65%"]);
   });
 
   it("Patch Notes too long to parse show their start and say they were cut", async () => {
@@ -286,14 +359,6 @@ describe("product page", () => {
     expect(await screen.findByText("These notes are too long to show in full.")).toBeTruthy();
     expect(document.querySelector(".notes-summary")).not.toBeNull();
     expect(document.querySelector(".notes-section")).toBeNull();
-  });
-
-  it("the release title names the status once when the display version already carries it", async () => {
-    const { user } = mount("ready", (a) => {
-      a.scene.notes = [{ ...a.scene.notes[0], display_version: "0.2.0-alpha", status: "alpha" }];
-    });
-    await user.click(within(await loaded()).getByRole("tab", { name: "Patch Notes" }));
-    expect((await screen.findByRole("heading", { level: 2 })).textContent).toBe("PD2R 0.2.0-alpha");
   });
 
   it("a null note shows the offline line with Retry", async () => {

@@ -87,15 +87,25 @@ describe("Patch Notes contrast (WCAG 2.2 AA, on --bg)", () => {
     expect(ratio(fg, BG)).toBeGreaterThanOrEqual(need);
   });
 
-  // Sections are boxes on their own background (#128): body text, headings and markers on it.
-  it("section boxes: text, headings and list markers on the section background", () => {
-    const section = rule(product, ".notes-section");
-    const bg = token(section.background);
-    expect(ratio(token(rule(product, ".notes-body").color), bg)).toBeGreaterThanOrEqual(4.5);
-    expect(ratio(token(rule(product, ".notes-heading").color), bg)).toBeGreaterThanOrEqual(4.5);
-    expect(ratio(token(rule(product, ".notes-sub").color), bg)).toBeGreaterThanOrEqual(4.5);
-    expect(ratio(token(rule(product, ".notes-section strong").color), bg)).toBeGreaterThanOrEqual(4.5);
-    expect(ratio(token(rule(product, ".notes-section li::marker").color), bg)).toBeGreaterThanOrEqual(3);
+  // Section boxes are outlined only, so their text sits on --bg too (#128 design pass).
+  it("section boxes, the table of contents and quotes: every colour on --bg", () => {
+    expect(rule(product, ".notes-box").background).toBeUndefined();
+    const colour = (selector: string) => token(rule(product, selector).color);
+    for (const selector of [
+      ".notes-heading",
+      ".notes-sub",
+      ".notes-quote",
+      ".notes-box strong",
+      ".notes-toc-toggle",
+      ".notes-toc li button",
+      ".notes-toc li button:hover",
+    ]) {
+      expect(ratio(colour(selector), BG), selector).toBeGreaterThanOrEqual(4.5);
+    }
+    // Non-text marks: 3:1.
+    expect(ratio(colour(".notes-box li::marker"), BG)).toBeGreaterThanOrEqual(3);
+    expect(ratio(colour(".notes-toc-icon"), BG)).toBeGreaterThanOrEqual(3);
+    expect(ratio(colour(".notes-quote p::before"), BG)).toBeGreaterThanOrEqual(3);
   });
 
   it("release titles inherit --text and pass as large text", () => {

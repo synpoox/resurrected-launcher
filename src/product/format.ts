@@ -56,4 +56,26 @@ export function releaseLabel(releaseId: string, version: string, notes: ReleaseN
   return named ? version : `${status} ${version}`;
 }
 
+const isSeparator = (ch: string | undefined) => ch === " " || ch === "-" || ch === "_" || ch === ".";
+
+/**
+ * The version for "Patch <version> notes": the display version without a leading or trailing
+ * status ("0.2.0-alpha" → "0.2.0", "alpha 0.4.2" → "0.4.2"), which the tag shows instead.
+ * A status in the middle ("0.2.0-alpha.1") is part of the version and stays.
+ */
+export function patchVersion(version: string, status: ReleaseNotes["status"]): string {
+  const v = version.trim();
+  const lower = v.toLowerCase();
+  if (lower.endsWith(status) && isSeparator(v[v.length - status.length - 1])) {
+    return v.slice(0, v.length - status.length - 1).trim() || v;
+  }
+  if (lower.startsWith(status) && isSeparator(v[status.length])) {
+    return v.slice(status.length + 1).trim() || v;
+  }
+  return v;
+}
+
+/** The tag in the Patch Notes meta row: "Alpha", "Beta" or "Release". */
+export const statusTag = (status: ReleaseNotes["status"]) => status[0].toUpperCase() + status.slice(1);
+
 export const formatCount = (n: number) => n.toLocaleString("en-US");

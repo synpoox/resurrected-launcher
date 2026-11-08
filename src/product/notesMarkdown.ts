@@ -12,11 +12,27 @@ export type Inline =
   | { kind: "em"; text: string }
   | { kind: "code"; text: string };
 
+export interface ListItem {
+  inlines: Inline[];
+  /** A nested list under this item. */
+  sublist: List | null;
+}
+
+export interface List {
+  kind: "list";
+  ordered: boolean;
+  items: ListItem[];
+}
+
 export type Block =
   | { kind: "heading"; level: number; inlines: Inline[] }
   | { kind: "paragraph"; inlines: Inline[] }
-  | { kind: "list"; ordered: boolean; items: Inline[][] }
+  | { kind: "quote"; inlines: Inline[] }
+  | List
   | { kind: "code"; text: string };
+
+/** Lists nest at most this deep; deeper items join the deepest list. */
+export const MAX_LIST_DEPTH = 3;
 
 export interface NotesSection {
   /** Null for content before the first heading. */
@@ -94,13 +110,20 @@ export function heading(line: string): { level: number; text: string } | null {
   return { level, text: from < end ? line.slice(from, end) : "" };
 }
 
+/** The width of the leading blanks, a tab counting as four. */
+function indentWidth(line: string): number {
+  let w = 0;
+  for (let i = 0; isBlank(line[i]); i++) w += line[i] === "\t" ? 4 : 1;
+  return w;
+}
+
 /**
- * A list item: `-`, `*` or `+`, or 1–9 digits then `.` or `)`, then a blank. Top-level items may
- * be indented up to three spaces; `nested` items must be indented.
+ * A list item: `-`, `*` or `+`, or 1–9 digits then `.` or `)`, then a blank. `indent` is the
+ * width before the marker; it decides nesting.
  */
-function listItem(line: string, nested: boolean): { ordered: boolean; text: string } | null {
-  let i = nested ? skipBlanks(line, 0) : indent3(line);
-  if (i < 0 || (nested && i === 0)) return null;
+function listItem(line: string): { ordered: boolean; indent: number; text: string } | null {
+  let i = skipBlanks(line, 0);
+  const indent = indentWidth(line);
   let ordered = false;
   if (line[i] === "-" || line[i] === "*" || line[i] === "+") i += 1;
   else {
@@ -112,7 +135,14 @@ function listItem(line: string, nested: boolean): { ordered: boolean; text: stri
     ordered = true;
   }
   if (!isBlank(line[i])) return null;
-  return { ordered, text: line.slice(skipBlanks(line, i)) };
+  return { ordered, indent, text: line.slice(skipBlanks(line, i)) };
+}
+
+/** The text of a `>` quote line (one blank after `>` dropped), or null. */
+function quoteLine(line: string): string | null {
+  const start = indent3(line);
+  if (start < 0 || line[start] !== ">") return null;
+  return line.slice(isBlank(line[start + 1]) ? start + 2 : start + 1);
 }
 
 /** Three or more of the same `-`, `*` or `_`, with blanks allowed between: a rule. */
@@ -282,17 +312,54 @@ function unescape(s: string): string {
   return out;
 }
 
-/** Block Markdown: ATX headings, bullet and numbered lists, paragraphs, fenced code; rules are dropped. */
+interface RawItem {
+  text: string;
+  sub: RawList | null;
+}
+interface RawList {
+  ordered: boolean;
+  indent: number;
+  items: RawItem[];
+}
+
+const toList = (raw: RawList): List => ({
+  kind: "list",
+  ordered: raw.ordered,
+  items: raw.items.map((item) => ({ inlines: parseInline(item.text), sublist: item.sub && toList(item.sub) })),
+});
+
+/**
+ * Block Markdown: ATX headings, bullet and numbered lists (nested by indent), `>` quotes,
+ * paragraphs and fenced code; rules are dropped.
+ */
 export function parseBlocks(notes: string): Block[] {
   const lines = notes.replaceAll("\r\n", "\n").replaceAll("\r", "\n").split("\n");
   const blocks: Block[] = [];
   let para: string[] = [];
-  let list: { ordered: boolean; items: string[] } | null = null;
+  let quote: string[] = [];
+  // The open list, outermost first: stack[0] is the top-level list.
+  let stack: RawList[] = [];
   const flush = () => {
     if (para.length) blocks.push({ kind: "paragraph", inlines: parseInline(para.join(" ")) });
     para = [];
-    if (list) blocks.push({ kind: "list", ordered: list.ordered, items: list.items.map(parseInline) });
-    list = null;
+    if (quote.length) blocks.push({ kind: "quote", inlines: parseInline(quote.join(" ")) });
+    quote = [];
+    if (stack.length) blocks.push(toList(stack[0]));
+    stack = [];
+  };
+  const addItem = (item: { ordered: boolean; indent: number; text: string }) => {
+    while (stack.length > 1 && item.indent < stack[stack.length - 1].indent) stack.pop();
+    const top = stack[stack.length - 1];
+    if (item.indent > top.indent && stack.length < MAX_LIST_DEPTH) {
+      const parent = top.items[top.items.length - 1];
+      parent.sub ??= { ordered: item.ordered, indent: item.indent, items: [] };
+      stack.push(parent.sub);
+    } else if (stack.length === 1 && top.ordered !== item.ordered) {
+      // A top-level switch between bullets and numbers starts a new list.
+      flush();
+      stack = [{ ordered: item.ordered, indent: item.indent, items: [] }];
+    }
+    stack[stack.length - 1].items.push({ text: item.text, sub: null });
   };
   for (let n = 0; n < lines.length; n++) {
     const line = lines[n];
@@ -307,7 +374,7 @@ export function parseBlocks(notes: string): Block[] {
     }
     if (!line.trim()) {
       // A blank line ends a paragraph; a list carries on if the next item follows.
-      if (para.length) flush();
+      if (para.length || quote.length) flush();
       continue;
     }
     if (isRule(line)) {
@@ -320,23 +387,29 @@ export function parseBlocks(notes: string): Block[] {
       blocks.push({ kind: "heading", level: head.level, inlines: parseInline(head.text) });
       continue;
     }
-    const item = listItem(line, false);
-    if (item) {
-      if (para.length || (list && list.ordered !== item.ordered)) flush();
-      list ??= { ordered: item.ordered, items: [] };
-      list.items.push(item.text);
+    const quoted = quoteLine(line);
+    if (quoted !== null) {
+      if (para.length || stack.length) flush();
+      quote.push(quoted.trim());
       continue;
     }
-    if (list) {
-      // Nested items are kept as items of the same list; other indented lines continue the last item.
-      const nested = listItem(line, true);
-      if (nested) list.items.push(nested.text);
-      else if (isBlank(line[0])) list.items[list.items.length - 1] += ` ${line.trim()}`;
-      else {
-        flush();
-        para.push(line.trim());
-      }
+    if (quote.length) flush();
+    const item = listItem(line);
+    // A list starts only at an indent of up to three; once open, any indent nests.
+    if (item && (stack.length || item.indent <= 3)) {
+      if (para.length) flush();
+      if (stack.length) addItem(item);
+      else stack = [{ ordered: item.ordered, indent: item.indent, items: [{ text: item.text, sub: null }] }];
       continue;
+    }
+    if (stack.length) {
+      // An indented line continues the deepest open item; anything else ends the list.
+      if (isBlank(line[0])) {
+        const items = stack[stack.length - 1].items;
+        items[items.length - 1].text += ` ${line.trim()}`;
+        continue;
+      }
+      flush();
     }
     para.push(line.trim());
   }

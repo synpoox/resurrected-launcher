@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Inspection, ProgressEvent } from "../api/types";
-import { formatBytes, formatTimeLeft, relativeDate, releaseLabel, startedAgo } from "./format";
+import { formatBytes, formatTimeLeft, patchVersion, relativeDate, releaseLabel, startedAgo, statusTag } from "./format";
 import { badgeOf, existingOf, hasNotice } from "./journey";
-import { heading, MAX_NOTES_CHARS, parseInline, parseNotes } from "./notesMarkdown";
+import { heading, MAX_LIST_DEPTH, MAX_NOTES_CHARS, parseBlocks, parseInline, parseNotes } from "./notesMarkdown";
 import { progressStats, type Sample } from "./stats";
 
 const MB = 1024 ** 2;
@@ -90,6 +90,7 @@ describe("journey", () => {
 });
 
 const t = (text: string) => ({ kind: "text", text });
+const li = (text: string) => ({ inlines: [t(text)], sublist: null });
 
 describe("parseNotes", () => {
   // The shape of the published pd2r 0.2.0-alpha notes (#128): no summary, `####` sections, bullets.
@@ -111,9 +112,9 @@ describe("parseNotes", () => {
       sections: [
         {
           heading: [t("Items")],
-          blocks: [{ kind: "list", ordered: false, items: [[t("Crushing blow rolls on normal hits.")], [t("The Horadric Cube has a 4x4 grid.")]] }],
+          blocks: [{ kind: "list", ordered: false, items: [li("Crushing blow rolls on normal hits."), li("The Horadric Cube has a 4x4 grid.")] }],
         },
-        { heading: [t("Skills")], blocks: [{ kind: "list", ordered: false, items: [[t("Dark Pact consumes a curse.")]] }] },
+        { heading: [t("Skills")], blocks: [{ kind: "list", ordered: false, items: [li("Dark Pact consumes a curse.")] }] },
       ],
     });
   });
@@ -123,7 +124,7 @@ describe("parseNotes", () => {
     expect(parseNotes(["Summary", "", "A line", "- b"].join("\n"))).toEqual({
       summary: [t("Summary")],
       truncated: false,
-      sections: [{ heading: null, blocks: [{ kind: "paragraph", inlines: [t("A line")] }, { kind: "list", ordered: false, items: [[t("b")]] }] }],
+      sections: [{ heading: null, blocks: [{ kind: "paragraph", inlines: [t("A line")] }, { kind: "list", ordered: false, items: [li("b")] }] }],
     });
   });
 
@@ -134,9 +135,11 @@ describe("parseNotes", () => {
     expect(sections.map((s) => s.heading)).toEqual([[t("Items")], [t("Fixes")]]);
     expect(sections[0].blocks).toEqual([
       { kind: "heading", level: 3, inlines: [t("Weapons")] },
-      { kind: "list", ordered: true, items: [[t("Crossbows")], [t("Claws")]] },
+      { kind: "list", ordered: true, items: [li("Crossbows"), li("Claws")] },
     ]);
-    expect(sections[1].blocks).toEqual([{ kind: "list", ordered: false, items: [[t("one continued")], [t("nested")]] }]);
+    expect(sections[1].blocks).toEqual([
+      { kind: "list", ordered: false, items: [{ inlines: [t("one continued")], sublist: { kind: "list", ordered: false, items: [li("nested")] } }] },
+    ]);
   });
 
   it("drops rules and keeps fenced code as text", () => {
@@ -217,8 +220,68 @@ describe("parseNotes on huge or malformed notes", () => {
     expect(truncated).toBe(true);
     const items = (sections[0].blocks[0] as { items: unknown[] }).items;
     expect(items.length).toBe(Math.floor((MAX_NOTES_CHARS - 10) / 101));
-    expect(items.every((i) => JSON.stringify(i) === JSON.stringify([t("x".repeat(98))]))).toBe(true);
+    expect(items.every((i) => JSON.stringify(i) === JSON.stringify(li("x".repeat(98))))).toBe(true);
     expect(parseNotes("#### Items\n- a").truncated).toBe(false);
+  });
+});
+
+describe("parseBlocks: nested lists and quotes (owner design pass)", () => {
+  const sub = (...items: ReturnType<typeof li>[]) => ({ kind: "list", ordered: false, items });
+
+  it("nests bullets by indent and returns to the outer list", () => {
+    const blocks = parseBlocks(["- Blossom", "  - AD/AP", "    - deeper", "  - Mana", "- Elderwood", "\t- tabbed"].join("\n"));
+    expect(blocks).toEqual([
+      {
+        kind: "list",
+        ordered: false,
+        items: [
+          { inlines: [t("Blossom")], sublist: { kind: "list", ordered: false, items: [{ inlines: [t("AD/AP")], sublist: sub(li("deeper")) }, li("Mana")] } },
+          { inlines: [t("Elderwood")], sublist: sub(li("tabbed")) },
+        ],
+      },
+    ]);
+  });
+
+  it(`caps nesting at ${MAX_LIST_DEPTH} levels; deeper items join the deepest list`, () => {
+    const notes = ["- 1", "  - 2", "    - 3", "      - 4", "        - 5"].join("\n");
+    const [list] = parseBlocks(notes) as { items: { sublist: { items: { sublist: { items: unknown[] } }[] } }[] }[];
+    expect(list.items[0].sublist.items[0].sublist.items).toEqual([li("3"), li("4"), li("5")]);
+  });
+
+  it("an indented line continues the deepest item; a numbered list under a bullet stays nested", () => {
+    expect(parseBlocks(["- a", "  1. one", "     more", "- b"].join("\n"))).toEqual([
+      {
+        kind: "list",
+        ordered: false,
+        items: [{ inlines: [t("a")], sublist: { kind: "list", ordered: true, items: [li("one more")] } }, li("b")],
+      },
+    ]);
+  });
+
+  it("a list starts only at an indent of up to three", () => {
+    expect(parseBlocks("    - code-like")).toEqual([{ kind: "paragraph", inlines: [t("- code-like")] }]);
+  });
+
+  it("> lines are one quote, ended by a blank line or other content", () => {
+    expect(parseBlocks(["> Large, like this", ">patch.", "", "> Second", "Text"].join("\n"))).toEqual([
+      { kind: "quote", inlines: [t("Large, like this patch.")] },
+      { kind: "quote", inlines: [t("Second")] },
+      { kind: "paragraph", inlines: [t("Text")] },
+    ]);
+  });
+});
+
+describe("Patch Notes title and tag", () => {
+  it("the patch version drops a leading or trailing status, which the tag shows", () => {
+    expect(patchVersion("0.2.0-alpha", "alpha")).toBe("0.2.0");
+    expect(patchVersion("0.2.0 ALPHA", "alpha")).toBe("0.2.0");
+    expect(patchVersion("alpha 0.4.2", "alpha")).toBe("0.4.2");
+    expect(patchVersion("0.4.2", "alpha")).toBe("0.4.2");
+    expect(patchVersion("0.2.0-alpha.1", "alpha")).toBe("0.2.0-alpha.1");
+    expect(patchVersion("0.2.0alpha", "alpha")).toBe("0.2.0alpha");
+    expect(patchVersion("alpha", "alpha")).toBe("alpha");
+    expect(patchVersion("1.0.0", "release")).toBe("1.0.0");
+    expect([statusTag("alpha"), statusTag("beta"), statusTag("release")]).toEqual(["Alpha", "Beta", "Release"]);
   });
 });
 
