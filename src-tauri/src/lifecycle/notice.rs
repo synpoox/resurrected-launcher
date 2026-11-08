@@ -62,13 +62,26 @@ pub fn attempt(dir: &Path, show: impl FnOnce() -> Result<(), String>) -> Outcome
     }
 }
 
+/// Where the marker, icon and log go instead of app-local data, when managed.
+/// Only tests manage it, so a test launcher never writes to the user's
+/// `%LOCALAPPDATA%` (#129).
+pub struct Dir(pub PathBuf);
+
+/// The notice's directory: the managed [`Dir`], else app-local data.
+pub fn dir<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
+    match app.try_state::<Dir>() {
+        Some(dir) => Some(dir.0.clone()),
+        None => app.path().app_local_data_dir().ok(),
+    }
+}
+
 /// One attempt at a time: two quick closes must not show it twice.
 static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
 /// Called on every close of the main window; shows the notice on the first one.
 /// Runs off the event loop, since the toast call blocks briefly.
 pub fn on_close<R: Runtime>(app: &AppHandle<R>) {
-    let Ok(dir) = app.path().app_local_data_dir() else {
+    let Some(dir) = dir(app) else {
         return;
     };
     if dir.join(MARKER).exists() || IN_FLIGHT.swap(true, Ordering::SeqCst) {
@@ -223,6 +236,16 @@ mod tests {
         // SAFETY: NUL-terminated string; removes the scratch registration.
         unsafe { RegDeleteTreeW(0x8000_0001_u32 as i32 as isize, key.as_ptr()) };
         shown.unwrap();
+    }
+
+    #[test]
+    fn a_managed_dir_replaces_app_local_data() {
+        let app = tauri::test::mock_app();
+        let local = app.path().app_local_data_dir().unwrap();
+        assert_eq!(dir(app.handle()), Some(local));
+        let tmp = tempfile::tempdir().unwrap();
+        app.manage(Dir(tmp.path().to_path_buf()));
+        assert_eq!(dir(app.handle()), Some(tmp.path().to_path_buf()));
     }
 
     #[test]
