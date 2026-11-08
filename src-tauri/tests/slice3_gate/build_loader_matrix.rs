@@ -147,9 +147,8 @@ fn build_loader_matrix_linked_game_or_loader_refuses_play() {
 }
 
 /// The remembered D2R folder later replaced by a junction to the same files.
-/// Writes refuse it (`refuse_linked_root`), but readiness and Play do not.
+/// Readiness and Play refuse it like writes do (`refuse_linked_root`).
 #[test]
-#[ignore = "gate defect (see the #61 gate PR, Gaps): Play launches through a junctioned remembered D2R folder"]
 fn build_loader_matrix_junctioned_remembered_folder_refuses_play() {
     let rig = Rig::new();
     rig.adopted();

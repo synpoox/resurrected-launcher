@@ -228,7 +228,10 @@ impl Launcher {
             let recommended = self.releases.recommended(&mut state, product).ok();
             (remembered, record, installed, recommended)
         };
-        let location = remembered.and_then(|p| detect::validate(&p, &*self.game).ok());
+        // A remembered folder later replaced by a link is refused like a picked one (#95).
+        let location = remembered
+            .and_then(|p| detect::validate(&p, &*self.game).ok())
+            .filter(|l| refuse_linked_root(&l.path).is_ok());
         let manifest = installed
             .as_ref()
             .or(recommended.as_ref())
