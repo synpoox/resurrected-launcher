@@ -18,11 +18,19 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "resources": ["resources/7zip/*"],
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
     "windows": {
       "nsis": { "installMode": "currentUser" },
       "webviewInstallMode": { "type": "offlineInstaller" }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENENDdDN0NBNEY0MDc0RDMKUldUVGRFQlB5c2RIemN1WTd1UFJ5ZFhTQ1RSZ3ZJRWJ6R24wOXpEZWo3emtIcnR4WGxiOGQxYmUK",
+      "endpoints": ["https://github.com/synpoox/resurrected-launcher/releases/latest/download/latest.json"],
+      "windows": { "installMode": "passive" }
     }
   }
 }
