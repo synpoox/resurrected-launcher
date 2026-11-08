@@ -38,7 +38,8 @@ export function useFocusTrap(ref: RefObject<HTMLElement | null>): void {
   }, [ref]);
 }
 
-export type Orientation = "vertical" | "horizontal";
+/** `both` takes ↑ ← as previous and ↓ → as next, for a vertical list people also expect ← → on. */
+export type Orientation = "vertical" | "horizontal" | "both";
 
 /**
  * Keydown handler that moves focus between `selector` matches inside the current target with the
@@ -47,9 +48,9 @@ export type Orientation = "vertical" | "horizontal";
  */
 export function arrowKeys(selector: string, orientation: Orientation, activate = false) {
   return (e: KeyboardEvent<HTMLElement>) => {
-    const prev = orientation === "vertical" ? "ArrowUp" : "ArrowLeft";
-    const next = orientation === "vertical" ? "ArrowDown" : "ArrowRight";
-    if (![prev, next, "Home", "End"].includes(e.key)) return;
+    const prev = orientation === "vertical" ? ["ArrowUp"] : orientation === "horizontal" ? ["ArrowLeft"] : ["ArrowUp", "ArrowLeft"];
+    const next = orientation === "vertical" ? ["ArrowDown"] : orientation === "horizontal" ? ["ArrowRight"] : ["ArrowDown", "ArrowRight"];
+    if (![...prev, ...next, "Home", "End"].includes(e.key)) return;
     const items = [...e.currentTarget.querySelectorAll<HTMLElement>(selector)].filter(
       (el) => !(el as HTMLButtonElement).disabled,
     );
@@ -58,7 +59,7 @@ export function arrowKeys(selector: string, orientation: Orientation, activate =
     let n: number;
     if (e.key === "Home") n = 0;
     else if (e.key === "End") n = items.length - 1;
-    else if (e.key === next) n = (i + 1) % items.length;
+    else if (next.includes(e.key)) n = (i + 1) % items.length;
     else n = (i - 1 + items.length) % items.length;
     e.preventDefault();
     e.stopPropagation();

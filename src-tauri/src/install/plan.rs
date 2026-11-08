@@ -82,6 +82,11 @@ pub struct Inspection {
     /// Clean install: files that stay only in the labelled backup (unknown files,
     /// and edited defaults that fail a mandatory setting).
     pub backup_only: Vec<RelativePath>,
+    /// Release files already in the live root that stay as they are: the
+    /// release's own bytes, or an edited shipped default kept in place. With no
+    /// installed record, a non-zero count is an existing installation the
+    /// launcher did not make (#126). Always 0 for uninstall.
+    pub kept: usize,
     /// Shown, and acknowledged, before installing a save-breaking release.
     pub save_breaking_notice: Option<String>,
     /// `/`-separated path -> what `LiveVerified` requires.
@@ -184,6 +189,7 @@ pub fn inspect(
         conflicts: Vec::new(),
         preserved: Vec::new(),
         backup_only: Vec::new(),
+        kept: 0,
         save_breaking_notice: new.saves.incompatibility_notice.clone(),
         expect: Vec::new(),
         expect_backup: Vec::new(),
@@ -238,6 +244,9 @@ pub fn inspect(
                 },
                 _ => fate(disk, f, new.ownership_of(&f.path), base),
             };
+            if matches!(fate, Fate::Keep | Fate::KeepEdited) {
+                insp.kept += 1;
+            }
             match fate {
                 Fate::Keep => expect.push((f.path.to_string(), want)),
                 Fate::Add => {
