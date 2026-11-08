@@ -364,10 +364,6 @@ export async function minimizeWindow(): Promise<void> {
   await invoke("minimize_window");
 }
 
-export async function toggleMaximizeWindow(): Promise<void> {
-  await invoke("toggle_maximize_window");
-}
-
 /** A normal close, which hides the launcher to the tray. */
 export async function closeWindow(): Promise<void> {
   await invoke("close_window");
@@ -477,4 +473,9 @@ export async function openNewsLink(productId: string, index: number): Promise<vo
 /** "About <product>": the bundled page. Rejects for a product without one. */
 export async function openProductPage(productId: string): Promise<void> {
   await invoke("open_product_page", { product_id: productId });
+}
+
+/** The project Discord, bundled in the launcher. Takes nothing. */
+export async function openCommunityPage(): Promise<void> {
+  await invoke("open_community_page");
 }

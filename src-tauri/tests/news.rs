@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use resurrected_launcher_lib::app::{
-    self, product_pages, CachedReleases, Desktop, Launcher, NewsItem, NewsState,
+    self, product_pages, CachedReleases, Desktop, Launcher, NewsItem, NewsState, COMMUNITY_URL,
 };
 use resurrected_launcher_lib::catalog::news::MAX_NEWS_SIZE;
 use resurrected_launcher_lib::contract::{LauncherError, Versioned};
@@ -360,4 +360,13 @@ fn product_pages_are_bundled_and_only_for_listed_products() {
     // Never fetched: the page needs no network.
     assert!(rig.server.hits().is_empty());
     assert_eq!(rig.opened().len(), 1);
+}
+
+#[test]
+fn community_page_is_the_bundled_discord() {
+    let rig = Rig::new();
+    rig.invoke("open_community_page", json!({})).unwrap();
+    assert_eq!(rig.opened(), [COMMUNITY_URL]);
+    assert_eq!(COMMUNITY_URL, "https://discord.gg/4mKqKXMRy9");
+    assert!(rig.server.hits().is_empty());
 }

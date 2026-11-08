@@ -18,7 +18,7 @@ The product page's news feed (bottom right, `docs/specs/launcher-ui.md`) reads o
       "title": "TCP/IP co-op testing weekend",
       "summary": "Two days of open direct co-op games on the alpha.",
       "published": "2026-11-01",
-      "url": "https://discord.gg/mGpHT26Xak"
+      "url": "https://discord.gg/4mKqKXMRy9"
     }
   ]
 }
@@ -43,4 +43,4 @@ The feed shows a product's first three items, newest first. A date-only `publish
 
 ## "About <product>"
 
-`open_product_page(product_id)` opens a page from `src/product-pages.json`, which Rust bundles at build time (`include_str!`) and the frontend imports, so there is one table. It is never fetched. A product shows the button only if it has an entry there. Today only `pd2r` has one (its public GitHub repo). The button appears only on products without a release, so it is not visible yet. Forever and 09 get a page when their repositories are public.
+`open_product_page(product_id)` opens a page from `src/product-pages.json`, which Rust bundles at build time (`include_str!`) and the frontend imports, so there is one table. It is never fetched. Today only `pd2r` has one (its public GitHub repo). The button appears on every product without a release that has an entry. A product without an entry shows **Follow for updates on Discord ↗** instead, which calls `open_community_page()` directly: it takes nothing and opens the project Discord bundled in Rust (`COMMUNITY_URL`, `https://discord.gg/4mKqKXMRy9`, checked by the link rule) (#135). Forever and 09 get a page when their repositories are public.
