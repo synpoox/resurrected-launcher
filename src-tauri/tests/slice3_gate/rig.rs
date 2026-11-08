@@ -267,6 +267,9 @@ pub struct Rig {
     pub states: Receiver<Value>,
     pub host: GateHost,
     pub desktop: GateDesktop,
+    /// How long [`Self::outcome`] waits: longer online, where a real archive
+    /// downloads and a real installation is hashed.
+    pub outcome_wait: Duration,
 }
 
 impl Rig {
@@ -304,6 +307,37 @@ impl Rig {
         remember: bool,
     ) -> Self {
         let server = FixtureServer::start();
+        let downloader = Downloader::with_tls(server.tls_config());
+        Self::attach_full(d2r, state_dir, host, game, remember, server, downloader)
+    }
+
+    /// Phase B on a real copy: [`Self::attach_with`] (location remembered), but
+    /// downloading over the internet with the production [`Downloader`], so a
+    /// published release's real archive URL is fetched and verified.
+    pub fn attach_online(d2r: &Path, state_dir: &Path, game: GateHost) -> Self {
+        let server = FixtureServer::start();
+        let mut rig = Self::attach_full(
+            d2r,
+            state_dir,
+            Box::new(SystemHost),
+            game,
+            true,
+            server,
+            Downloader::new(),
+        );
+        rig.outcome_wait = Duration::from_secs(30 * 60);
+        rig
+    }
+
+    fn attach_full(
+        d2r: &Path,
+        state_dir: &Path,
+        host: Box<dyn Host>,
+        game: GateHost,
+        remember: bool,
+        server: FixtureServer,
+        downloader: Downloader,
+    ) -> Self {
         let releases = GateReleases::default();
         let desktop = GateDesktop::default();
         let mut state = StateStore::open(state_dir);
@@ -318,7 +352,7 @@ impl Rig {
         let mut launcher = Launcher::new(
             state,
             Box::new(releases.clone()),
-            Downloader::with_tls(server.tls_config()),
+            downloader,
             support::seven_zip(),
             host,
             Box::new(game.clone()),
@@ -337,6 +371,7 @@ impl Rig {
             states,
             host: game,
             desktop,
+            outcome_wait: Duration::from_secs(120),
         }
     }
 
@@ -433,10 +468,7 @@ impl Rig {
     }
 
     pub fn outcome(&self) -> Value {
-        let v = self
-            .outcomes
-            .recv_timeout(Duration::from_secs(120))
-            .unwrap();
+        let v = self.outcomes.recv_timeout(self.outcome_wait).unwrap();
         assert_eq!(v["contract_version"], CONTRACT_VERSION);
         v["data"].clone()
     }
