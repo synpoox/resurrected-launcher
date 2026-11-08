@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ProgressEvent } from "../api/types";
 import { formatBytes, formatTimeLeft, relativeDate, releaseLabel, startedAgo } from "./format";
 import { badgeOf, hasNotice } from "./journey";
-import { MAX_NOTES_CHARS, parseInline, parseNotes } from "./notesMarkdown";
+import { heading, MAX_NOTES_CHARS, parseInline, parseNotes } from "./notesMarkdown";
 import { progressStats, type Sample } from "./stats";
 
 const MB = 1024 ** 2;
@@ -179,6 +179,36 @@ describe("parseNotes on huge or malformed notes", () => {
     expect(inline.map((n) => n.text).join("").length).toBeGreaterThan(0);
     expect(ms).toBeLessThan(1000);
     expect(timed(() => parseNotes(src))[1]).toBeLessThan(1000);
+  });
+
+  // Re-review of #132: a backtracking heading regex took 10–13 s on 99k inner spaces.
+  it.each([
+    ["a heading with 99k inner spaces then text (12.7 s with the old regex)", "# a" + " ".repeat(99_000) + "b"],
+    ["a heading with 99k leading spaces then text", "#" + " ".repeat(99_000) + "x"],
+    ["a heading with 99k spaces between words and a closing #", "# a" + " ".repeat(99_000) + "b #"],
+    ["a heading of 99k spaces and #", "#" + " #".repeat(49_000)],
+    ["a list item with 99k spaces", "-" + " ".repeat(99_000) + "x"],
+    ["a numbered item with 99k spaces", "1." + " ".repeat(99_000) + "x"],
+    ["a rule with 99k spaces", "-" + " ".repeat(99_000) + "-- x"],
+    ["a nested item after 99k spaces", "- a\n" + " ".repeat(99_000) + "- b"],
+    ["a fence after 99k spaces", " ".repeat(99_000) + "```"],
+    ["99k escapes", "\\".repeat(99_000)],
+    ["a line of 99k mixed markers", "*_`[!(#-".repeat(12_000)],
+  ])("%s parses in under a second", (_, notes) => {
+    expect(notes.length).toBeLessThanOrEqual(MAX_NOTES_CHARS);
+    const [, ms] = timed(() => parseNotes(notes));
+    expect(ms).toBeLessThan(1000);
+  });
+
+  it("headings: level, text and an optional closing run of #", () => {
+    expect(heading("#" + " ".repeat(99_000) + "x")).toEqual({ level: 1, text: "x" });
+    expect(heading("  ### Items ##  ")).toEqual({ level: 3, text: "Items" });
+    expect(heading("## C# notes#")).toEqual({ level: 2, text: "C# notes#" });
+    expect(heading("# #")).toEqual({ level: 1, text: "" });
+    expect(heading("#")).toEqual({ level: 1, text: "" });
+    expect(heading("#5 items")).toBeNull();
+    expect(heading("####### seven")).toBeNull();
+    expect(heading("    # indented code")).toBeNull();
   });
 
   it("cuts notes over the limit at a line break and says so", () => {

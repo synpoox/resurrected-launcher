@@ -278,6 +278,16 @@ describe("product page", () => {
     expect(screen.getByRole("region", { name: "Items" })).toBeTruthy();
   });
 
+  it("the cut notice shows even when the cut notes are one summary paragraph with no sections", async () => {
+    const { user } = mount("ready", (a) => {
+      a.scene.notes = [{ ...a.scene.notes[0], notes: "word ".repeat(30_000) }];
+    });
+    await user.click(within(await loaded()).getByRole("tab", { name: "Patch Notes" }));
+    expect(await screen.findByText("These notes are too long to show in full.")).toBeTruthy();
+    expect(document.querySelector(".notes-summary")).not.toBeNull();
+    expect(document.querySelector(".notes-section")).toBeNull();
+  });
+
   it("the release title names the status once when the display version already carries it", async () => {
     const { user } = mount("ready", (a) => {
       a.scene.notes = [{ ...a.scene.notes[0], display_version: "0.2.0-alpha", status: "alpha" }];

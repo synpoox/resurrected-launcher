@@ -102,9 +102,10 @@ export function PatchNotes({ product, releases, onRetry }: PatchNotesProps) {
               </p>
             </header>
             {parts ? (
-              parts.sections.length > 0 && (
+              (parts.sections.length > 0 || parts.truncated) && (
                 <div className="notes-body">
                   <NotesSections id={`rel-${r.release_id}`} sections={parts.sections} />
+                  {/* Also when the cut left only a summary (one huge paragraph), not just after sections. */}
                   {parts.truncated && <p className="notes-truncated">These notes are too long to show in full.</p>}
                 </div>
               )
