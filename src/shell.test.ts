@@ -76,6 +76,12 @@ describe("display names", () => {
     expect(rust).not.toBeNull();
     expect(read(BRANDING)).toContain(`name: "${rust![1]}"`);
   });
+
+  it("the index.html document title matches the branding constant", () => {
+    const title = read("index.html").match(/<title>([^<]+)<\/title>/);
+    expect(title).not.toBeNull();
+    expect(read(BRANDING)).toContain(`name: "${title![1]}"`);
+  });
 });
 
 describe("fixture boundaries", () => {

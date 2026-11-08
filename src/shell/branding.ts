@@ -1,5 +1,5 @@
-// The one swappable place for the umbrella branding. The label is provisional (GLOSSARY.md):
-// change it here only. It must match `UMBRELLA_DISPLAY_NAME` in Rust (src/shell.test.ts checks).
+// The frontend's one place for the umbrella branding. The label is provisional (GLOSSARY.md):
+// change it here, in Rust's `UMBRELLA_DISPLAY_NAME` and in index.html's <title> (src/shell.test.ts checks both).
 export const BRANDING = {
   glyph: "/",
   name: "Project Resurrected",

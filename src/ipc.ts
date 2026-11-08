@@ -392,6 +392,57 @@ export function onTrayRequest(handler: (r: TrayRequest) => void): Promise<Unlist
   return listen<Versioned<TrayRequest>>("tray-request", (e) => handler(current(e.payload)));
 }
 
+// ---- Launcher self-update (#88). Mirror `app::selfupdate`. ----
+
+/** Mirrors `app::SelfUpdateStatus`; the same union as `SelfUpdateStatus` in `selfupdate/api.ts`. */
+export type LauncherUpdateStatus =
+  | { phase: "up_to_date"; current: string }
+  | { phase: "available"; current: string; next: string }
+  | { phase: "downloading"; current: string; next: string; percent: number }
+  | { phase: "ready"; current: string; next: string }
+  | { phase: "restarting"; current: string; next: string }
+  | { phase: "updated"; current: string }
+  | { phase: "download_failed"; current: string; next: string }
+  | { phase: "signature_rejected"; current: string; next: string };
+
+export async function getLauncherUpdateStatus(): Promise<LauncherUpdateStatus> {
+  return current(await invoke<Versioned<LauncherUpdateStatus>>("get_launcher_update_status"));
+}
+
+/** Checks the launcher's configured update endpoint; rejects with `download_failed` when it can't. */
+export async function checkForLauncherUpdate(): Promise<void> {
+  await invoke("check_for_launcher_update");
+}
+
+/** Starts downloading the update the last check found; progress arrives as phase events. */
+export async function downloadLauncherUpdate(): Promise<void> {
+  await invoke("download_launcher_update");
+}
+
+/** Installs the ready update and restarts. Refused with `game_running` or
+ *  `operation_in_progress` while held, and `verification_failed` if the kept installer changed. */
+export async function restartToUpdateLauncher(): Promise<void> {
+  await invoke("restart_to_update_launcher");
+}
+
+/** Opens the launcher release page; the address is built natively. */
+export async function openLauncherWhatsNew(): Promise<void> {
+  await invoke("open_launcher_whats_new");
+}
+
+export async function getLauncherAutoDownload(): Promise<boolean> {
+  return current(await invoke<Versioned<boolean>>("get_launcher_auto_download"));
+}
+
+export async function setLauncherAutoDownload(enabled: boolean): Promise<void> {
+  await invoke("set_launcher_auto_download", { enabled });
+}
+
+/** Event "self-update-phase", Versioned like the others. */
+export function onLauncherUpdatePhase(handler: (status: LauncherUpdateStatus) => void): Promise<UnlistenFn> {
+  return listen<Versioned<LauncherUpdateStatus>>("self-update-phase", (e) => handler(current(e.payload)));
+}
+
 // ---- News feed and outbound links (#80). Mirror `app::news`. ----
 
 /** Mirrors `app::NewsItem`: text only; the link stays native. */

@@ -1,6 +1,8 @@
-// The self-update notice ships behind a build flag until slice 5 brings the real updater (ADR 0003).
-// Off, nothing self-update-related renders or runs.
-import { createSelfUpdateFixture, DEFAULT_SELF_UPDATE_FIXTURE, SELF_UPDATE_FIXTURES, selfUpdateFixtureByKey, type SelfUpdateFixtureApi } from "./api";
+// The self-update notice ships behind a build flag until the slice 5 gate (#89) passes (ADR 0003).
+// Off, nothing self-update-related renders or runs, and the launcher never checks for updates.
+// Release builds leave it off.
+import { createSelfUpdateFixture, DEFAULT_SELF_UPDATE_FIXTURE, SELF_UPDATE_FIXTURES, selfUpdateFixtureByKey, type SelfUpdateApi } from "./api";
+import { createLiveSelfUpdate } from "./live";
 
 declare global {
   interface ImportMetaEnv {
@@ -15,13 +17,18 @@ export function selfUpdateEnabled(): boolean {
 }
 
 export type SelfUpdateSelection =
-  | { ok: true; api: SelfUpdateFixtureApi; key: string }
+  /** `key` is the fixture's, or "live" for the signed Tauri updater. */
+  | { ok: true; api: SelfUpdateApi & { dispose(): void }; key: string }
   | { ok: false; error: string }
   | null;
 
-/** Null when the flag is off. `asked` is the dev `?selfupdate=<key>` value (null outside dev). */
-export function selectSelfUpdate(asked: string | null, enabled: boolean): SelfUpdateSelection {
+/**
+ * Null when the flag is off. `asked` is the dev `?selfupdate=<key>` value (null outside dev), which
+ * picks a fixture even under Tauri; otherwise `live` (running under Tauri) uses the real updater.
+ */
+export function selectSelfUpdate(asked: string | null, enabled: boolean, live = false): SelfUpdateSelection {
   if (!enabled) return null;
+  if (asked === null && live) return { ok: true, api: createLiveSelfUpdate(), key: "live" };
   const key = asked ?? DEFAULT_SELF_UPDATE_FIXTURE;
   if (!selfUpdateFixtureByKey(key)) {
     const known = SELF_UPDATE_FIXTURES.map((f) => f.key).join(", ");

@@ -32,7 +32,7 @@ export function App({ search, dev, live = isTauri(), selfUpdate = false }: AppPr
   useEffect(() => () => void (selection.ok && selection.api.dispose()), [selection]);
   // Keyed on its own parameter, so ← → through product fixtures keeps the self-update phase.
   const selfUpdateKey = dev ? new URLSearchParams(query).get("selfupdate") : null;
-  const update = useMemo(() => selectSelfUpdate(selfUpdateKey, selfUpdate), [selfUpdateKey, selfUpdate]);
+  const update = useMemo(() => selectSelfUpdate(selfUpdateKey, selfUpdate, live), [selfUpdateKey, selfUpdate, live]);
   useEffect(() => () => void (update?.ok && update.api.dispose()), [update]);
 
   useEffect(() => {
