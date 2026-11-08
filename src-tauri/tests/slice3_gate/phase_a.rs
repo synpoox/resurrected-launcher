@@ -1,10 +1,16 @@
-//! Clause 6: phase A, read-only, with [`WriteGuard`] unchanged.
+//! Clause 6: phase A, read-only.
 //!
 //! [`phase_a`] is the owner checklist's phase A as commands: detect, browse to a
-//! folder without `D2R.exe` and then to the copy, start up, assess readiness,
-//! inspect adoption, and try every write operation. Each write must be refused
-//! by the guard (`product_root_not_disposable`) and the D2R folder must not
-//! change at all. It never calls Play, and its game host cannot start anything.
+//! folder without `D2R.exe` and then to the copy, start up, assess readiness and
+//! inspect adoption. The D2R folder must not change at all. It never calls Play
+//! or starts an operation, and its game host cannot start anything.
+//!
+//! Before phase B the [`WriteGuard`] refused every write to a real copy, and
+//! phase A also tried every write operation and saw each one refused with
+//! `product_root_not_disposable`. That run on the owner's copy is recorded in
+//! `docs/gates/slice3-gate-report.md` (at the commit before the guard change).
+//! Since phase B the guard accepts a real copy's `mods\<folder>`, so those
+//! attempts would write; they are gone, and [`super::phase_b`] covers writes.
 //!
 //! It runs on a fixture copy of the real layout without the sentinel in every
 //! test run, and against a real D2R copy only when `SLICE3_GATE_D2R` names one
@@ -30,13 +36,14 @@ use sha2::{Digest, Sha256};
 use crate::rig::*;
 use crate::support;
 
-/// SHA-256 of `src/contract/guard.rs` (LF line endings) as merged for slice 2.
-/// Phase B (#61) is the only change allowed to move it, with the owner's
-/// written approval, in the same PR that changes the guard.
-const GUARD_SHA256: &str = "79f4f6be146e5347468649316e247376eff22ede505772c9826ff5b49cf57352";
+/// SHA-256 of `src/contract/guard.rs` (LF line endings) as changed by phase B
+/// of the slice 3 gate (#61), with the owner's written approval on #61. Any
+/// later change to which folders the launcher may write must move it, in a PR
+/// that says why.
+const GUARD_SHA256: &str = "120af0e38ba6432d16fb2f63b9f7bb23d515c545b71c8fd7b2e49e692479679d";
 
 #[test]
-fn write_guard_is_unchanged_before_phase_b() {
+fn write_guard_is_the_phase_b_guard() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/contract/guard.rs");
     let text = fs::read_to_string(path).unwrap().replace("\r\n", "\n");
     let hash: String = Sha256::digest(text.as_bytes())
@@ -45,18 +52,19 @@ fn write_guard_is_unchanged_before_phase_b() {
         .collect();
     assert_eq!(
         hash, GUARD_SHA256,
-        "WriteGuard changed. Real D2R writes need the owner's written approval of phase B (#61)."
+        "WriteGuard changed. Changing which folders the launcher writes needs the owner's approval (#61)."
     );
-    // And it still demands the sentinel.
+    // Real copies only in `<D2R>\mods\<folder>`; the sentinel for tests.
+    assert!(text.contains("fn is_mod_folder"));
     assert!(text.contains("fn has_sentinel"));
     assert_eq!(DISPOSABLE_SENTINEL, ".resurrected-disposable");
 }
 
 /// Metadata of every entry under `dir`: (is_dir, size, modified, read-only).
 /// Content hashes of the real copy are taken outside the test, before and after.
-type Meta = BTreeMap<String, (bool, u64, SystemTime, bool)>;
+pub(crate) type Meta = BTreeMap<String, (bool, u64, SystemTime, bool)>;
 
-fn meta_tree(dir: &Path) -> Meta {
+pub(crate) fn meta_tree(dir: &Path) -> Meta {
     fn go(dir: &Path, prefix: &str, out: &mut Meta) {
         for e in fs::read_dir(dir).unwrap() {
             let e = e.unwrap();
@@ -92,7 +100,6 @@ pub struct Findings {
     pub location: GameLocation,
     pub not_installed: Readiness,
     pub adoption: String,
-    pub refusals: Vec<(String, String)>,
     pub with_record: Readiness,
     pub with_update: Readiness,
     pub entries: usize,
@@ -151,20 +158,14 @@ fn phase_a(d2r: &Path, release: Release, game: GateHost, watch: &[PathBuf]) -> F
         adopt.conflicts
     );
 
-    // Checklist 6: every write operation is refused by the guard.
-    let mut refusals = Vec::new();
-    let mut attempt = |kind: &str, extra: serde_json::Value| {
-        let insp = rig.inspect(kind, extra.clone()).unwrap();
-        rig.start(kind, extra, &insp.token).unwrap();
-        let outcome = rig.outcome();
-        assert_eq!(outcome["status"], "failed", "{kind}: {outcome}");
-        let code = outcome["error"]["code"].as_str().unwrap().to_owned();
-        assert_eq!(code, "product_root_not_disposable", "{kind}: {outcome}");
-        refusals.push((kind.to_owned(), code));
-    };
-    attempt("adopt", json!({}));
-    attempt("install", json!({}));
-    attempt("clean_install", json!({ "consent_clean_install": true }));
+    // Checklist 6 (writes refused) was the pre-phase-B guard; see the module docs.
+    // Inspecting the other operations still writes nothing.
+    for (kind, extra) in [
+        ("install", json!({})),
+        ("clean_install", json!({ "consent_clean_install": true })),
+    ] {
+        rig.inspect(kind, extra).unwrap();
+    }
 
     // As if adopted: State (a temp dir) records the release; the copy is untouched.
     rig.launcher()
@@ -185,12 +186,12 @@ fn phase_a(d2r: &Path, release: Release, game: GateHost, watch: &[PathBuf]) -> F
         .invoke("recover_product", json!({ "product_id": PRODUCT }))
         .unwrap();
     assert_eq!(recovered["data"], "nothing");
-    attempt("repair", json!({}));
-    attempt("uninstall", json!({}));
+    rig.inspect("repair", json!({})).unwrap();
+    rig.inspect("uninstall", json!({})).unwrap();
     let mut next = release.clone();
     next.manifest.release_id = format!("{}-gate-update", release.manifest.release_id);
     rig.releases.0.lock().unwrap().push(next);
-    attempt("update", json!({}));
+    rig.inspect("update", json!({})).unwrap();
     let with_update = rig.state().readiness;
 
     assert!(rig.host.spawns().is_empty(), "phase A started something");
@@ -210,7 +211,6 @@ fn phase_a(d2r: &Path, release: Release, game: GateHost, watch: &[PathBuf]) -> F
         location,
         not_installed,
         adoption,
-        refusals,
         with_record,
         with_update,
         entries: before.iter().map(BTreeMap::len).sum(),
@@ -220,7 +220,7 @@ fn phase_a(d2r: &Path, release: Release, game: GateHost, watch: &[PathBuf]) -> F
 /// Phase A rehearsed on a copy of the real layout that has no sentinel, like a
 /// real installation, with every PD2R file in place and the player's edits.
 #[test]
-fn phase_a_refuses_every_write_to_a_real_layout_copy_and_changes_nothing() {
+fn phase_a_reads_a_real_layout_copy_and_changes_nothing() {
     let dirs = Dirs::new();
     let release = real_layout(REAL_1);
     let root = dirs.game.installed(&release);
@@ -252,7 +252,6 @@ fn phase_a_refuses_every_write_to_a_real_layout_copy_and_changes_nothing() {
     assert_eq!(found.not_installed, Readiness::NotInstalled);
     assert_eq!(found.with_record, Readiness::Ready);
     assert_eq!(found.with_update, Readiness::UpdateAvailable);
-    assert_eq!(found.refusals.len(), 6);
 }
 
 /// Phase A on a real D2R copy: `SLICE3_GATE_D2R=<D2R folder>`, optionally
