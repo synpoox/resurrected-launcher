@@ -380,6 +380,8 @@ export async function quitLauncher(): Promise<void> {
 export interface TrayRequest {
   action: "save_breaking" | "show_what_happened" | "quit_while_busy";
   product_id: string;
+  /** Why a tray Play was refused (show_what_happened); null otherwise. */
+  error: LauncherError | null;
 }
 
 /** Event "tray-request", Versioned like the others. */

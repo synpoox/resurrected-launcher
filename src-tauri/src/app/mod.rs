@@ -42,8 +42,8 @@ pub use game::{
     CatalogState, Desktop, LocationView, ProductState, StartupFailed, SystemDesktop, STATE_EVENT,
 };
 pub use operations::{
-    CachedReleases, ConflictView, InspectionView, Launcher, RecoveryView, Release, ReleaseSummary,
-    Releases, OUTCOME_EVENT, PROGRESS_EVENT,
+    CachedReleases, ConflictView, InspectionView, Launcher, RecoveryView, Refusal, Release,
+    ReleaseSummary, Releases, OUTCOME_EVENT, PROGRESS_EVENT,
 };
 pub use settings::{Folder, ReleaseNotes};
 pub use window::TRAY_EVENT;

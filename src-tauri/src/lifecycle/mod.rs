@@ -18,14 +18,16 @@ use tauri::{
 };
 
 use crate::app::{CachedReleases, Launcher, SystemDesktop, TRAY_EVENT};
-use crate::contract::{ProductId, TrayAction, TrayRequest, Versioned, UMBRELLA_DISPLAY_NAME};
+use crate::contract::{
+    LauncherError, ProductId, TrayAction, TrayRequest, Versioned, UMBRELLA_DISPLAY_NAME,
+};
 use crate::game::SystemGameHost;
 use crate::install::download::Downloader;
 use crate::install::extract::SevenZip;
 use crate::install::preflight::SystemHost;
 use crate::state::StateStore;
 
-pub use tray::{quit, Quit};
+pub use tray::{play, quit, Quit};
 
 /// The flag the Start with Windows Run value passes (#74): start in the tray only.
 pub const AUTOSTART_FLAG: &str = "--autostart";
@@ -106,11 +108,17 @@ pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
 }
 
 /// Shows the window, then asks the frontend for `action` on `product_id`.
-fn request<R: Runtime>(app: &AppHandle<R>, action: TrayAction, product_id: &ProductId) {
+fn request<R: Runtime>(
+    app: &AppHandle<R>,
+    action: TrayAction,
+    product_id: &ProductId,
+    error: Option<LauncherError>,
+) {
     show_main(app);
     let request = TrayRequest {
         action,
         product_id: product_id.clone(),
+        error,
     };
     let _ = app.emit(TRAY_EVENT, Versioned::new(request));
 }

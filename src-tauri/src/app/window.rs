@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Runtime, State, WebviewWindow};
 
-use super::operations::{invalid, Launcher};
+use super::operations::{invalid, Launcher, Refusal};
 use crate::contract::{ErrorCode, LauncherError};
 
 /// Event carrying `Versioned<TrayRequest>`; emitted by the tray (#75).
@@ -74,7 +74,7 @@ impl Launcher {
     /// sticky quitting flag. `AppHandle::exit` only requests the exit, so the flag
     /// keeps every operation, recovery, Play and location change from starting
     /// until the process ends.
-    pub fn begin_quit(&self) -> Result<(), LauncherError> {
+    pub fn begin_quit(&self) -> Result<(), Refusal> {
         let mut running = self.running();
         running.refuse_any()?;
         running.quitting = true;

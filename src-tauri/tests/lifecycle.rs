@@ -394,12 +394,32 @@ fn quit_while_an_install_downloads_asks_and_does_not_exit() {
     assert_eq!(asked["contract_version"], CONTRACT_VERSION);
     assert_eq!(
         asked["data"],
-        json!({ "action": "quit_while_busy", "product_id": "pd2r" })
+        json!({ "action": "quit_while_busy", "product_id": "pd2r", "error": null })
     );
     // The install carries on; the temp dirs outlive it.
     let outcome = outcomes.recv_timeout(Duration::from_secs(60)).unwrap();
     assert_eq!(outcome["data"]["status"], "succeeded", "{outcome}");
     assert_eq!(lifecycle::quit(app.handle()), Quit::Exit);
+}
+
+/// A refused tray Play opens the window with `show_what_happened` and the
+/// refusal's error code; no state event claims a game started.
+#[test]
+fn a_refused_tray_play_sends_its_error_to_the_window() {
+    let (state, d2r) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let releases = Box::new(CachedReleases);
+    let (app, _webview) = mount(state.path(), d2r.path(), releases, Downloader::new());
+    let (requests, states) = (
+        events(&app, app::TRAY_EVENT),
+        events(&app, app::STATE_EVENT),
+    );
+    // No D2R.exe in the selected root: Play is refused before anything spawns.
+    lifecycle::play(app.handle(), ProductId("pd2r".into()));
+    let asked = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(asked["data"]["action"], "show_what_happened");
+    assert_eq!(asked["data"]["product_id"], "pd2r");
+    assert_eq!(asked["data"]["error"]["code"], "d2r_not_found", "{asked}");
+    assert!(states.try_recv().is_err());
 }
 
 /// The notification and single-instance plugins are registered Rust-side, but no

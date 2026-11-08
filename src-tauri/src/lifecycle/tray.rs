@@ -17,7 +17,9 @@ use tauri::{AppHandle, Emitter, Listener, Manager, Runtime};
 
 use super::icon::{self, Overlay};
 use super::{request, show_main};
-use crate::app::{self, Launcher, ProductState, OUTCOME_EVENT, PROGRESS_EVENT, STATE_EVENT};
+use crate::app::{
+    self, Launcher, ProductState, Refusal, OUTCOME_EVENT, PROGRESS_EVENT, STATE_EVENT,
+};
 use crate::catalog::{Feed, FEED_IDENTITY};
 use crate::contract::{
     CancelRequest, OperationKind, OperationOutcome, OperationRequest, Phase, ProductId,
@@ -58,19 +60,30 @@ pub enum Quit {
 /// flag so nothing starts before the exit. On `Busy` it shows the window and emits
 /// `quit_while_busy`; on `Exit` the caller exits (the game keeps running).
 pub fn quit<R: Runtime>(app: &AppHandle<R>) -> Quit {
-    let launcher = app.state::<Arc<Launcher>>();
-    // Retried: the operation may end between the refusal and naming its product.
-    for _ in 0..3 {
-        if launcher.begin_quit().is_ok() {
-            return Quit::Exit;
+    match app.state::<Arc<Launcher>>().begin_quit() {
+        Err(Refusal {
+            product: Some(product),
+            ..
+        }) => {
+            request(app, TrayAction::QuitWhileBusy, &product, None);
+            Quit::Busy(product)
         }
-        if let Some(product) = launcher.busy_product() {
-            request(app, TrayAction::QuitWhileBusy, &product);
-            return Quit::Busy(product);
-        }
+        // Refused with nothing running: already quitting.
+        Ok(()) | Err(_) => Quit::Exit,
     }
-    // Refused with nothing running: already quitting.
-    Quit::Exit
+}
+
+/// Tray Play, through `play_product`. Success emits `product-state-changed`, the
+/// only event on which the window reads state again (otherwise emitted when the
+/// game exits); the tray refreshes on it too. A refused Play opens the window with
+/// `show_what_happened` and the refusal, as the window would show it.
+pub fn play<R: Runtime>(app: &AppHandle<R>, product: ProductId) {
+    match block_on(app::play_product(app.clone(), app.state(), product.clone())) {
+        Ok(_) => {
+            let _ = app.emit(STATE_EVENT, Versioned::new(()));
+        }
+        Err(e) => request(app, TrayAction::ShowWhatHappened, &product, Some(e)),
+    }
 }
 
 /// shortcut: the upper-cased product id ("pd2r" → "PD2R"); use a catalog display
@@ -365,17 +378,7 @@ impl Model {
         };
         let product = ProductId(product.to_owned());
         match act {
-            "play" => {
-                match block_on(app::play_product(app.clone(), app.state(), product.clone())) {
-                    // The window reads state again only on this event (otherwise
-                    // emitted when the game exits); the tray refreshes on it too.
-                    Ok(_) => {
-                        let _ = app.emit(STATE_EVENT, Versioned::new(()));
-                    }
-                    // As in the window, a refused Play needs an explanation.
-                    Err(_) => request(app, TrayAction::ShowWhatHappened, &product),
-                }
-            }
+            "play" => play(app, product),
             "update" => self.start(app, product, OperationKind::Update),
             "cancel" => {
                 let cancel = Versioned::new(CancelRequest {
@@ -395,7 +398,7 @@ impl Model {
                     self.refresh(app);
                 }
             },
-            "show" => request(app, TrayAction::ShowWhatHappened, &product),
+            "show" => request(app, TrayAction::ShowWhatHappened, &product, None),
             _ => {}
         }
     }
@@ -410,7 +413,7 @@ impl Model {
             .and_then(|s| s.recommended.as_ref())
             .is_some_and(|r| r.save_breaking);
         if save_breaking && matches!(kind, OperationKind::Install | OperationKind::Update) {
-            return request(app, TrayAction::SaveBreaking, &product);
+            return request(app, TrayAction::SaveBreaking, &product, None);
         }
         let req = OperationRequest {
             product_id: product.clone(),

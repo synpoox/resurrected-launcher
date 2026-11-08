@@ -209,18 +209,39 @@ impl Running {
     }
 
     /// [`ErrorCode::OperationInProgress`] while any operation or recovery runs,
-    /// or the launcher is quitting.
-    pub(super) fn refuse_any(&self) -> Result<(), LauncherError> {
+    /// or the launcher is quitting. The refusal names the busy product.
+    pub(super) fn refuse_any(&self) -> Result<(), Refusal> {
         if self.quitting {
-            return Err(quitting());
+            return Err(Refusal {
+                error: quitting(),
+                product: None,
+            });
         }
         match self.ops.keys().chain(&self.recovering).next() {
-            Some(p) => Err(LauncherError::new(
-                ErrorCode::OperationInProgress,
-                format!("{} has an operation or recovery running", p.0),
-            )),
+            Some(p) => Err(Refusal {
+                error: LauncherError::new(
+                    ErrorCode::OperationInProgress,
+                    format!("{} has an operation or recovery running", p.0),
+                ),
+                product: Some(p.clone()),
+            }),
             None => Ok(()),
         }
+    }
+}
+
+/// Why [`Running::refuse_any`] (and so [`Launcher::begin_quit`]) refused.
+#[derive(Debug)]
+pub struct Refusal {
+    pub error: LauncherError,
+    /// The product with an operation or recovery running; `None` when the
+    /// launcher is already quitting. Tray Quit asks about it (#75).
+    pub product: Option<ProductId>,
+}
+
+impl From<Refusal> for LauncherError {
+    fn from(r: Refusal) -> Self {
+        r.error
     }
 }
 
@@ -339,18 +360,6 @@ impl Launcher {
     /// guards), so a poisoned lock is still consistent.
     pub(super) fn running(&self) -> MutexGuard<'_, Running> {
         self.running.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    /// A product with an operation or recovery running, if any: names the product
-    /// when tray Quit is refused by [`Launcher::begin_quit`] (#75).
-    pub(crate) fn busy_product(&self) -> Option<ProductId> {
-        let running = self.running();
-        running
-            .ops
-            .keys()
-            .chain(&running.recovering)
-            .next()
-            .cloned()
     }
 
     /// The processes under `d2r`. A listing failure is [`ErrorCode::GameRunning`]:
