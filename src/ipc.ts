@@ -176,6 +176,9 @@ export interface Inspection {
   release: ReleaseSummary;
   files_replaced_or_removed: number;
   files_added: number;
+  /** Release files already in place and left as they are; with no installed release, an
+   *  existing installation the launcher didn't make (issue 126). */
+  files_kept: number;
   preserved: string[];
   backup_only: string[];
   conflicts: Conflict[];

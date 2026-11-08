@@ -18,7 +18,7 @@ import type {
 } from "./types";
 
 /** What the UI opens on its own when a scene loads (a dialog, the menu, or an operation). */
-export type SceneOpen = "d2r-choose" | "save-breaking" | "uninstall" | "manage" | "repair" | "quit";
+export type SceneOpen = "d2r-choose" | "save-breaking" | "uninstall" | "manage" | "repair" | "clean-install" | "quit";
 
 export interface Scene {
   key: string;
@@ -34,6 +34,8 @@ export interface Scene {
   /** Start at the last progress event instead of the first (replaying the ones before it). */
   progressAtEnd?: boolean;
   open?: SceneOpen;
+  /** Overrides of what `inspectOperation` answers, per kind (an existing install, issue 126). */
+  inspections?: Partial<Record<OperationKind, Partial<Inspection>>>;
 }
 
 const GB = 1024 ** 3;
@@ -194,6 +196,34 @@ export const SCENES: readonly Scene[] = [
     }),
   }),
   scene({ key: "install", label: "Ready to install", state: base(notInstalled), notes: [r("0.4.2", 3, NOTES_042)] }),
+  scene({
+    key: "adopt",
+    label: "Existing install to adopt",
+    state: base(notInstalled),
+    notes: [r("0.4.2", 3, NOTES_042)],
+    inspections: { install: { files_added: 0, files_replaced_or_removed: 0, files_kept: 2341, space_needed: 0 } },
+  }),
+  scene({
+    key: "clean-install",
+    label: "Existing install that differs",
+    state: base(notInstalled),
+    notes: [r("0.4.2", 3, NOTES_042)],
+    inspections: {
+      install: {
+        files_added: 1200,
+        files_replaced_or_removed: 0,
+        files_kept: 1141,
+        conflicts: [{ type: "unknown_file", path: "PD2Resurrected.mpq/data/global/excel/charstats.txt" }],
+      },
+      clean_install: {
+        files_added: 2341,
+        files_replaced_or_removed: 0,
+        preserved: ["d2rloader/config/d2rloader.toml"],
+        backup_only: Array.from({ length: 100 }, (_, i) => `PD2Resurrected.mpq/data/global/excel/old-${i}.txt`),
+      },
+    },
+    open: "clean-install",
+  }),
   scene({
     key: "downloading",
     label: "Install progress",
@@ -373,6 +403,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
       release,
       files_replaced_or_removed: request.kind === "repair" ? 3 : 120,
       files_added: request.kind === "install" ? 2341 : 4,
+      files_kept: 0,
       preserved: request.kind === "uninstall" ? ["d2rloader/config.ini", "lootfilter/default.filter"] : [],
       backup_only: [],
       conflicts: [],
@@ -381,6 +412,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
         : null,
       space_needed: Math.round(3.6 * GB),
       token: `${request.kind}-token`,
+      ...s.inspections?.[request.kind],
     };
   };
 
@@ -409,6 +441,12 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
       if (insp.token !== `${request.kind}-token`) return refuse("release_changed", "Inspect again.");
       if (insp.release.save_breaking && request.kind === "update" && !request.acknowledge_save_breaking) {
         return refuse("save_breaking_not_acknowledged", "Acknowledge the save-breaking release first.");
+      }
+      if (insp.conflicts.length > 0) {
+        return refuse("inventory_mismatch", "The product folder has files the launcher did not install.");
+      }
+      if (request.kind === "clean_install" && !request.consent_clean_install) {
+        return refuse("clean_install_consent_required", "Clean install needs the player's consent.");
       }
       if (request.kind === "uninstall") {
         set({ installed: null, readiness: { status: "not_installed" } });
