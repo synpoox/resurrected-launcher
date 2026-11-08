@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -22,6 +22,9 @@ use crate::helper;
 use crate::single_writer;
 
 const ID: &str = "SLICE4_GATE_WINDOW_ID";
+/// The temp dir the parent owns: the window process's WebView2 data and notice
+/// marker go here, never under `%LOCALAPPDATA%` (#129).
+const DATA: &str = "SLICE4_GATE_WINDOW_DATA";
 
 fn until(what: &str, mut ok: impl FnMut() -> bool) -> bool {
     let deadline = Instant::now() + Duration::from_secs(15);
@@ -39,7 +42,7 @@ fn report(key: &str, value: impl std::fmt::Display) {
     println!("R {key}={value}");
 }
 
-fn script<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>, dir: &Path) {
+fn script<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>) {
     let visible = || window.is_visible().unwrap_or(false);
     report("shown", until("shown", visible));
     // The title bar's Close (`close_window`) is `window.close()` on `main`.
@@ -59,7 +62,6 @@ fn script<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>, dir: &Path)
         "second_instance_focused",
         window.is_focused().unwrap_or(false),
     );
-    let _ = fs::remove_dir_all(dir);
     std::process::exit(0);
 }
 
@@ -67,23 +69,26 @@ fn script<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>, dir: &Path)
 #[test]
 #[ignore = "run only as a child process by the real-window gate test"]
 fn helper_real_window() {
-    let Some(id) = std::env::var_os(ID) else {
+    let (Some(id), Some(data)) = (std::env::var_os(ID), std::env::var_os(DATA)) else {
         return;
     };
+    let data = PathBuf::from(data);
     let mut context = tauri::generate_context!();
     context.config_mut().identifier = id.into_string().unwrap();
-    lifecycle::builder(tauri::Builder::default().any_thread(), |app| {
+    lifecycle::builder(tauri::Builder::default().any_thread(), move |app| {
         // The first-close notice counts as shown: no real toast, and nothing is
         // registered for this private identifier.
-        let dir = app.path().app_local_data_dir()?;
+        let dir = data.join("notice");
         fs::create_dir_all(&dir)?;
         fs::write(dir.join(notice::MARKER), b"")?;
+        app.manage(notice::Dir(dir));
         let blank = WebviewUrl::External("about:blank".parse().unwrap());
         let window = WebviewWindowBuilder::new(app, "main", blank)
             .inner_size(1280.0, 720.0)
+            .data_directory(data.join("webview"))
             .build()?;
         let handle = app.handle().clone();
-        std::thread::spawn(move || script(&handle, &window, &dir));
+        std::thread::spawn(move || script(&handle, &window));
         Ok(())
     })
     .build(context)
@@ -94,6 +99,10 @@ fn helper_real_window() {
 #[test]
 fn close_hides_the_window_and_reopen_and_a_second_instance_show_it() {
     let id = helper::private_identifier("window");
+    let data = tempfile::Builder::new()
+        .prefix("slice4-window")
+        .tempdir()
+        .unwrap();
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args([
             "real_window::helper_real_window",
@@ -103,6 +112,7 @@ fn close_hides_the_window_and_reopen_and_a_second_instance_show_it() {
             "--test-threads=1",
         ])
         .env(ID, &id)
+        .env(DATA, data.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -173,4 +183,6 @@ fn close_hides_the_window_and_reopen_and_a_second_instance_show_it() {
         "second instance focused the window: {}",
         results["second_instance_focused"]
     );
+    helper::assert_no_app_data(&id);
+    helper::remove_when_released(data);
 }

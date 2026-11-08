@@ -150,3 +150,26 @@ pub fn private_identifier(tag: &str) -> String {
         std::process::id()
     )
 }
+
+/// Fails if anything exists under `%LOCALAPPDATA%\<id>`: a test launcher's data
+/// belongs in a temp dir, never the user's app data (#129).
+pub fn assert_no_app_data(id: &str) {
+    let local = std::env::var_os("LOCALAPPDATA").expect("LOCALAPPDATA is set");
+    let dir = Path::new(&local).join(id);
+    assert!(!dir.exists(), "test launcher wrote to {}", dir.display());
+}
+
+/// Removes `dir`, retrying while WebView2's helper processes, which outlive the
+/// window process by a moment, still hold files in it.
+pub fn remove_when_released(dir: tempfile::TempDir) {
+    let path = dir.keep();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while fs::remove_dir_all(&path).is_err() && path.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{} still in use",
+            path.display()
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
