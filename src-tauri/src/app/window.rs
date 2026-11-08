@@ -64,9 +64,20 @@ pub async fn quit_launcher<R: Runtime>(
     launcher: State<'_, Arc<Launcher>>,
 ) -> Result<(), LauncherError> {
     main_only(&window)?;
-    // Held while exiting, so no operation starts in between.
-    let running = launcher.running();
-    running.refuse_any()?;
+    launcher.begin_quit()?;
     app.exit(0);
     Ok(())
+}
+
+impl Launcher {
+    /// Quit's gate: refused while an operation or recovery runs, else sets the
+    /// sticky quitting flag. `AppHandle::exit` only requests the exit, so the flag
+    /// keeps every operation, recovery, Play and location change from starting
+    /// until the process ends.
+    pub fn begin_quit(&self) -> Result<(), LauncherError> {
+        let mut running = self.running();
+        running.refuse_any()?;
+        running.quitting = true;
+        Ok(())
+    }
 }

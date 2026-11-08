@@ -254,8 +254,8 @@ export async function detectGameLocations(): Promise<GameLocation[]> {
   return current(await invoke<Versioned<GameLocation[]>>("detect_game_locations"));
 }
 
-/** Selects entry `index` of the last detectGameLocations() reply. Refused with
- *  invalid_request if detection has run again since or the index is out of range,
+/** Selects entry `index` of the latest detectGameLocations() reply, validated again.
+ *  Refused with invalid_request if the index is out of range or nothing was detected,
  *  and with game_running while the game runs. */
 export async function selectGameLocation(index: number): Promise<GameLocation> {
   return current(await invoke<Versioned<GameLocation>>("select_game_location", { index }));

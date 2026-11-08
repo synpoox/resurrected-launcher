@@ -183,15 +183,37 @@ pub(super) struct Running {
     pub(super) ops: HashMap<ProductId, (Arc<AtomicBool>, OperationKind)>,
     /// Products whose restart recovery is running.
     pub(super) recovering: HashSet<ProductId>,
+    /// Set for good by Quit: `AppHandle::exit` only requests the exit, so nothing
+    /// may start while the event loop winds down.
+    pub(super) quitting: bool,
+}
+
+fn quitting() -> LauncherError {
+    LauncherError::new(ErrorCode::OperationInProgress, "the launcher is quitting")
 }
 
 impl Running {
-    fn busy(&self, product: &ProductId) -> bool {
-        self.ops.contains_key(product) || self.recovering.contains(product)
+    /// [`ErrorCode::OperationInProgress`] while `product` has an operation or
+    /// recovery running, or the launcher is quitting.
+    fn refuse(&self, product: &ProductId) -> Result<(), LauncherError> {
+        if self.quitting {
+            return Err(quitting());
+        }
+        if self.ops.contains_key(product) || self.recovering.contains(product) {
+            return Err(LauncherError::new(
+                ErrorCode::OperationInProgress,
+                format!("{} already has an operation running", product.0),
+            ));
+        }
+        Ok(())
     }
 
-    /// [`ErrorCode::OperationInProgress`] while any operation or recovery runs.
+    /// [`ErrorCode::OperationInProgress`] while any operation or recovery runs,
+    /// or the launcher is quitting.
     pub(super) fn refuse_any(&self) -> Result<(), LauncherError> {
+        if self.quitting {
+            return Err(quitting());
+        }
         match self.ops.keys().chain(&self.recovering).next() {
             Some(p) => Err(LauncherError::new(
                 ErrorCode::OperationInProgress,
@@ -550,7 +572,8 @@ impl<F: Fn(ProgressEvent)> Progress<F> {
             return;
         };
         let recent = counted.is_some_and(|t| t.elapsed() < COUNT_INTERVAL);
-        if recent && done < total {
+        // An unknown total (0) is rate-limited throughout.
+        if recent && (total == 0 || done < total) {
             return;
         }
         *counted = Some(Instant::now());
@@ -640,12 +663,7 @@ pub async fn start_operation<R: Runtime>(
     let cancel = Arc::new(AtomicBool::new(false));
     let reservation = {
         let mut running = launcher.running();
-        if running.busy(&req.product_id) {
-            return Err(LauncherError::new(
-                ErrorCode::OperationInProgress,
-                format!("{} already has an operation running", req.product_id.0),
-            ));
-        }
+        running.refuse(&req.product_id)?;
         // Under the app operation lock, so a Play cannot slip in between.
         launcher.refuse_if_game_running(&resolved.d2r)?;
         // Reserved first so two starts cannot both pass; inspected outside the lock.
@@ -792,12 +810,7 @@ impl Launcher {
     pub(super) fn recover(&self, product_id: &ProductId) -> Result<RecoveryView, LauncherError> {
         let d2r = {
             let mut running = self.running();
-            if running.busy(product_id) {
-                return Err(LauncherError::new(
-                    ErrorCode::OperationInProgress,
-                    format!("{} has an operation running", product_id.0),
-                ));
-            }
+            running.refuse(product_id)?;
             let d2r = self.d2r_root(&*locked(&self.state)?)?;
             self.refuse_if_game_running(&d2r)?;
             running.recovering.insert(product_id.clone());

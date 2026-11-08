@@ -1390,3 +1390,25 @@ fn window_controls_act_on_main_and_quit_waits_for_operations() {
     assert_eq!(code(quit.unwrap_err()), "operation_in_progress");
     assert_eq!(rig.outcome()["status"], "succeeded");
 }
+
+/// `AppHandle::exit` only requests the exit, so after Quit nothing may start.
+/// (The mock runtime ends the IPC channel on exit, so this drives Quit's gate.)
+#[test]
+fn nothing_starts_after_quit_is_accepted() {
+    let rig = Rig::new();
+    let r1 = rig.publish(PD2R_1);
+    rig.game.product_root(&r1);
+    rig.start_up();
+    let insp = rig.inspect("install", json!({})).unwrap();
+    let launcher = rig.webview.state::<Arc<Launcher>>();
+    launcher.begin_quit().unwrap();
+
+    let start = rig.start("install", json!({}), &insp.token).unwrap_err();
+    assert_eq!(code(start), "operation_in_progress");
+    assert_eq!(code(rig.play().unwrap_err()), "operation_in_progress");
+    let recover = rig.invoke("recover_product", json!({ "product_id": "pd2r" }));
+    assert_eq!(code(recover.unwrap_err()), "operation_in_progress");
+    let choose = rig.invoke("choose_game_location", json!({}));
+    assert_eq!(code(choose.unwrap_err()), "operation_in_progress");
+    assert!(rig.state().installed.is_none());
+}

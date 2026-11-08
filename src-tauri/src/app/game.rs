@@ -555,7 +555,7 @@ pub async fn detect_game_locations(
     ))
 }
 
-/// `select_game_location`: remembers entry `index` of the last
+/// `select_game_location`: remembers entry `index` of the latest
 /// `detect_game_locations` reply, validated again. `InvalidRequest` for an index
 /// out of range (or before any detection); otherwise the same refusals as
 /// `choose_game_location`, including `GameRunning` under either location.

@@ -84,12 +84,12 @@ fn not_installed(why: String) -> LauncherError {
 }
 
 impl Launcher {
-    /// The folder `folder` names, built from native state only.
+    /// The D2R root and the folder `folder` names, built from native state only.
     fn folder(
         &self,
         product: Option<&ProductId>,
         folder: Folder,
-    ) -> Result<PathBuf, LauncherError> {
+    ) -> Result<(PathBuf, PathBuf), LauncherError> {
         let mut state = locked(&self.state)?;
         let d2r = self.d2r_root(&state)?;
         let release = match (folder, product) {
@@ -108,7 +108,7 @@ impl Launcher {
         };
         drop(state);
         let root = release.as_ref().map(|r| product_root(&d2r, &r.manifest));
-        Ok(match (folder, release, root) {
+        let dir = match (folder, release, root) {
             (Folder::Saves, Some(r), _) => self
                 .desktop
                 .saved_games()
@@ -119,15 +119,15 @@ impl Launcher {
             (Folder::Settings, _, Some(root)) => root,
             (Folder::ProductPlugins, _, Some(root)) => root.join("d2rloader").join("plugins"),
             _ => d2r.join("d2rloader").join("plugins"),
-        })
+        };
+        Ok((d2r, dir))
     }
 
     /// Creates a missing plugins folder under a validated D2R root, through the
     /// write guard of the folder it lives in (the product root or the D2R root).
-    fn create_plugins(&self, dir: &Path) -> Result<(), LauncherError> {
-        let d2r = self.d2r_root(&*locked(&self.state)?)?;
-        detect::validate(&d2r, &*self.game)?;
-        // `dir` is `<owner>\d2rloader\plugins`, built by `folder` under that root.
+    fn create_plugins(&self, d2r: &Path, dir: &Path) -> Result<(), LauncherError> {
+        detect::validate(d2r, &*self.game)?;
+        // `dir` is `<owner>\d2rloader\plugins`, built by `folder` under `d2r`.
         let owner = dir
             .ancestors()
             .nth(2)
@@ -209,10 +209,12 @@ pub async fn open_folder(
     product_id: Option<ProductId>,
     folder: Folder,
 ) -> Result<(), LauncherError> {
-    let dir = launcher.folder(product_id.as_ref(), folder)?;
+    let (d2r, dir) = launcher.folder(product_id.as_ref(), folder)?;
     if !dir.is_dir() {
         match folder {
-            Folder::ProductPlugins | Folder::GlobalPlugins => launcher.create_plugins(&dir)?,
+            Folder::ProductPlugins | Folder::GlobalPlugins => {
+                launcher.create_plugins(&d2r, &dir)?
+            }
             Folder::Saves | Folder::Settings => {
                 return Err(not_installed(format!(
                     "{} does not exist yet",
