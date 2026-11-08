@@ -87,7 +87,7 @@ pub(super) fn hkcu_value(key: &str, name: &str) -> io::Result<Option<String>> {
 
 /// Writes `HKCU\<key>\<name>` = `value` (REG_SZ), or deletes it for `None`.
 #[cfg(windows)]
-pub(super) fn set_hkcu_value(key: &str, name: &str, value: Option<&str>) -> io::Result<()> {
+pub(crate) fn set_hkcu_value(key: &str, name: &str, value: Option<&str>) -> io::Result<()> {
     const REG_SZ: u32 = 1;
     let (key, name) = (wide(key), wide(name));
     let status = match value {
@@ -252,7 +252,7 @@ mod other {
     pub(in super::super) fn hkcu_value(_: &str, _: &str) -> io::Result<Option<String>> {
         unsupported()
     }
-    pub(in super::super) fn set_hkcu_value(_: &str, _: &str, _: Option<&str>) -> io::Result<()> {
+    pub(crate) fn set_hkcu_value(_: &str, _: &str, _: Option<&str>) -> io::Result<()> {
         unsupported()
     }
     pub(in super::super) fn saved_games() -> io::Result<PathBuf> {
@@ -272,7 +272,7 @@ mod other {
     }
 }
 #[cfg(not(windows))]
-pub(super) use other::*;
+pub(crate) use other::*;
 
 #[cfg(all(test, windows))]
 mod tests {

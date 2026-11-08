@@ -20,12 +20,15 @@ sha2 = "0.10"
 tauri = { version = "2", features = ["tray-icon"] }
 # Native folder picker for choose_game_location (#60); Rust side only, no JS permission.
 tauri-plugin-dialog = "2"
-tauri-plugin-notification = "2.8.0"
 tauri-plugin-single-instance = "2.5.5"
 # Signed launcher self-updates (#88, ADR 0003). No zip: the NSIS installer is served as is.
-tauri-plugin-updater = { version = "2.9.0", default-features = false, features = ["rustls-tls"] }
+tauri-plugin-updater = { version = "2.14.1", default-features = false, features = ["rustls-tls"] }
 # HTTPS archive download (#35); ring keeps the Windows build free of cmake/nasm.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
+
+[target.'cfg(windows)'.dependencies]
+# The first-close toast (#104), called directly so its error is seen.
+tauri-winrt-notification = "0.8.1"
 
 [dev-dependencies]
 base64 = "0.22"

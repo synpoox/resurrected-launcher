@@ -6,6 +6,7 @@
 //! permission, so the webview cannot call their commands (`tests/lifecycle.rs`).
 
 mod icon;
+pub mod notice;
 pub mod tray;
 
 use std::error::Error;
@@ -33,11 +34,6 @@ pub use tray::{play, quit, Model, Quit};
 
 /// The flag the Start with Windows Run value passes (#74): start in the tray only.
 pub const AUTOSTART_FLAG: &str = "--autostart";
-
-/// Marker in app-local data: the first-close notice was shown.
-const FIRST_CLOSE_MARKER: &str = "tray-notice-shown";
-
-const FIRST_CLOSE_NOTICE: &str = "Still running in the tray. Downloads and update checks carry on here. To exit, right-click the icon and choose Quit.";
 
 /// Application entry point.
 pub fn run() {
@@ -108,8 +104,6 @@ pub fn plugins<R: Runtime>(builder: Builder<R>) -> Builder<R> {
     builder
         // Folder picker for choose_game_location (#60).
         .plugin(tauri_plugin_dialog::init())
-        // The first-close notice only.
-        .plugin(tauri_plugin_notification::init())
 }
 
 /// Shows, restores and focuses the main window. Never hides it.
@@ -143,28 +137,7 @@ fn hide_on_close<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
         if window.label() == "main" {
             api.prevent_close();
             let _ = window.hide();
-            first_close_notice(window.app_handle());
+            notice::on_close(window.app_handle());
         }
-    }
-}
-
-/// The one tray notification in v1, shown on the first close ever.
-fn first_close_notice<R: Runtime>(app: &AppHandle<R>) {
-    use tauri_plugin_notification::NotificationExt;
-    let Ok(dir) = app.path().app_local_data_dir() else {
-        return;
-    };
-    let marker = dir.join(FIRST_CLOSE_MARKER);
-    // Written first: without a marker the notice would repeat on every close.
-    if marker.exists() || std::fs::create_dir_all(&dir).is_err() {
-        return;
-    }
-    if std::fs::write(&marker, b"").is_ok() {
-        let _ = app
-            .notification()
-            .builder()
-            .title(UMBRELLA_DISPLAY_NAME)
-            .body(FIRST_CLOSE_NOTICE)
-            .show();
     }
 }
