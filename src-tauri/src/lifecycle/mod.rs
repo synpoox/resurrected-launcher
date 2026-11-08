@@ -26,7 +26,7 @@ use crate::install::extract::SevenZip;
 use crate::install::preflight::SystemHost;
 use crate::state::StateStore;
 
-pub use tray::{quit_plan, Quit};
+pub use tray::{quit, Quit};
 
 /// The flag the Start with Windows Run value passes (#74): start in the tray only.
 pub const AUTOSTART_FLAG: &str = "--autostart";

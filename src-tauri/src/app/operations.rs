@@ -341,6 +341,18 @@ impl Launcher {
         self.running.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// A product with an operation or recovery running, if any: tray Quit asks
+    /// first instead of exiting (#75).
+    pub(crate) fn busy_product(&self) -> Option<ProductId> {
+        let running = self.running();
+        running
+            .ops
+            .keys()
+            .chain(&running.recovering)
+            .next()
+            .cloned()
+    }
+
     /// The processes under `d2r`. A listing failure is [`ErrorCode::GameRunning`]:
     /// fails closed, never "nothing runs".
     pub(super) fn games_under(&self, d2r: &Path) -> Result<Vec<RunningGame>, LauncherError> {

@@ -2,7 +2,7 @@
 //! state. State is read natively through the same commands the frontend calls, so
 //! every tray action passes the same checks and locks.
 //!
-//! The pure part ([`view`], [`quit_plan`]) is unit tested; [`start`] wires it to a
+//! The pure part ([`view`]) is unit tested, [`quit`] in `tests/lifecycle.rs`; [`start`] wires it to a
 //! real tray icon and runs actions on one worker thread, never the main thread.
 
 use std::collections::HashMap;
@@ -13,7 +13,7 @@ use serde::de::DeserializeOwned;
 use tauri::async_runtime::block_on;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Listener, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Listener, Manager, Runtime};
 
 use super::icon::{self, Overlay};
 use super::{request, show_main, TrayAction};
@@ -53,11 +53,17 @@ pub enum Quit {
     Busy(ProductId),
 }
 
-pub fn quit_plan(states: &[ProductState]) -> Quit {
-    states
-        .iter()
-        .find(|s| s.running.is_some())
-        .map_or(Quit::Exit, |s| Quit::Busy(s.product_id.clone()))
+/// Tray Quit. Decided from the launcher's live running map, never from the tray's
+/// filtered view, so an operation always blocks it. On `Busy` it shows the window
+/// and emits `quit_while_busy`; on `Exit` the caller exits (the game keeps running).
+pub fn quit<R: Runtime>(app: &AppHandle<R>) -> Quit {
+    match app.state::<Arc<Launcher>>().busy_product() {
+        None => Quit::Exit,
+        Some(product) => {
+            request(app, TrayAction::QuitWhileBusy, &product);
+            Quit::Busy(product)
+        }
+    }
 }
 
 /// shortcut: the upper-cased product id ("pd2r" → "PD2R"); use a catalog display
@@ -66,10 +72,12 @@ fn short_name(product: &ProductId) -> String {
     product.0.to_uppercase()
 }
 
+/// Download %; phases after the download count as a full bar.
 fn percent(p: &ProgressEvent) -> u8 {
-    match (p.bytes_done, p.bytes_total) {
-        (Some(done), Some(total)) if total > 0 => (done.min(total) * 100 / total) as u8,
-        _ => 0,
+    match (p.bytes_done, p.bytes_total, p.phase) {
+        (Some(done), Some(total), _) if total > 0 => (done.min(total) * 100 / total) as u8,
+        (_, _, Phase::Planning | Phase::Downloading) => 0,
+        _ => 100,
     }
 }
 
@@ -98,8 +106,21 @@ pub fn view(
             }
             _ => String::new(),
         };
-        let downloading =
-            progress.is_none_or(|p| matches!(p.phase, Phase::Planning | Phase::Downloading));
+        let downloads = matches!(
+            kind,
+            OperationKind::Install | OperationKind::Update | OperationKind::CleanInstall
+        );
+        let downloading = match progress.map(|p| p.phase) {
+            Some(Phase::Downloading) => true,
+            None | Some(Phase::Planning) => downloads,
+            Some(_) => false,
+        };
+        let verb = match kind {
+            OperationKind::Repair => "Repairing",
+            OperationKind::Uninstall => "Uninstalling",
+            OperationKind::Adopt => "Adopting",
+            _ => "Applying",
+        };
         return if downloading {
             shown(
                 Overlay::Progress(pct),
@@ -112,9 +133,9 @@ pub fn view(
         } else {
             shown(
                 Overlay::Progress(pct),
-                format!("Applying{target}"),
+                format!("{verb}{target}"),
                 vec![
-                    Item::Disabled(format!("Applying {name}…")),
+                    Item::Disabled(format!("{verb} {name}…")),
                     action("cancel", "Cancel safely".into()),
                 ],
             )
@@ -286,12 +307,7 @@ fn run_loop<R: Runtime>(app: &AppHandle<R>, tray: &TrayIcon<R>, rx: Receiver<Msg
             }
             Msg::Click(id) => model.click(app, &id),
         }
-        let views = model.views();
-        // Progress arrives up to 10 times a second; rebuild only on a visible change.
-        if shown.as_ref() != Some(&views) {
-            apply(app, tray, &views);
-            shown = Some(views);
-        }
+        apply(app, tray, model.views(), &mut shown);
     }
 }
 
@@ -322,10 +338,10 @@ impl Model {
         }
         self.refresh(app);
         if id == "quit" {
-            return match quit_plan(&self.states) {
-                Quit::Exit => app.exit(0),
-                Quit::Busy(product) => request(app, TrayAction::QuitWhileBusy, &product),
-            };
+            if quit(app) == Quit::Exit {
+                app.exit(0);
+            }
+            return;
         }
         let Some((act, product)) = id.split_once(':') else {
             return;
@@ -333,8 +349,15 @@ impl Model {
         let product = ProductId(product.to_owned());
         match act {
             "play" => {
-                let _ = block_on(app::play_product(app.clone(), app.state(), product));
-                self.refresh(app);
+                match block_on(app::play_product(app.clone(), app.state(), product.clone())) {
+                    // The window reads state again only on this event (otherwise
+                    // emitted when the game exits); the tray refreshes on it too.
+                    Ok(_) => {
+                        let _ = app.emit(STATE_EVENT, Versioned::new(()));
+                    }
+                    // As in the window, a refused Play needs an explanation.
+                    Err(_) => request(app, TrayAction::ShowWhatHappened, &product),
+                }
             }
             "update" => self.start(app, product, OperationKind::Update),
             "cancel" => {
@@ -415,40 +438,88 @@ fn product_ids(launcher: &Launcher) -> Vec<ProductId> {
     ids
 }
 
-fn apply<R: Runtime>(app: &AppHandle<R>, tray: &TrayIcon<R>, views: &[ProductView]) {
+/// What the tray last showed, with its product menu items for in-place updates.
+struct Shown<R: Runtime> {
+    views: Vec<ProductView>,
+    items: Vec<MenuItem<R>>,
+}
+
+/// The product items' ids (`None` for disabled ones): what a rebuild changes.
+fn shape(views: &[ProductView]) -> Vec<Option<&str>> {
+    views
+        .iter()
+        .flat_map(|v| &v.items)
+        .map(|i| match i {
+            Item::Action { id, .. } => Some(id.as_str()),
+            Item::Disabled(_) => None,
+        })
+        .collect()
+}
+
+fn label(item: &Item) -> &str {
+    match item {
+        Item::Action { label, .. } | Item::Disabled(label) => label,
+    }
+}
+
+fn apply<R: Runtime>(
+    app: &AppHandle<R>,
+    tray: &TrayIcon<R>,
+    views: Vec<ProductView>,
+    shown: &mut Option<Shown<R>>,
+) {
+    // Progress arrives up to 10 times a second; change only what is visible.
+    if shown.as_ref().is_some_and(|s| s.views == views) {
+        return;
+    }
     // shortcut: the icon follows the first product (only PD2R has a release);
     // pick the most urgent overlay once a second product ships.
     let overlay = views.first().map_or(Overlay::Idle, |v| v.overlay);
     let _ = tray.set_icon(Some(icon::draw(overlay)));
-    let _ = tray.set_tooltip(Some(tooltip(views)));
-    if let Ok(menu) = menu(app, views) {
-        bold_first_item(&menu);
-        let _ = tray.set_menu(Some(menu));
+    let _ = tray.set_tooltip(Some(tooltip(&views)));
+    match shown {
+        // Same items (e.g. only the % changed): update their text in place, so a
+        // menu open during a download is never replaced under the player.
+        Some(s) if shape(&s.views) == shape(&views) => {
+            for (item, new) in s.items.iter().zip(views.iter().flat_map(|v| &v.items)) {
+                let _ = item.set_text(label(new));
+            }
+            s.views = views;
+        }
+        _ => {
+            *shown = menu(app, &views).ok().map(|(menu, items)| {
+                bold_first_item(&menu);
+                let _ = tray.set_menu(Some(menu));
+                Shown { views, items }
+            });
+        }
     }
 }
 
-/// Open, separator, the product items, separator, Quit (spec order).
-fn menu<R: Runtime>(app: &AppHandle<R>, views: &[ProductView]) -> tauri::Result<Menu<R>> {
+/// Open, separator, the product items, separator, Quit (spec order). Also returns
+/// the product items.
+fn menu<R: Runtime>(
+    app: &AppHandle<R>,
+    views: &[ProductView],
+) -> tauri::Result<(Menu<R>, Vec<MenuItem<R>>)> {
     let menu = Menu::new(app)?;
     let open = format!("Open {UMBRELLA_DISPLAY_NAME}");
     menu.append(&MenuItem::with_id(app, "open", open, true, None::<&str>)?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
-    let items: Vec<&Item> = views.iter().flat_map(|v| &v.items).collect();
-    for item in &items {
-        match item {
-            Item::Action { id, label } => {
-                menu.append(&MenuItem::with_id(app, id, label, true, None::<&str>)?)?
-            }
-            Item::Disabled(label) => {
-                menu.append(&MenuItem::new(app, label, false, None::<&str>)?)?
-            }
-        }
+    let mut items = Vec::new();
+    for item in views.iter().flat_map(|v| &v.items) {
+        let built = match item {
+            Item::Action { id, label } => MenuItem::with_id(app, id, label, true, None::<&str>)?,
+            Item::Disabled(label) => MenuItem::new(app, label, false, None::<&str>)?,
+        };
+        menu.append(&built)?;
+        items.push(built);
     }
     if !items.is_empty() {
         menu.append(&PredefinedMenuItem::separator(app)?)?;
     }
     menu.append(&MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?)?;
-    Ok(menu)
+    Ok((menu, items))
 }
 
 /// Makes Open the bold default item; muda has no API for it.
@@ -601,13 +672,51 @@ mod tests {
         assert!(!has_release(&s));
     }
 
+    fn running(kind: OperationKind, phase: Option<Phase>) -> ProductView {
+        let mut s = state(Readiness::Ready, Some("0.4.2"), "0.4.2");
+        s.running = Some(kind);
+        let p = phase.map(|phase| ProgressEvent {
+            product_id: s.product_id.clone(),
+            kind,
+            phase,
+            boundary: None,
+            bytes_done: None,
+            bytes_total: None,
+        });
+        view(&s, p.as_ref(), None)
+    }
+
     #[test]
-    fn quit_asks_only_while_an_operation_runs() {
-        let idle = state(Readiness::Ready, Some("0.4.2"), "0.4.2");
-        let game = state(Readiness::Running { since: 1 }, Some("0.4.2"), "0.4.2");
-        assert_eq!(quit_plan(&[idle.clone(), game]), Quit::Exit);
-        let mut busy = idle;
-        busy.running = Some(OperationKind::Update);
-        assert_eq!(quit_plan(&[busy]), Quit::Busy(ProductId("pd2r".into())));
+    fn operations_that_do_not_download_never_say_downloading() {
+        let v = running(OperationKind::Uninstall, None);
+        assert_eq!(
+            labels(&v),
+            [
+                "Uninstalling PD2R… (disabled)",
+                "Cancel safely [cancel:pd2r]"
+            ]
+        );
+        let v = running(OperationKind::Repair, Some(Phase::Planning));
+        assert_eq!(labels(&v)[0], "Repairing PD2R… (disabled)");
+        // An install starts as a download, before its first progress event.
+        let v = running(OperationKind::Install, None);
+        assert_eq!(labels(&v)[0], "Downloading PD2R · 0% (disabled)");
+    }
+
+    #[test]
+    fn applying_after_the_download_shows_a_full_bar() {
+        let v = running(OperationKind::Update, Some(Phase::Activating));
+        assert_eq!(v.overlay, Overlay::Progress(100));
+        assert_eq!(labels(&v)[0], "Applying PD2R… (disabled)");
+    }
+
+    #[test]
+    fn a_percent_change_keeps_the_menu_shape() {
+        let a = running(OperationKind::Update, Some(Phase::Downloading));
+        let mut b = a.clone();
+        b.items[0] = Item::Disabled("Downloading PD2R · 53%".into());
+        assert_eq!(shape(std::slice::from_ref(&a)), shape(&[b]));
+        let applying = running(OperationKind::Update, Some(Phase::Activating));
+        assert_eq!(shape(&[a]), shape(&[applying]));
     }
 }

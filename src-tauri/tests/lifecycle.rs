@@ -1,6 +1,7 @@
 //! Window and tray lifecycle (#75) against the real machine: single instance with
 //! two helper processes, Quit while the game runs with `examples/fake-d2rloader.rs`
-//! as D2RLoader.exe in a temp D2R root, and the plugins' commands over IPC.
+//! as D2RLoader.exe in a temp D2R root, Quit while an install downloads from the
+//! fixture server, and the plugins' commands over IPC.
 //! Nothing here touches a real D2R installation or the real launcher's data.
 #![cfg(windows)]
 
@@ -10,18 +11,31 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
+use std::sync::mpsc::{channel, Receiver};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-use resurrected_launcher_lib::app::{self, CatalogState, ProductState};
-use resurrected_launcher_lib::contract::{GameLocation, GameStore, ProductId, Readiness};
+use resurrected_launcher_lib::app::{
+    self, CachedReleases, Desktop, Launcher, Release, Releases, OUTCOME_EVENT,
+};
+use resurrected_launcher_lib::catalog::{GameBuild, Platform};
+use resurrected_launcher_lib::contract::{
+    GameLocation, GameStore, LauncherError, ProductId, Readiness, RelativePath, CONTRACT_VERSION,
+};
 use resurrected_launcher_lib::game::launch::play;
 use resurrected_launcher_lib::game::SystemGameHost;
-use resurrected_launcher_lib::lifecycle::{self, quit_plan, Quit};
+use resurrected_launcher_lib::install::download::Downloader;
+use resurrected_launcher_lib::install::preflight::SystemHost;
+use resurrected_launcher_lib::lifecycle::{self, Quit, TRAY_REQUEST_EVENT};
+use resurrected_launcher_lib::state::{InstalledRelease, Preferences, StateStore};
+use serde_json::{json, Value};
+use support::{DisposableGame, FixtureServer, Reply};
 use tauri::ipc::{CallbackFn, InvokeBody};
-use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, INVOKE_KEY};
+use tauri::test::{
+    get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime, INVOKE_KEY,
+};
 use tauri::webview::InvokeRequest;
-use tauri::WebviewWindowBuilder;
+use tauri::{App, Listener, WebviewWindow, WebviewWindowBuilder};
 
 /// Set only in helper processes: where the instance writes its setup marker.
 const INSTANCE_MARKER: &str = "LIFECYCLE_INSTANCE_MARKER";
@@ -156,36 +170,115 @@ fn fake_exe() -> &'static Path {
     })
 }
 
-fn game_running(product: &str) -> ProductState {
-    ProductState {
-        product_id: ProductId(product.into()),
-        installed: None,
-        recommended: None,
-        running: None,
-        location: None,
-        readiness: Readiness::Running { since: 1 },
-        running_game: None,
-        loader_guidance: None,
-        catalog: CatalogState::Refreshed,
+struct NoDesktop;
+
+impl Desktop for NoDesktop {
+    fn pick_folder(&self) -> Option<PathBuf> {
+        None
+    }
+    fn open_loader_download_page(&self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
-/// Stand-in launcher: plays, takes the Quit decision, and exits as `app.exit` does.
-/// A no-op in normal runs.
+/// The one recommended (and installed) release.
+struct Published(Release);
+
+impl Releases for Published {
+    fn recommended(&self, _: &mut StateStore, _: &ProductId) -> Result<Release, LauncherError> {
+        Ok(self.0.clone())
+    }
+    fn installed(
+        &self,
+        _: &mut StateStore,
+        _: &InstalledRelease,
+    ) -> Result<Release, LauncherError> {
+        Ok(self.0.clone())
+    }
+}
+
+/// A mock app managing a `Launcher` on temp state with `d2r` selected, and its
+/// `main` webview. Catalog refreshes fail like offline.
+fn mount(
+    state_dir: &Path,
+    d2r: &Path,
+    releases: Box<dyn Releases>,
+    downloader: Downloader,
+) -> (App<MockRuntime>, WebviewWindow<MockRuntime>) {
+    let mut state = StateStore::open(state_dir);
+    state
+        .set_preferences(Preferences {
+            d2r_location: Some(d2r.to_owned()),
+            ..Preferences::default()
+        })
+        .unwrap();
+    let mut launcher = Launcher::new(
+        state,
+        releases,
+        downloader,
+        support::seven_zip(),
+        Box::new(SystemHost),
+        Box::new(SystemGameHost),
+        Box::new(NoDesktop),
+    );
+    launcher.feed_url = "https://feed.fixtures.invalid/feed.json".into();
+    let app = mock_builder()
+        .invoke_handler(app::invoke_handler())
+        .manage(Arc::new(launcher))
+        .build(tauri::generate_context!())
+        .unwrap();
+    let webview = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    (app, webview)
+}
+
+fn events(app: &App<MockRuntime>, event: &str) -> Receiver<Value> {
+    let (tx, rx) = channel();
+    app.listen_any(event, move |e| {
+        let _ = tx.send(serde_json::from_str(e.payload()).unwrap());
+    });
+    rx
+}
+
+fn invoke(webview: &WebviewWindow<MockRuntime>, cmd: &str, body: Value) -> Value {
+    get_ipc_response(
+        webview,
+        InvokeRequest {
+            cmd: cmd.into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "http://tauri.localhost".parse().unwrap(),
+            body: InvokeBody::Json(body),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_string(),
+        },
+    )
+    .unwrap_or_else(|e| panic!("{cmd}: {e}"))
+    .deserialize()
+    .unwrap()
+}
+
+/// Stand-in launcher: plays, takes the tray's Quit decision on a mock app with an
+/// idle `Launcher`, and exits as `app.exit` does. A no-op in normal runs.
 #[test]
 fn helper_plays_then_quits() {
     let Some(root) = std::env::var_os(QUIT_ROOT) else {
         return;
     };
+    let root = PathBuf::from(root);
     let location = GameLocation {
-        path: root.into(),
+        path: root.clone(),
         build: "test".into(),
         store: GameStore::Unknown,
     };
     let manifest = support::release(support::PD2R_1).manifest;
     let game = play(&location, &manifest, &Readiness::Ready, &SystemGameHost).unwrap();
     fs::write(std::env::var_os(QUIT_PID).unwrap(), game.pid.to_string()).unwrap();
-    assert_eq!(quit_plan(&[game_running("pd2r")]), Quit::Exit);
+    let state = tempfile::tempdir().unwrap();
+    let releases = Box::new(CachedReleases);
+    let (app, _webview) = mount(state.path(), &root, releases, Downloader::new());
+    assert_eq!(lifecycle::quit(app.handle()), Quit::Exit);
     std::process::exit(0);
 }
 
@@ -221,6 +314,77 @@ fn quit_while_the_game_runs_leaves_the_game_running() {
         CloseHandle(game);
         assert!(alive, "the game exited with the launcher");
     }
+}
+
+/// Quit while an install is downloading asks the frontend and does not exit. The
+/// decision reads the launcher's running operation, not the tray's view of it.
+#[test]
+fn quit_while_an_install_downloads_asks_and_does_not_exit() {
+    const D2R_BYTES: &[u8] = b"fake D2R.exe for #75";
+    let server = FixtureServer::start();
+    let game = DisposableGame::new();
+    fs::create_dir_all(game.d2r()).unwrap();
+    fs::write(game.d2r().join("D2R.exe"), D2R_BYTES).unwrap();
+    let r1 = support::release(support::PD2R_1);
+    let mut manifest = r1.manifest.clone();
+    manifest.archive = server.serve(&r1);
+    manifest.compatibility.game_builds = vec![GameBuild {
+        build: "fixture".into(),
+        platform: Platform::WindowsX64,
+        executable: RelativePath::new("D2R.exe").unwrap(),
+        size: D2R_BYTES.len() as u64,
+        sha256: support::sha256(D2R_BYTES),
+    }];
+    // Holds the operation in its download while Quit is chosen.
+    server.route(
+        &r1.archive_path(),
+        Reply::Delayed(
+            Duration::from_secs(2),
+            Box::new(Reply::Body(r1.archive.clone())),
+        ),
+    );
+    game.product_root(&r1);
+    let state = tempfile::tempdir().unwrap();
+    let release = Release {
+        manifest,
+        sha256: support::sha256(&r1.manifest_json),
+    };
+    let downloader = Downloader::with_tls(server.tls_config());
+    let (app, webview) = mount(
+        state.path(),
+        game.d2r(),
+        Box::new(Published(release)),
+        downloader,
+    );
+    let (requests, outcomes) = (
+        events(&app, TRAY_REQUEST_EVENT),
+        events(&app, OUTCOME_EVENT),
+    );
+    let request = json!({
+        "contract_version": CONTRACT_VERSION,
+        "data": { "product_id": "pd2r", "kind": "install" },
+    });
+    let plan = invoke(&webview, "inspect_operation", json!({ "request": request }));
+    invoke(
+        &webview,
+        "start_operation",
+        json!({ "request": request, "inspection_token": plan["data"]["token"] }),
+    );
+
+    assert_eq!(
+        lifecycle::quit(app.handle()),
+        Quit::Busy(ProductId("pd2r".into()))
+    );
+    let asked = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(asked["contract_version"], CONTRACT_VERSION);
+    assert_eq!(
+        asked["data"],
+        json!({ "action": "quit_while_busy", "product_id": "pd2r" })
+    );
+    // The install carries on; the temp dirs outlive it.
+    let outcome = outcomes.recv_timeout(Duration::from_secs(60)).unwrap();
+    assert_eq!(outcome["data"]["status"], "succeeded", "{outcome}");
+    assert_eq!(lifecycle::quit(app.handle()), Quit::Exit);
 }
 
 /// The notification and single-instance plugins are registered Rust-side, but no
