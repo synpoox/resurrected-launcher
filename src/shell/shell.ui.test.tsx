@@ -7,6 +7,7 @@ import { ApiContext } from "../api/context";
 import { createFixtureApi, sceneByKey, type FixtureApi } from "../api/fixtures";
 import { ProductPage, seenKey } from "../product/ProductPage";
 import { productById } from "../products";
+import type { NewsState } from "../api/types";
 import { ToastProvider } from "../ui/Toast";
 import { BRANDING } from "./branding";
 import { LAST_PRODUCT_KEY, Shell } from "./Shell";
@@ -182,6 +183,50 @@ describe("product page", () => {
     expect(items.map((b) => b.textContent!.match(/N\d/)![0])).toEqual(["N1", "N3", "N0"]);
     await user.click(items[0]);
     expect(api.calls.at(-1)).toEqual({ name: "openNewsLink", args: ["pd2r", 1] });
+  });
+
+  it("news: a refused link shows why and reloads the feed", async () => {
+    const { api, user } = mount("ready", (a) => {
+      a.openNewsLink = () => Promise.reject({ code: "invalid_request", message: "no news item 0 for pd2r; load news again" });
+    });
+    const feed = await screen.findByRole("region", { name: "News" });
+    await user.click((await within(feed).findAllByRole("button"))[0]);
+    expect(await screen.findByText("no news item 0 for pd2r; load news again")).toBeTruthy();
+    await waitFor(() => expect(names(api).filter((n) => n === "getNews")).toHaveLength(2));
+  });
+
+  it("news: only the latest request's reply is shown", async () => {
+    const replies: ((s: NewsState) => void)[] = [];
+    mount("offline", (a) => {
+      a.getNews = () => new Promise<NewsState>((resolve) => replies.push(resolve));
+    });
+    await waitFor(() => expect(replies).toHaveLength(1));
+    replies[0]({ status: "offline" });
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    await userEvent.click(retry);
+    await userEvent.click(retry);
+    await waitFor(() => expect(replies).toHaveLength(3));
+    const item = (title: string): NewsState => ({ status: "ok", items: [{ tag: "Guide", title, published: "2026-11-01" }] });
+    await act(async () => replies[2](item("Latest")));
+    await act(async () => replies[1](item("Stale")));
+    expect(screen.getByText(/Latest/)).toBeTruthy();
+    expect(screen.queryByText(/Stale/)).toBeNull();
+  });
+
+  it("About shows why when opening the page is refused", async () => {
+    api = createFixtureApi("coming-soon");
+    api.openProductPage = () => Promise.reject({ code: "internal", message: "opening the page failed" });
+    const user = userEvent.setup();
+    const forever = { ...productById("project-forever")!, aboutPage: true };
+    render(
+      <ApiContext.Provider value={api}>
+        <ToastProvider>
+          <ProductPage product={forever} data={undefined} refresh={() => Promise.resolve()} onOpenSettings={() => {}} />
+        </ToastProvider>
+      </ApiContext.Provider>,
+    );
+    await user.click(await screen.findByRole("button", { name: "About Forever" }));
+    expect(await screen.findByText("opening the page failed")).toBeTruthy();
   });
 
   it("news: empty reads Nothing yet; offline offers Retry", async () => {

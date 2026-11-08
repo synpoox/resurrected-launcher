@@ -27,7 +27,6 @@ pub const NEWS_SHOWN: usize = 3;
 
 const MAX_TITLE: usize = 120;
 const MAX_URL: usize = 512;
-const MAX_ID: usize = 64;
 const MAX_KIND: usize = 32;
 
 /// The only hosts a news link may open (owner decision on #80). Exact match; add
@@ -129,10 +128,20 @@ impl News {
             .iter()
             .filter(|e| &e.product_id == product)
             .collect();
-        // Both date forms sort correctly as text; stable for equal dates.
-        mine.sort_by(|a, b| b.published.cmp(&a.published));
+        // A date-only item sorts as the start of its day (UTC); equal instants keep
+        // file order (the sort is stable).
+        mine.sort_by(|a, b| sort_key(&b.published).cmp(&sort_key(&a.published)));
         mine.truncate(NEWS_SHOWN);
         mine
+    }
+}
+
+/// `published` as `YYYY-MM-DDTHH:MM:SSZ`; a date-only value is `T00:00:00Z`.
+fn sort_key(published: &str) -> std::borrow::Cow<'_, str> {
+    if published.len() == 10 {
+        format!("{published}T00:00:00Z").into()
+    } else {
+        published.into()
     }
 }
 
@@ -145,16 +154,11 @@ fn tag_of(kind: &str) -> Option<&'static str> {
     }
 }
 
+/// The catalog's product id rule ([`super::check::ident`]).
 fn product_id(field: &str, s: String) -> Result<ProductId, NewsError> {
-    let ok = !s.is_empty()
-        && s.len() <= MAX_ID
-        && s.bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
-    if ok {
-        Ok(ProductId(s))
-    } else {
-        Err(bad(format!("{field}: not a product id")))
-    }
+    super::check::ident(field, s)
+        .map(ProductId)
+        .map_err(|e| bad(e.to_string()))
 }
 
 /// Plain text: non-empty after trimming, at most `max` characters, and no
@@ -220,19 +224,29 @@ fn date(field: &str, s: String) -> Result<String, NewsError> {
     Ok(s)
 }
 
-/// `https` on a public host (the catalog's rule) that is on [`LINK_HOSTS`].
+/// What a link may hold after its host: an ASCII subset of RFC 3986 with no
+/// `,` (explorer.exe splits its command line on commas), quote, backslash,
+/// whitespace, `^`, `` ` ``, `|`, `<`, `>`, `{` or `}`.
+fn link_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b"-._~/?#[]@!$&'()*+;=%".contains(&b)
+}
+
+/// `https` on a public host (the catalog's rule) that is on [`LINK_HOSTS`],
+/// followed only by [`link_char`]s.
 pub fn link(field: &str, url: String) -> Result<String, NewsError> {
     if url.len() > MAX_URL {
         return Err(bad(format!("{field}: longer than {MAX_URL} characters")));
     }
-    let url = super::check::https(field, url).map_err(|e| bad(e.to_string()))?;
-    let rest = &url["https://".len()..];
-    let host = rest
-        .find(['/', '?', '#'])
-        .map_or(rest, |i| &rest[..i])
-        .to_ascii_lowercase();
+    let (url, host) = super::check::https_host(field, url).map_err(|e| bad(e.to_string()))?;
     if !LINK_HOSTS.contains(&host.as_str()) {
         return Err(bad(format!("{field}: {host} is not an allowed link host")));
+    }
+    // `https_host` accepted the host, so it is ASCII and this index is in bounds.
+    let rest = &url.as_bytes()["https://".len() + host.len()..];
+    if !rest.iter().copied().all(link_char) {
+        return Err(bad(format!(
+            "{field}: characters outside the allowed URL set"
+        )));
     }
     Ok(url)
 }
@@ -291,6 +305,19 @@ mod tests {
     }
 
     #[test]
+    fn same_day_items_sort_by_start_of_day_then_file_order() {
+        let news = News::parse(&file(vec![
+            item("pd2r", "guide", "Day A", "2026-11-01", GH),
+            item("pd2r", "guide", "Morning", "2026-11-01T08:00:00Z", GH),
+            item("pd2r", "guide", "Day B", "2026-11-01", GH),
+        ]))
+        .unwrap();
+        let shown = news.for_product(&ProductId("pd2r".into()));
+        let titles: Vec<_> = shown.iter().map(|e| e.title.as_str()).collect();
+        assert_eq!(titles, ["Morning", "Day A", "Day B"]);
+    }
+
+    #[test]
     fn unknown_fields_are_ignored() {
         let mut v = item("pd2r", "guide", "T", "2026-11-01", GH);
         v["image"] = "https://evil.example/x.png".into();
@@ -309,6 +336,8 @@ mod tests {
             "https://discord.gg/mGpHT26Xak",
             "https://discord.com/channels/1",
             "https://GitHub.com/x",
+            "https://github.com/synpoox/pd2-resurrected/wiki/A_b~c?q=1&r=%20#top",
+            "https://discord.com/channels/1/2",
         ] {
             assert!(
                 one(item("pd2r", "guide", "T", "2026-11-01", url)).is_ok(),
@@ -326,6 +355,16 @@ mod tests {
             "file:///C:/Windows",
             "https://github.com/../x",
             "github.com/x",
+            r"https://github.com/x,C:\Windows\System32\calc.exe",
+            "https://github.com/x\"y",
+            r"https://github.com/x\y",
+            "https://github.com/x^y",
+            "https://github.com/x`y",
+            "https://github.com/x|y",
+            "https://github.com/x<y>",
+            "https://github.com/x{y}",
+            "https://github.com/caf\u{e9}",
+            "https://github.com,evil/x",
         ] {
             assert!(
                 one(item("pd2r", "guide", "T", "2026-11-01", url)).is_err(),
@@ -388,7 +427,7 @@ mod tests {
 
     #[test]
     fn product_ids_and_kinds_are_checked() {
-        for p in ["", "PD2R", "pd2r/../x", &"a".repeat(MAX_ID + 1)] {
+        for p in ["", "PD2R", "pd2r/../x", "-pd2r", &"a".repeat(65)] {
             assert!(
                 one(item(p, "guide", "T", "2026-11-01", GH)).is_err(),
                 "{p:?}"

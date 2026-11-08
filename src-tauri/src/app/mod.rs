@@ -42,7 +42,7 @@ use crate::contract::{PingResponse, Versioned, UMBRELLA_DISPLAY_NAME};
 pub use game::{
     CatalogState, Desktop, LocationView, ProductState, StartupFailed, SystemDesktop, STATE_EVENT,
 };
-pub use news::{NewsItem, NewsState, DEFAULT_NEWS_URL, PRODUCT_PAGES};
+pub use news::{product_pages, NewsItem, NewsState, DEFAULT_NEWS_URL};
 pub use operations::{
     CachedReleases, ConflictView, InspectionView, Launcher, RecoveryView, Refusal, Release,
     ReleaseSummary, Releases, OUTCOME_EVENT, PROGRESS_EVENT,

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use resurrected_launcher_lib::app::{
-    self, CachedReleases, Desktop, Launcher, NewsItem, NewsState, PRODUCT_PAGES,
+    self, product_pages, CachedReleases, Desktop, Launcher, NewsItem, NewsState,
 };
 use resurrected_launcher_lib::catalog::news::MAX_NEWS_SIZE;
 use resurrected_launcher_lib::contract::{LauncherError, Versioned};
@@ -287,16 +287,53 @@ fn invalid_files_read_offline_and_open_nothing() {
 }
 
 #[test]
-fn offline_then_retry_fetches_again_and_a_fresh_file_is_reused() {
+fn every_get_news_fetches_again_with_no_cache() {
     let rig = Rig::new();
     rig.server.once(NEWS, Reply::Status(503));
     rig.server.route(NEWS, Reply::Body(fixture("valid.json")));
     assert_eq!(rig.news("pd2r"), NewsState::Offline);
     // Retry.
     assert_eq!(titles(&rig.news("pd2r")).len(), 3);
-    // Another product within the session reuses the validated file.
     rig.news("project-forever");
-    assert_eq!(rig.fetches(), 2);
+    assert_eq!(rig.fetches(), 3);
+    // Offline again: the earlier file is not shown, and its links are gone.
+    rig.server.route(NEWS, Reply::Status(503));
+    assert_eq!(rig.news("pd2r"), NewsState::Offline);
+    assert_eq!(code(rig.open("pd2r", 0).unwrap_err()), "invalid_request");
+}
+
+/// Two overlapping `get_news` calls: the one started last owns the indexes, even
+/// when the earlier one finishes after it.
+#[test]
+fn links_follow_the_latest_started_reply() {
+    let item = |title: &str, url: &str| {
+        serde_json::to_vec(&json!({ "schema_version": 1, "items": [{
+            "product_id": "pd2r", "kind": "guide", "title": title,
+            "published": "2026-11-01", "url": url,
+        }]}))
+        .unwrap()
+    };
+    let rig = Arc::new(Rig::new());
+    rig.server.once(
+        NEWS,
+        Reply::Delayed(
+            std::time::Duration::from_millis(800),
+            Box::new(Reply::Body(item("Slow", "https://github.com/slow"))),
+        ),
+    );
+    rig.server
+        .route(NEWS, Reply::Body(item("Fast", "https://github.com/fast")));
+    let slow = {
+        let rig = Arc::clone(&rig);
+        std::thread::spawn(move || rig.news("pd2r"))
+    };
+    while rig.fetches() == 0 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(titles(&rig.news("pd2r")), ["Fast"]);
+    assert_eq!(titles(&slow.join().unwrap()), ["Slow"]);
+    rig.open("pd2r", 0).unwrap();
+    assert_eq!(rig.opened(), ["https://github.com/fast"]);
 }
 
 #[test]
@@ -306,8 +343,11 @@ fn product_pages_are_bundled_and_only_for_listed_products() {
         .unwrap();
     assert_eq!(rig.opened(), ["https://github.com/synpoox/pd2-resurrected"]);
     assert_eq!(
-        PRODUCT_PAGES,
-        [("pd2r", "https://github.com/synpoox/pd2-resurrected")]
+        product_pages(),
+        [(
+            "pd2r".to_owned(),
+            "https://github.com/synpoox/pd2-resurrected".to_owned()
+        )]
     );
     for product in ["project-forever", "project-09", "unknown"] {
         let err = rig

@@ -55,23 +55,38 @@ export function ProductPage(props: ProductPageProps) {
   return props.product.hasRelease ? <ReleasedProduct {...props} /> : <ComingSoon product={props.product} />;
 }
 
+/** Shows the latest request's reply only: Rust resolves `openNewsLink` indexes against the
+ *  latest-started `getNews` too, so an index means the same item on both sides. */
 function useNews(productId: string) {
   const api = useApi();
+  const toast = useToast();
   const [news, setNews] = useState<NewsState | null>(null);
+  const latest = useRef(0);
   const load = useCallback(() => {
-    api.getNews(productId).then(setNews, () => setNews({ status: "offline" }));
+    const request = ++latest.current;
+    const show = (s: NewsState) => {
+      if (request === latest.current) setNews(s);
+    };
+    api.getNews(productId).then(show, () => show({ status: "offline" }));
   }, [api, productId]);
   useEffect(load, [load]);
   return {
     news,
     retry: load,
-    open: (i: number) => void api.openNewsLink(productId, i),
+    open: (i: number) =>
+      void api.openNewsLink(productId, i).catch((e: unknown) => {
+        toast.show({ tone: "error", text: asError(e).message });
+        load();
+      }),
   };
 }
 
 /** Forever and 09 today: ribbon, description and, when it has a page, "About <product>"; no tabs. */
 function ComingSoon({ product }: { product: Product }) {
   const api = useApi();
+  const toast = useToast();
+  const about = () =>
+    void api.openProductPage(product.id).catch((e: unknown) => toast.show({ tone: "error", text: asError(e).message }));
   const feed = useNews(product.id);
   return (
     <div className="page overview">
@@ -81,7 +96,7 @@ function ComingSoon({ product }: { product: Product }) {
         <div className="action-col">
           {product.aboutPage && (
             <div className="act">
-              <button type="button" className="btn ghost" onClick={() => void api.openProductPage(product.id)}>
+              <button type="button" className="btn ghost" onClick={about}>
                 About {product.short}
               </button>
             </div>
