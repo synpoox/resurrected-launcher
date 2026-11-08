@@ -240,15 +240,41 @@ describe("product page", () => {
     expect(names(api).filter((n) => n === "getNews")).toHaveLength(2);
   });
 
-  it("Patch Notes render plain text with line breaks; markup is not interpreted", async () => {
+  it("Patch Notes put each Markdown section in its own titled box; HTML and images stay text", async () => {
+    // The published pd2r 0.2.0-alpha notes open on `#### Items` with no summary (#128).
+    const notes = [
+      "#### Items",
+      "",
+      "- Crushing blow rolls on **normal** hits.",
+      "- <b>raw</b> ![art](https://example.com/a.png)",
+      "",
+      "#### Uber bosses",
+      "",
+      "- Uber areas have no waypoint.",
+    ].join("\n");
     const { user } = mount("ready", (a) => {
-      a.scene.notes = [{ ...a.scene.notes[0], notes: "Summary <b>bold</b>\n\nLine one\n<img src=x>" }];
+      a.scene.notes = [{ ...a.scene.notes[0], notes }];
     });
     await user.click(within(await loaded()).getByRole("tab", { name: "Patch Notes" }));
-    const body = await screen.findByText(/Line one/);
-    expect(body.textContent).toBe("Line one\n<img src=x>");
-    expect(document.querySelector(".notes img, .notes b")).toBeNull();
-    expect(screen.getByText("Summary <b>bold</b>")).toBeTruthy();
+    const items = await screen.findByRole("region", { name: "Items" });
+    expect(screen.getByRole("region", { name: "Uber bosses" })).toBeTruthy();
+    expect(within(items).getByRole("heading", { level: 3, name: "Items" })).toBeTruthy();
+    expect(within(items).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "Crushing blow rolls on normal hits.",
+      "<b>raw</b> art",
+    ]);
+    expect(within(items).getByText("normal").tagName).toBe("STRONG");
+    expect(document.querySelector(".notes img, .notes b, .notes a")).toBeNull();
+    expect(screen.queryByText(/####/)).toBeNull();
+    expect(document.querySelector(".notes-summary")).toBeNull();
+  });
+
+  it("the release title names the status once when the display version already carries it", async () => {
+    const { user } = mount("ready", (a) => {
+      a.scene.notes = [{ ...a.scene.notes[0], display_version: "0.2.0-alpha", status: "alpha" }];
+    });
+    await user.click(within(await loaded()).getByRole("tab", { name: "Patch Notes" }));
+    expect((await screen.findByRole("heading", { level: 2 })).textContent).toBe("PD2R 0.2.0-alpha");
   });
 
   it("a null note shows the offline line with Retry", async () => {

@@ -74,7 +74,8 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 - Fills the whole main area except the sidebar, with no hero art. It scrolls with a dark scrollbar, and content passes under a solid top fade.
 - The state's main action moves top-left at 48px height. There is no Manage button. Secondary buttons, readiness and detail lines are hidden, and progress shrinks to a 250px bar with Cancel.
 - If the state has a notice, a red dot on the Overview tab points to it. Notices are shown on Overview only.
-- Releases are listed newest first in a centred 680px column. Each has an uppercase title ("PD2R ALPHA 0.4.2"), a one-line summary, a "Patch notes · date" line and a double rule, followed by sections (heading plus bullets).
+- Releases are listed newest first in a centred 680px column. Each has an uppercase title ("PD2R ALPHA 0.4.2"; the status is left out when the display version already names it, so `0.2.0-alpha` reads "PD2R 0.2.0-ALPHA", #128), the opening paragraph as its summary when the notes start with one, a "Patch notes · date" line and a double rule. Then each section of the notes sits in its own 1px `--line` box on `--panel` under an uppercase heading, in the style of League client patch notes. Body text is 16px (#128).
+- Notes are a Markdown subset (`docs/specs/release-manifest.md`). It is parsed into data and rendered as React text: HTML, links and images are never interpreted, so the CSP stays `img-src 'self'`.
 - The installed release's notes ship with it and display offline. Newer releases offline show "Patch notes for newer releases need a connection. Retry".
 
 **Rules for both tabs:**

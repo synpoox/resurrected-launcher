@@ -45,10 +45,15 @@ export function startedAgo(sinceSecs: number, now = Date.now()): string {
   return `${h} h ${mins % 60} min ago`;
 }
 
-/** "alpha 0.4.2", using the status from the release notes when known. */
+/**
+ * "alpha 0.4.2", using the status from the release notes when known. A display version that
+ * already names the status ("0.2.0-alpha") is shown as it is, so the status is never repeated.
+ */
 export function releaseLabel(releaseId: string, version: string, notes: ReleaseNotes[]): string {
   const status = notes.find((n) => n.release_id === releaseId)?.status;
-  return status && status !== "release" ? `${status} ${version}` : version;
+  if (!status || status === "release") return version;
+  const named = new RegExp(`(^|[^a-z])${status}([^a-z]|$)`, "i").test(version);
+  return named ? version : `${status} ${version}`;
 }
 
 export const formatCount = (n: number) => n.toLocaleString("en-US");

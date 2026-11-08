@@ -86,6 +86,17 @@ describe("Patch Notes contrast (WCAG 2.2 AA, on --bg)", () => {
     expect(ratio(fg, BG)).toBeGreaterThanOrEqual(need);
   });
 
+  // Sections are boxes on their own background (#128): body text, headings and markers on it.
+  it("section boxes: text, headings and list markers on the section background", () => {
+    const section = rule(product, ".notes-section");
+    const bg = token(section.background);
+    expect(ratio(token(rule(product, ".notes-body").color), bg)).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(token(rule(product, ".notes-heading").color), bg)).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(token(rule(product, ".notes-sub").color), bg)).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(token(rule(product, ".notes-section strong").color), bg)).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(token(rule(product, ".notes-section li::marker").color), bg)).toBeGreaterThanOrEqual(3);
+  });
+
   it("release titles inherit --text and pass as large text", () => {
     const title = rule(product, ".notes-title");
     expect(title.color).toBeUndefined();

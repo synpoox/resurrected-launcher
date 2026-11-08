@@ -50,7 +50,7 @@ One per release, published as a durable public asset next to the archive. See `f
 | `display_version` | Non-empty text shown to players. |
 | `release_date` | `YYYY-MM-DD`. |
 | `status` | `alpha`, `beta` or `release`. |
-| `release_notes` | Non-empty text, shown as Patch Notes. Inline so they work offline. |
+| `release_notes` | Non-empty text, shown as Patch Notes. Inline so they work offline. A Markdown subset: ATX headings (the shallowest level used starts a section, deeper ones are sub-headings), `-`/`*`/`+` and numbered lists, paragraphs, fenced code, `**strong**`, `*em*`/`_em_` and `` `code` ``. An opening paragraph is the summary. HTML is shown as text; links and images show only their text. |
 | `min_launcher_version` | `MAJOR.MINOR.PATCH`. Newer than this launcher: a launcher update is required. |
 
 ### Payload and installation
