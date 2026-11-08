@@ -74,7 +74,12 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 - Fills the whole main area except the sidebar, with no hero art. It scrolls with a dark scrollbar, and content passes under a solid top fade.
 - The state's main action moves top-left at 48px height. There is no Manage button. Secondary buttons, readiness and detail lines are hidden, and progress shrinks to a 250px bar with Cancel.
 - If the state has a notice, a red dot on the Overview tab points to it. Notices are shown on Overview only.
-- Releases are listed newest first in a centred 680px column. Each has an uppercase title ("PD2R ALPHA 0.4.2"), a one-line summary, a "Patch notes · date" line and a double rule, followed by sections (heading plus bullets).
+- Layout follows the League client's patch notes in structure and feel, with our tokens and no Riot branding (owner design pass, #128):
+  - **Banner**: the product's bundled hero art (`src/art`, never a remote image), 260px high across an 880px column, 1px `--line` frame.
+  - **Release head**, centred in a 760px column, newest release first: a 32px uppercase title in two lines, the product name over "Patch 0.2.0 notes". The patch version drops a leading or trailing status; the status becomes the tag. Then the notes' opening paragraph as the summary (17px), a 3px double `--line` divider, and the meta row: tag (`--detail`: Alpha, Beta or Release) · date.
+  - **Table of contents**: a full-width row between rules, "TABLE OF CONTENTS" with `+`/`−` in `--detail`, collapsed by default. Opened, it lists every section heading as a ruled row. Choosing one jumps to that section (instantly, no smooth scrolling) and moves focus to its heading. Entries are buttons, because the webview has no links.
+  - **Sections**: a 32px bold italic uppercase heading, then a 1px `--line` box on `--bg`. In the box: an optional description or `>` quote (quotation marks in `--muted`), a divider, `###` sub-headings (21px uppercase) and bullets nested up to three levels (disc, then circle). Body text is 17px at line height 1.7.
+- Notes are a Markdown subset (`docs/specs/release-manifest.md`). It is parsed into data and rendered as React text: HTML, links and images are never interpreted, so the CSP stays `img-src 'self'`.
 - The installed release's notes ship with it and display offline. Newer releases offline show "Patch notes for newer releases need a connection. Retry".
 
 **Rules for both tabs:**
