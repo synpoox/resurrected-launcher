@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { ApiContext } from "../api/context";
 import { createFixtureApi, sceneByKey, type FixtureApi } from "../api/fixtures";
-import { seenKey } from "../product/ProductPage";
+import { ProductPage, seenKey } from "../product/ProductPage";
+import { productById } from "../products";
+import type { NewsState } from "../api/types";
 import { ToastProvider } from "../ui/Toast";
 import { BRANDING } from "./branding";
 import { LAST_PRODUCT_KEY, Shell } from "./Shell";
@@ -145,13 +147,27 @@ describe("product page", () => {
     expect(screen.getByRole("img", { name: /Placeholder hero art for Project Diablo 2/ })).toBeTruthy();
   });
 
-  it("products without a release: no tabs, ribbon, description and About", async () => {
-    const { api, user } = mount("coming-soon");
-    await user.click(await screen.findByRole("button", { name: "About Forever" }));
+  it("products without a release: no tabs, ribbon and description; no About without a page", async () => {
+    mount("coming-soon");
+    expect(await screen.findByText("Coming soon")).toBeTruthy();
     expect(screen.queryByRole("tablist")).toBeNull();
-    expect(screen.getByText("Coming soon")).toBeTruthy();
-    expect(names(api)).toContain("openProductPage");
-    expect(api.calls.find((c) => c.name === "openProductPage")!.args).toEqual(["project-forever"]);
+    // Forever has no public repository yet (#80): no page, no button.
+    expect(screen.queryByRole("button", { name: "About Forever" })).toBeNull();
+  });
+
+  it("About opens the product page by product id when the product has one", async () => {
+    api = createFixtureApi("coming-soon");
+    const user = userEvent.setup();
+    const forever = { ...productById("project-forever")!, aboutPage: true };
+    render(
+      <ApiContext.Provider value={api}>
+        <ToastProvider>
+          <ProductPage product={forever} data={undefined} refresh={() => Promise.resolve()} onOpenSettings={() => {}} />
+        </ToastProvider>
+      </ApiContext.Provider>,
+    );
+    await user.click(await screen.findByRole("button", { name: "About Forever" }));
+    expect(api.calls.at(-1)).toEqual({ name: "openProductPage", args: ["project-forever"] });
   });
 
   it("news: up to three items, opened by index", async () => {
@@ -167,6 +183,50 @@ describe("product page", () => {
     expect(items.map((b) => b.textContent!.match(/N\d/)![0])).toEqual(["N1", "N3", "N0"]);
     await user.click(items[0]);
     expect(api.calls.at(-1)).toEqual({ name: "openNewsLink", args: ["pd2r", 1] });
+  });
+
+  it("news: a refused link shows why and reloads the feed", async () => {
+    const { api, user } = mount("ready", (a) => {
+      a.openNewsLink = () => Promise.reject({ code: "invalid_request", message: "no news item 0 for pd2r; load news again" });
+    });
+    const feed = await screen.findByRole("region", { name: "News" });
+    await user.click((await within(feed).findAllByRole("button"))[0]);
+    expect(await screen.findByText("no news item 0 for pd2r; load news again")).toBeTruthy();
+    await waitFor(() => expect(names(api).filter((n) => n === "getNews")).toHaveLength(2));
+  });
+
+  it("news: only the latest request's reply is shown", async () => {
+    const replies: ((s: NewsState) => void)[] = [];
+    mount("offline", (a) => {
+      a.getNews = () => new Promise<NewsState>((resolve) => replies.push(resolve));
+    });
+    await waitFor(() => expect(replies).toHaveLength(1));
+    replies[0]({ status: "offline" });
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    await userEvent.click(retry);
+    await userEvent.click(retry);
+    await waitFor(() => expect(replies).toHaveLength(3));
+    const item = (title: string): NewsState => ({ status: "ok", items: [{ tag: "Guide", title, published: "2026-11-01" }] });
+    await act(async () => replies[2](item("Latest")));
+    await act(async () => replies[1](item("Stale")));
+    expect(screen.getByText(/Latest/)).toBeTruthy();
+    expect(screen.queryByText(/Stale/)).toBeNull();
+  });
+
+  it("About shows why when opening the page is refused", async () => {
+    api = createFixtureApi("coming-soon");
+    api.openProductPage = () => Promise.reject({ code: "internal", message: "opening the page failed" });
+    const user = userEvent.setup();
+    const forever = { ...productById("project-forever")!, aboutPage: true };
+    render(
+      <ApiContext.Provider value={api}>
+        <ToastProvider>
+          <ProductPage product={forever} data={undefined} refresh={() => Promise.resolve()} onOpenSettings={() => {}} />
+        </ToastProvider>
+      </ApiContext.Provider>,
+    );
+    await user.click(await screen.findByRole("button", { name: "About Forever" }));
+    expect(await screen.findByText("opening the page failed")).toBeTruthy();
   });
 
   it("news: empty reads Nothing yet; offline offers Retry", async () => {

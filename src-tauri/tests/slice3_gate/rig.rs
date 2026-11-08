@@ -164,6 +164,9 @@ impl Desktop for GateDesktop {
     fn open_loader_download_page(&self) -> std::io::Result<()> {
         Ok(())
     }
+    fn open_link(&self, _: &str) -> std::io::Result<()> {
+        Ok(())
+    }
     fn open_folder(&self, _: &Path) -> std::io::Result<()> {
         Ok(())
     }

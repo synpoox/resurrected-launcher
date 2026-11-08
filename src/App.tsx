@@ -70,7 +70,6 @@ export function App({ search, dev, live = isTauri(), selfUpdate = false }: AppPr
       product={scene?.product}
       open={scene?.open}
       tab={tab}
-      showAbout={selection.mode === "fixture"}
     />
   );
   return (

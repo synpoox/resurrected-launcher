@@ -179,6 +179,9 @@ impl Desktop for NoDesktop {
     fn open_loader_download_page(&self) -> std::io::Result<()> {
         Ok(())
     }
+    fn open_link(&self, _: &str) -> std::io::Result<()> {
+        Ok(())
+    }
     fn open_folder(&self, _: &Path) -> std::io::Result<()> {
         Ok(())
     }
@@ -441,8 +444,9 @@ fn a_refused_tray_update_sends_its_error_to_the_window() {
     assert!(asked["data"]["error"]["code"].is_string(), "{asked}");
 }
 
-/// The notification, single-instance, tray and menu plugins are registered Rust-side, but no
-/// capability grants their commands to the webview.
+/// The single-instance, tray and menu plugins are registered Rust-side, but no capability
+/// grants their commands to the webview. The notification plugin is gone (#104); its
+/// commands stay listed so a re-added plugin can't slip through.
 #[test]
 fn lifecycle_plugin_commands_are_refused_over_ipc() {
     // Single instance stays out of this process (its mutex would take the
