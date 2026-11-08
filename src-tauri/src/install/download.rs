@@ -232,7 +232,7 @@ impl Downloader {
 
     /// Downloads `url` (HTTPS only, every redirect hop too) to `dest`, through
     /// `<dest>.partial`, which replaces any existing `dest` only after `expect` held.
-    /// For metadata and the loader installer, which have no [`TransactionPaths`].
+    /// For downloads outside a transaction, which have no [`TransactionPaths`].
     ///
     /// No [`crate::contract::WriteGuard`] covers `dest`: the caller must pass a path
     /// under the launcher's local data dir, never one inside a game folder.
@@ -356,7 +356,7 @@ fn nonzero(digest: [u8; 32]) -> Result<Sha256Digest, LauncherError> {
 /// downloaded bytes.
 #[derive(Debug, Clone, Copy)]
 pub enum Expect<'a> {
-    /// Exactly `size` bytes with this SHA-256 (a manifest, the loader installer).
+    /// Exactly `size` bytes with this SHA-256 (a release manifest).
     Exact { size: u64, sha256: &'a Sha256Digest },
     /// Size and hash unknown (the feed); fails as soon as more than this many bytes arrive.
     AtMost(u64),

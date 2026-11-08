@@ -20,6 +20,7 @@
 //! | [`PD2R_2`] | Update of 1: `armor.txt`, the plugin and the loot filter default change; `weapons.txt` added; `retired.txt` dropped; `config.ini` unchanged. |
 //! | [`PD2R_3`] | Save-breaking release (ADR 0001) after 2; `config.ini` default changes. |
 //! | [`FOREVER_1`] | A second product (`mods/Forever`), for "other products untouched". |
+//! | [`PD2R_REAL_LAYOUT`] | The published PD2R tree (`mods/PD2Resurrected`: `PD2Resurrected.mpq/`, `modinfo.json`, `d2rloader/{metadata.json,config,plugins}`) with fake bytes. Shipped defaults `d2rloader/config/{d2rloader.toml,filter.json}`; required TOML setting `d2rcore.save_format.mode = "extended"`. |
 //!
 //! [`malicious`] returns [`PD2R_1`] with a hostile archive (see [`Malice`]) whose
 //! manifest `archive.size`/`sha256` match the hostile bytes, so download
@@ -85,7 +86,9 @@ pub const PD2R_1: &str = "pd2r-fixture-1";
 pub const PD2R_2: &str = "pd2r-fixture-2";
 pub const PD2R_3: &str = "pd2r-fixture-3";
 pub const FOREVER_1: &str = "forever-fixture-1";
-pub const ALL_RELEASES: [&str; 4] = [PD2R_1, PD2R_2, PD2R_3, FOREVER_1];
+/// PD2R with the published PD2Resurrected archive layout and fake bytes.
+pub const PD2R_REAL_LAYOUT: &str = "pd2r-real-layout-1";
+pub const ALL_RELEASES: [&str; 5] = [PD2R_1, PD2R_2, PD2R_3, FOREVER_1, PD2R_REAL_LAYOUT];
 
 /// Shipped default loot filter of the PD2R fixture releases.
 pub const LOOT_FILTER: &str = "lootfilter/default.filter";

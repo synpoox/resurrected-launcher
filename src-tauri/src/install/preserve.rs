@@ -86,13 +86,47 @@ pub(crate) fn fate(
     }
 }
 
-/// The value of `key` in an INI-style `key=value` file, first match, trimmed.
-/// Section headers and comment lines never match a key.
+/// The value of `key` in a settings file, first match, trimmed.
+///
+/// * A plain key (`default_mod`) is INI-style: the first `key=value` line in any
+///   section. Section headers and comment lines never match a key.
+/// * A dotted key (`d2rcore.save_format.mode`) is TOML: the enclosing `[table]`
+///   plus the line's key must spell it, and a quoted string comes back unquoted.
 pub(crate) fn setting_value<'t>(text: &'t str, key: &str) -> Option<&'t str> {
-    text.lines()
-        .filter_map(|l| l.split_once('='))
-        .find(|(k, _)| k.trim() == key)
-        .map(|(_, v)| v.trim())
+    if !key.contains('.') {
+        return text
+            .lines()
+            .filter_map(|l| l.split_once('='))
+            .find(|(k, _)| k.trim() == key)
+            .map(|(_, v)| v.trim());
+    }
+    // shortcut: no quoted keys, multi-line strings or escapes; PD2R's d2rloader.toml
+    // uses none. Swap in a TOML parser if a release needs them.
+    let dotted = |s: &str| s.split('.').map(str::trim).collect::<Vec<_>>().join(".");
+    let mut table = String::new();
+    for line in text.lines().map(str::trim) {
+        if let Some(header) = line.strip_prefix('[') {
+            table = dotted(header.split(']').next().unwrap_or_default());
+            continue;
+        }
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
+        let k = dotted(k);
+        let full = if table.is_empty() {
+            k
+        } else {
+            format!("{table}.{k}")
+        };
+        if full == key {
+            let v = v.trim();
+            return Some(match v.chars().next() {
+                Some(q @ ('"' | '\'')) => v[1..].split(q).next().unwrap_or_default(),
+                _ => v.split('#').next().unwrap_or_default().trim(),
+            });
+        }
+    }
+    None
 }
 
 /// Settings the release needs: required settings and the loader save format.
@@ -203,5 +237,34 @@ mod tests {
         assert_eq!(setting_value(text, "save_format"), Some("pd2r"));
         assert_eq!(setting_value(text, "loader"), None);
         assert_eq!(setting_value(text, "missing"), None);
+    }
+
+    #[test]
+    fn setting_value_reads_dotted_keys_as_toml_table_plus_key() {
+        let text = "# d2rcore.save_format.mode = \"commented\"\nmode = \"top\"\n\
+                    [d2rcore.items]\nmode = \"items\"\n\
+                    [ d2rcore . save_format ]\nmode = \"extended\" # the loader's\n\
+                    [d2rcore]\nother.deep = 'single'\nbare = 42 # comment\n";
+        assert_eq!(
+            setting_value(text, "d2rcore.save_format.mode"),
+            Some("extended")
+        );
+        assert_eq!(setting_value(text, "d2rcore.items.mode"), Some("items"));
+        assert_eq!(setting_value(text, "d2rcore.other.deep"), Some("single"));
+        assert_eq!(setting_value(text, "d2rcore.bare"), Some("42"));
+        assert_eq!(setting_value(text, "d2rcore.mode"), None);
+        assert_eq!(setting_value(text, "save_format.mode"), None);
+        // A plain key keeps the INI rule: first match in any section, value as written.
+        assert_eq!(setting_value(text, "mode"), Some("\"top\""));
+
+        let real = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../fixtures/products/pd2r-real-layout-1/payload/d2rloader/config/d2rloader.toml"
+        ))
+        .unwrap();
+        assert_eq!(
+            setting_value(&real, "d2rcore.save_format.mode"),
+            Some("extended")
+        );
     }
 }

@@ -11,9 +11,6 @@ use super::CatalogError;
 /// for any non-empty one.
 const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-/// The only accepted loader installer source: official upstream release downloads.
-const LOADER_SOURCE: &str = "https://github.com/D2RLoader/Installer/releases/download/";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReleaseStatus {
@@ -96,20 +93,6 @@ pub struct Saves {
     pub loader_save_format: Option<Setting>,
 }
 
-/// Pinned official D2RLoader installer. Never rehosted or bundled.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoaderPin {
-    /// The exact upstream release tag of the installer (e.g. `v0.1.0`).
-    pub installer_version: String,
-    /// The loader version that installer installs; one of `loader_versions`.
-    pub installs_loader_version: String,
-    pub url: String,
-    pub size: u64,
-    pub sha256: Sha256Digest,
-    /// Whether the upstream installer is Authenticode-signed. Disclosed when false.
-    pub signed: bool,
-}
-
 /// A validated release manifest. Exists only if every rule in the spec held.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReleaseManifest {
@@ -129,7 +112,6 @@ pub struct ReleaseManifest {
     shipped_defaults: Vec<RelativePath>,
     pub compatibility: Compatibility,
     pub saves: Saves,
-    pub loader: LoaderPin,
 }
 
 impl ReleaseManifest {
@@ -161,6 +143,55 @@ impl ReleaseManifest {
         } else {
             Ownership::Unknown
         }
+    }
+
+    /// How a 7-Zip listing of the release archive differs from `files` and
+    /// `empty_dirs`; empty when it matches. Each entry is its archive path (`/` or
+    /// `\`) and its size, `None` for a directory. Every entry must sit under one
+    /// top-level [`Self::mod_folder`] directory, as published for players to unpack
+    /// into `mods/`.
+    pub fn archive_mismatches(&self, entries: &[(&str, Option<u64>)]) -> Vec<String> {
+        let top = self.mod_folder();
+        let under = |p: &RelativePath| format!("{top}/{}", p.as_str());
+        let mut files: std::collections::BTreeMap<String, u64> = self
+            .inventory
+            .files()
+            .iter()
+            .map(|f| (under(&f.path), f.size))
+            .collect();
+        let mut empty: std::collections::BTreeSet<String> =
+            self.inventory.empty_dirs().iter().map(under).collect();
+        let mut dirs = std::collections::BTreeSet::from([top.to_owned()]);
+        for p in files.keys().chain(&empty) {
+            dirs.extend(p.match_indices('/').map(|(i, _)| p[..i].to_owned()));
+        }
+        dirs.extend(empty.iter().cloned());
+        let mut out = Vec::new();
+        for (raw, size) in entries {
+            let path = raw.replace('\\', "/");
+            match size {
+                None if dirs.contains(&path) => {
+                    empty.remove(&path);
+                }
+                None => out.push(format!("directory {path} is not in the manifest")),
+                Some(n) => match files.remove(&path) {
+                    Some(want) if want == *n => {}
+                    Some(want) => out.push(format!("{path} is {n} bytes, manifest says {want}")),
+                    None => out.push(format!("{path} is not in the manifest")),
+                },
+            }
+        }
+        out.extend(
+            files
+                .keys()
+                .map(|p| format!("{p} is missing from the archive")),
+        );
+        out.extend(
+            empty
+                .iter()
+                .map(|p| format!("{p}/ is missing from the archive")),
+        );
+        out
     }
 
     /// Immutability: a release ID seen before must have exactly the same metadata.
@@ -195,7 +226,6 @@ struct RawManifest {
     empty_dirs: Vec<String>,
     compatibility: RawCompatibility,
     saves: RawSaves,
-    loader: RawLoader,
 }
 
 #[derive(Deserialize)]
@@ -251,17 +281,6 @@ struct RawSaves {
     save_breaking: bool,
     incompatibility_notice: Option<String>,
     loader_save_format: Option<RawSetting>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawLoader {
-    installer_version: String,
-    installs_loader_version: String,
-    url: String,
-    size: Option<u64>,
-    sha256: Option<String>,
-    signed: bool,
 }
 
 fn invalid(field: impl Into<String>, reason: &'static str) -> CatalogError {
@@ -425,48 +444,6 @@ impl RawManifest {
                 .transpose()?,
         };
 
-        let l = self.loader;
-        let url = check::https("loader.url", l.url)?;
-        // Exactly <source><installer_version>/<file name>: no extra segments, dots,
-        // percent-encoding, query or fragment, so the prefix cannot be escaped.
-        let safe = |s: &str| {
-            !s.is_empty()
-                && !s.starts_with('.')
-                && s.bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b))
-        };
-        if !safe(&l.installer_version) {
-            return Err(invalid(
-                "loader.installer_version",
-                "must be the exact upstream release tag",
-            ));
-        }
-        let official = url
-            .strip_prefix(LOADER_SOURCE)
-            .and_then(|rest| rest.split_once('/'))
-            .is_some_and(|(tag, file)| tag == l.installer_version && safe(file));
-        if !official {
-            return Err(CatalogError::LoaderSourceNotOfficial { url });
-        }
-        check::semver("loader.installs_loader_version", &l.installs_loader_version)?;
-        if !compatibility
-            .loader_versions
-            .contains(&l.installs_loader_version)
-        {
-            return Err(invalid(
-                "loader.installs_loader_version",
-                "must be one of compatibility.loader_versions",
-            ));
-        }
-        let loader = LoaderPin {
-            installer_version: l.installer_version,
-            installs_loader_version: l.installs_loader_version,
-            url,
-            size: check::size("loader.size", l.size)?,
-            sha256: check::digest("loader.sha256", l.sha256)?,
-            signed: l.signed,
-        };
-
         Ok(ReleaseManifest {
             product_id: check::product_id("product_id", self.product_id)?,
             release_id: check::ident("release_id", self.release_id)?,
@@ -481,7 +458,6 @@ impl RawManifest {
             shipped_defaults,
             compatibility,
             saves,
-            loader,
         })
     }
 }

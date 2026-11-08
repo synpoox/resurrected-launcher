@@ -1,0 +1,2 @@
+# Byte-exact: feed.json pins the manifest sha256, so never convert line endings.
+* -text
