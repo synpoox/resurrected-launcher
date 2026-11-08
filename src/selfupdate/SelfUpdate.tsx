@@ -116,7 +116,7 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
     if (openToast.current) toast.dismiss(openToast.current.id);
     openToast.current = null;
     if (!input) {
-      // A silent phase (downloading, restarting) ends the last toast's turn: a later failure shows again.
+      // A silent phase (downloading, restarting, quitting) ends the last toast's turn: a later failure shows again.
       lastShownKey.current = null;
       return;
     }
@@ -198,7 +198,7 @@ interface ToastHandlers {
 }
 
 /**
- * The toast for a status, or null: downloading and restarting are silent, and so is up to date.
+ * The toast for a status, or null: downloading, restarting and quitting are silent, and so is up to date.
  * The Settings dot comes only from Later, on available, ready and failure toasts.
  */
 function toastFor(s: SelfUpdateStatus, hold: RestartHold | null, h: ToastHandlers): ToastInput | null {
@@ -230,6 +230,7 @@ function toastFor(s: SelfUpdateStatus, hold: RestartHold | null, h: ToastHandler
     case "up_to_date":
     case "downloading":
     case "restarting":
+    case "quitting":
       return null;
   }
 }

@@ -52,9 +52,10 @@ function VersionRow({ su }: { su: SelfUpdate }) {
           </button>
         );
       case "ready":
-      case "restarting": {
+      case "restarting":
+      case "quitting": {
         const why = s.phase === "ready" && su.hold ? holdText(su.hold) : null;
-        const off = s.phase === "restarting" || why !== null;
+        const off = s.phase !== "ready" || why !== null;
         return (
           <>
             <button

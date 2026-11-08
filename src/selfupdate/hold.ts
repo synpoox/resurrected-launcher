@@ -3,7 +3,11 @@ import type { OperationKind } from "../api/types";
 import type { ProductMap } from "../product/store";
 import { PRODUCTS } from "../products";
 
-/** Why Restart to update waits. The update still installs on the next Quit. */
+/**
+ * Why Restart to update waits. While a game runs, Quit closes the launcher without installing and the
+ * update stays ready; while an operation runs, Quit itself is refused or asks first. Once the hold
+ * clears, Restart to update or Quit installs it.
+ */
 export type RestartHold =
   | { reason: "product_running"; product_id: string }
   /** An operation is in progress; `operation` names it so the copy can say which. */

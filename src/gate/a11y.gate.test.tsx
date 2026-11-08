@@ -96,7 +96,7 @@ describe("axe-core: every self-update phase (flag on)", () => {
     expect(await violations()).toEqual([]);
   });
 
-  it.each(SELF_UPDATE_FIXTURES.filter((f) => f.key !== "restarting").map((f) => f.key))(
+  it.each(SELF_UPDATE_FIXTURES.filter((f) => f.key !== "restarting" && f.key !== "quitting").map((f) => f.key))(
     "%s: Settings → Launcher",
     async (phase) => {
       const { user } = mount("ready", { selfUpdate: phase });

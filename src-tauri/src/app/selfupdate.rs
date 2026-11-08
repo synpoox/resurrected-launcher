@@ -73,6 +73,11 @@ pub enum SelfUpdateStatus {
         current: String,
         next: String,
     },
+    /// Quit is installing the ready update; the launcher closes and does not relaunch.
+    Quitting {
+        current: String,
+        next: String,
+    },
     /// After the restart that installed it: `current` is the new version.
     Updated {
         current: String,
@@ -112,6 +117,7 @@ impl SelfUpdateStatus {
             | Downloading { next, .. }
             | Ready { next, .. }
             | Restarting { next, .. }
+            | Quitting { next, .. }
             | DownloadFailed { next, .. }
             | SignatureRejected { next, .. } => Some(next),
         }
@@ -278,6 +284,7 @@ impl SelfUpdater {
             SelfUpdateStatus::Downloading { .. }
                 | SelfUpdateStatus::Ready { .. }
                 | SelfUpdateStatus::Restarting { .. }
+                | SelfUpdateStatus::Quitting { .. }
         ) {
             return Ok(false);
         }
@@ -522,11 +529,19 @@ impl SelfUpdater {
                 e,
             ));
         }
+        let (current_now, next_now) = (current.clone(), next.clone());
         self.set(
             app,
-            SelfUpdateStatus::Restarting {
-                current: current.clone(),
-                next: next.clone(),
+            if restart {
+                SelfUpdateStatus::Restarting {
+                    current: current_now,
+                    next: next_now,
+                }
+            } else {
+                SelfUpdateStatus::Quitting {
+                    current: current_now,
+                    next: next_now,
+                }
             },
         );
         // The real host does not return on success: the installer takes over.

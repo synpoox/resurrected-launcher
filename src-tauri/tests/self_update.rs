@@ -1001,6 +1001,18 @@ fn quit_installs_a_ready_update_without_restarting() {
         vec![(NEXT.to_owned(), INSTALLER.to_vec(), false)]
     );
     assert!(rig.dir.join("installing.json").exists());
+    // Quit's own phase, not Restarting: the launcher closes and doesn't come back.
+    assert_eq!(
+        rig.status(),
+        SelfUpdateStatus::Quitting {
+            current: current(),
+            next: NEXT.into()
+        }
+    );
+    assert_eq!(
+        rig.phases_until("quitting").last().unwrap()["phase"],
+        "quitting"
+    );
     // Restart to update still relaunches.
     let (server, key) = (FixtureServer::start(), TestKey::generate());
     publish(&server, INSTALLER, &key.sign(INSTALLER, NEXT));

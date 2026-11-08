@@ -124,6 +124,7 @@ describe("fixtures", () => {
       "downloading",
       "ready",
       "restarting",
+      "quitting",
       "updated",
       "download_failed",
       "signature_rejected",
@@ -191,14 +192,18 @@ describe("toasts", () => {
   it("held: Restart to update is disabled and the text says why", async () => {
     mount("ready", "running");
     const text = await within(notifications()).findByText(/Launcher 1.3.0 is ready/);
-    expect(text.textContent).toBe("Launcher 1.3.0 is ready. Restarts after you quit PD2R, or it installs the next time you Quit.");
+    expect(text.textContent).toBe(
+      "Launcher 1.3.0 is ready. Restarts after you quit PD2R. Quitting the launcher while PD2R runs doesn't install it; it stays ready for later.",
+    );
     const restart = within(notifications()).getByRole("button", { name: "Restart to update" }) as HTMLButtonElement;
     expect(restart.getAttribute("aria-disabled")).toBe("true");
     expect(restart.getAttribute("aria-describedby")).toBe(text.id);
     cleanup();
     su?.dispose();
     mount("ready", "downloading");
-    expect(await within(notifications()).findByText(/Restarts after PD2R finishes downloading/)).toBeTruthy();
+    expect((await within(notifications()).findByText(/Restarts after PD2R finishes downloading/)).textContent).toBe(
+      "Launcher 1.3.0 is ready. Restarts after PD2R finishes downloading. After that, it also installs when you Quit.",
+    );
   });
 
   it("the hold follows product state: quitting the game updates the open toast in place", async () => {
@@ -345,6 +350,15 @@ describe("toasts", () => {
     await advance(TOAST_MS);
     expect(within(notifications()).queryByText("Updated to launcher 1.3.0")).toBeNull();
     expect(settingsItem().textContent).toBe("Settings");
+  });
+
+  it("installing on Quit shows Quit copy, not the restart promise, and no toast", async () => {
+    mount("quitting");
+    const screenEl = await within(screen.getByRole("main")).findByRole("status");
+    expect(screenEl.textContent).toContain("Updating the launcher…");
+    expect(screenEl.textContent).toContain("The launcher closes now. Start it again whenever you like.");
+    expect(screenEl.textContent).not.toContain("Back in a few seconds.");
+    expect(within(notifications()).queryByText(/launcher/i)).toBeNull();
   });
 
   it("download failed: an error toast with Try again that stays until dismissed", async () => {
