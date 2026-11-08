@@ -41,7 +41,7 @@ describe("fixtures", () => {
 describe("selectApi", () => {
   it("selects ?fixture=<key> in dev builds", () => {
     const s = selectApi("?fixture=install", true);
-    expect(s.ok && s.key).toBe("install");
+    expect(s.ok && s.mode === "fixture" && s.key).toBe("install");
   });
 
   it("shows an error for an unknown key", () => {
@@ -52,7 +52,7 @@ describe("selectApi", () => {
 
   it("ignores ?fixture= outside dev builds", () => {
     const s = selectApi("?fixture=install", false);
-    expect(s.ok && s.key).toBe("ready");
+    expect(s.ok && s.mode === "fixture" && s.key).toBe("ready");
   });
 });
 

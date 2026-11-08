@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+/** True inside the Tauri webview; false in tests and a plain browser. */
+export { isTauri } from "@tauri-apps/api/core";
+
 /** Must equal `contract::CONTRACT_VERSION` in Rust. */
 export const CONTRACT_VERSION = 2;
 

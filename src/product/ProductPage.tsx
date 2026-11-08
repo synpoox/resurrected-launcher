@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useApi } from "../api/context";
+import { subscribe } from "../api/subscribe";
 import type { SceneOpen } from "../api/fixtures";
-import type { Inspection, NewsState, OperationKind, OutcomeReport, ProductState, ReleaseNotes } from "../api/types";
+import type { Inspection, NewsState, OperationKind, OutcomeReport, ProductState, ReleaseNotes, TrayRequest } from "../api/types";
 import type { Product } from "../products";
 import { arrowKeys } from "../ui/focus";
 import { Menu, type MenuItem } from "../ui/Menu";
@@ -18,6 +19,14 @@ import { progressStats } from "./stats";
 import { asError, type ProductData } from "./store";
 
 export type Tab = "overview" | "notes";
+
+/** A tray request for this product: the save-breaking dialog, or the Overview with its notice. */
+export interface TrayFocus {
+  product_id: string;
+  action: Exclude<TrayRequest["action"], "quit_while_busy">;
+  /** Increments per request, so the same request twice acts twice. */
+  seq: number;
+}
 
 /** localStorage: the installed release whose Patch Notes were last opened automatically. */
 export const seenKey = (productId: string) => `launcher.patchNotesSeen.${productId}`;
@@ -36,11 +45,16 @@ export interface ProductPageProps {
   open?: SceneOpen;
   /** Overrides the default tab (dev fixtures). */
   tab?: Tab;
+  trayFocus?: TrayFocus;
   onOpenSettings: () => void;
+  /** Clears this product's clean-install backup notice. */
+  onDismissBackups?: () => void;
+  /** Shows "About <product>"; off in live mode until news and product pages are native (#80). */
+  showAbout?: boolean;
 }
 
 export function ProductPage(props: ProductPageProps) {
-  return props.product.hasRelease ? <ReleasedProduct {...props} /> : <ComingSoon product={props.product} />;
+  return props.product.hasRelease ? <ReleasedProduct {...props} /> : <ComingSoon product={props.product} showAbout={props.showAbout ?? true} />;
 }
 
 function useNews(productId: string) {
@@ -58,7 +72,7 @@ function useNews(productId: string) {
 }
 
 /** Forever and 09 today: ribbon, description and "About <product>"; no tabs. */
-function ComingSoon({ product }: { product: Product }) {
+function ComingSoon({ product, showAbout }: { product: Product; showAbout: boolean }) {
   const api = useApi();
   const feed = useNews(product.id);
   return (
@@ -67,11 +81,13 @@ function ComingSoon({ product }: { product: Product }) {
       <HeroCopy product={product} />
       <div className="bottom">
         <div className="action-col">
-          <div className="act">
-            <button type="button" className="btn ghost" onClick={() => void api.openProductPage(product.id)}>
-              About {product.short}
-            </button>
-          </div>
+          {showAbout && (
+            <div className="act">
+              <button type="button" className="btn ghost" onClick={() => void api.openProductPage(product.id)}>
+                About {product.short}
+              </button>
+            </div>
+          )}
         </div>
         <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} />
       </div>
@@ -111,7 +127,7 @@ function initialTab(productId: string, installedId: string | undefined): Tab {
   return installedId && seen !== null && seen !== installedId ? "notes" : "overview";
 }
 
-function Loaded({ product, data, refresh, open, tab: forcedTab, onOpenSettings, state }: ProductPageProps & { state: ProductState }) {
+function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpenSettings, onDismissBackups, state }: ProductPageProps & { state: ProductState }) {
   const api = useApi();
   const toast = useToast();
   const feed = useNews(product.id);
@@ -123,9 +139,11 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, onOpenSettings, 
   const [repairInspection, setRepairInspection] = useState<Inspection | null>(null);
   const [showFix, setShowFix] = useState(false);
   const opened = useRef(false);
+  const focused = useRef(0);
   const ids = { overview: useId(), notes: useId(), notice: useId(), line: useId(), why: useId() };
 
   const samples = data?.samples ?? [];
+  const backups = data?.backups ?? [];
   const last = samples.at(-1)?.event ?? null;
   const journey: Journey = journeyOf(state, last);
   const stats = progressStats(samples);
@@ -159,22 +177,16 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, onOpenSettings, 
 
   // Outcomes: failures toast; an uninstall's report fills its dialog.
   useEffect(() => {
-    let stop: (() => void) | undefined;
-    let live = true;
-    api
-      .onOutcome((o) => {
+    return subscribe(
+      api.onOutcome((o) => {
         if (o.product_id !== product.id) return;
         if (o.status === "failed") fail(o.error);
         if (o.status === "succeeded" && o.kind === "uninstall") {
           setDialog((d) => (d?.kind === "uninstall" ? { ...d, report: o.report } : d));
         }
         void refresh();
-      })
-      .then((un) => (live ? (stop = un) : un()));
-    return () => {
-      live = false;
-      stop?.();
-    };
+      }),
+    ).stop;
   }, [api, product.id, fail, refresh]);
 
   const start = useCallback(
@@ -245,6 +257,17 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, onOpenSettings, 
     // The same path the button takes; it only sets state after the API answers.
     if (kind) void Promise.resolve(kind).then(run);
   }, [open, run]);
+
+  // Tray requests: the save-breaking dialog (through the Update path), or the Overview's notice.
+  useEffect(() => {
+    if (!trayFocus || focused.current === trayFocus.seq) return;
+    focused.current = trayFocus.seq;
+    const action = trayFocus.action;
+    void Promise.resolve().then(() => {
+      setTab("overview");
+      if (action === "save_breaking") return run("update");
+    });
+  }, [trayFocus, run]);
 
   const label = (releaseId: string, version: string) => releaseLabel(releaseId, version, releases ?? []);
   const installed = state.installed;
@@ -557,6 +580,21 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, onOpenSettings, 
           <HeroCopy product={product} />
           <div className="bottom">
             <div className="action-col">
+              {backups.length > 0 && (
+                <Notice>
+                  <b>Clean install finished.</b> Your previous files were moved to{" "}
+                  {backups.map((p, i) => (
+                    <span key={p}>
+                      {i > 0 && ", "}
+                      <code>{p}</code>
+                    </span>
+                  ))}
+                  .{" "}
+                  <button type="button" className="link" onClick={onDismissBackups}>
+                    Dismiss
+                  </button>
+                </Notice>
+              )}
               {notice()}
               <div className="act">{actions(false)}</div>
             </div>
