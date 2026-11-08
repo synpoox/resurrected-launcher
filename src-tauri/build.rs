@@ -11,6 +11,11 @@ fn main() {
         "start_operation",
         "cancel_operation",
         "recover_product",
+        "detect_game_locations",
+        "choose_game_location",
+        "refresh_catalog",
+        "play_product",
+        "open_loader_download_page",
     ]);
     let attributes = tauri_build::Attributes::new()
         .windows_attributes(windows)

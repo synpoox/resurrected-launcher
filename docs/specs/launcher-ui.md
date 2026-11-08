@@ -159,7 +159,7 @@ Every state keeps the hero, ribbon, title and description. The state appears in 
 | --- | --- | --- |
 | D2R not found | `d2r-missing` | "Locate D2R", a red dot with "wasn't found on this PC", and a notice to choose the folder with `D2R.exe`. Nothing is moved or copied. |
 | Choose D2R location | `d2r-choose` | Dialog with a radio list of detected installations (path, store, build, support, whether PD2R is there) and "Browse for another folder…". The choice is remembered and can be changed in Settings. |
-| Loader not ready | `loader-missing` | "Set up D2RLoader" and "Manual steps". The notice names the official installer and version, its GitHub source and consent, and that it is **not code-signed**. |
+| Loader not ready | `loader-missing` | "Get D2RLoader" opens the official download page (`https://d2rloader.net/download.html`) in the system browser, plus "Check again". The notice says D2RLoader is missing, or names the found version, and lists the versions this release allows. The launcher never downloads or runs the loader installer ([#60](https://github.com/synpoox/resurrected-launcher/issues/60)). |
 | Ready to install | `install` | "Install", plus the release, download size and free space needed. |
 | Install progress | `downloading` | A progress bar replaces Play: label, %, size, speed and time left, with "Cancel". The sidebar badge shows the %. |
 | Final application | `applying` | "Cancel safely" plus "Cancelling now waits until it's safe to stop, or rolls back". |
@@ -174,6 +174,7 @@ Every state keeps the hero, ribbon, title and description. The state appears in 
 | Manage menu | `manage` | `⋯` open: Repair, Open saves folder, Open settings folder, then Uninstall…. |
 | Uninstall | `uninstall` | Accent-topped dialog: removes PD2R's files only. **Kept:** saves and settings with path and Open. **Not touched:** D2R, D2RLoader and other products. |
 | Offline | `offline` | Play still works: "Offline · alpha 0.4.1 verified · can't check for updates". The news feed reads "News needs a connection. Retry". |
+| Offline, never installed | `offline-empty` | No release to offer: Install is replaced by "Can't reach the release catalog" with "Try again" (refreshes the catalog). Nothing is downloaded or installed until it loads. |
 | Coming soon | `coming-soon` | Ribbon, description, "About Forever"; no tabs. |
 
 ## Motion

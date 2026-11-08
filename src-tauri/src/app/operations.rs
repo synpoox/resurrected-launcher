@@ -4,7 +4,7 @@
 //! location, release manifests, the downloader, 7-Zip) is native state.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -12,12 +12,16 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
+use crate::catalog::DEFAULT_FEED_URL;
 use crate::catalog::{Availability, Feed, ReleaseManifest};
 use crate::contract::{
     Boundary, CancelRequest, ErrorCode, FaultInjector, FaultPoint, InjectedFault, LauncherError,
     NoFaults, OperationKind, OperationOutcome, OperationRequest, Phase, ProductId, ProgressEvent,
-    RelativePath, Sha256Digest, Versioned,
+    RelativePath, RunningGame, Sha256Digest, Versioned,
 };
+use crate::game::process::running_under;
+use crate::game::readiness::BuildHashCache;
+use crate::game::GameHost;
 use crate::install::download::Downloader;
 use crate::install::extract::SevenZip;
 use crate::install::ops::{self, Env};
@@ -25,6 +29,8 @@ use crate::install::plan::{self, Conflict, Inspection, Request};
 use crate::install::preflight::Host;
 use crate::install::transaction::Recovery;
 use crate::state::{InstalledRelease, StateStore};
+
+use super::game::{CatalogState, Desktop};
 
 /// Event carrying `Versioned<ProgressEvent>` while an operation runs.
 pub const PROGRESS_EVENT: &str = "operation-progress";
@@ -63,7 +69,7 @@ fn metadata(why: String) -> LauncherError {
     LauncherError::new(ErrorCode::MetadataInvalid, why)
 }
 
-fn invalid(why: impl Into<String>) -> LauncherError {
+pub(super) fn invalid(why: impl Into<String>) -> LauncherError {
     LauncherError::new(ErrorCode::InvalidRequest, why)
 }
 
@@ -139,11 +145,53 @@ pub struct Launcher {
     pub downloader: Downloader,
     pub seven_zip: SevenZip,
     pub host: Box<dyn Host>,
-    /// Running operations: cancel flag and kind, by product.
-    running: Mutex<HashMap<ProductId, (Arc<AtomicBool>, OperationKind)>>,
+    pub game: Box<dyn GameHost>,
+    pub(super) desktop: Box<dyn Desktop>,
+    /// Where `refresh_catalog` downloads the feed: [`DEFAULT_FEED_URL`] unless a
+    /// test points it elsewhere.
+    pub feed_url: String,
+    /// Running operations: cancel flag and kind, by product. Also the app
+    /// operation lock: `start_operation` reserves under it, and `play_product`
+    /// holds it from assessment to spawn.
+    running: Mutex<RunningMap>,
+    pub(super) hashes: BuildHashCache,
+    pub(super) catalog: Mutex<CatalogState>,
+    /// Set once startup recovery finished; Play is refused before.
+    pub(super) recovered: AtomicBool,
 }
 
-fn locked<T>(m: &Mutex<T>) -> Result<MutexGuard<'_, T>, LauncherError> {
+pub(super) type RunningMap = HashMap<ProductId, (Arc<AtomicBool>, OperationKind)>;
+
+/// The install host plus whole-process tracking: every preflight (and its
+/// recheck before the first live mutation) also refuses with `GameRunning` while
+/// any process runs under the D2R root.
+struct GameAware<'a> {
+    host: &'a dyn Host,
+    game: &'a dyn GameHost,
+    d2r: &'a Path,
+}
+
+impl Host for GameAware<'_> {
+    fn free_space(&self, dir: &Path) -> std::io::Result<u64> {
+        self.host.free_space(dir)
+    }
+
+    fn processes_using(&self, files: &[PathBuf]) -> Vec<String> {
+        let mut found = self.host.processes_using(files);
+        match running_under(self.d2r, self.game) {
+            Ok(games) => found.extend(games.iter().map(describe)),
+            // Fail closed: an enumeration failure counts as a running game.
+            Err(e) => found.push(e.message),
+        }
+        found
+    }
+}
+
+pub(super) fn describe(g: &RunningGame) -> String {
+    format!("{} (pid {}) is running", g.image.display(), g.pid)
+}
+
+pub(super) fn locked<T>(m: &Mutex<T>) -> Result<MutexGuard<'_, T>, LauncherError> {
     m.lock()
         .map_err(|_| LauncherError::new(ErrorCode::Internal, "lock poisoned"))
 }
@@ -179,6 +227,8 @@ impl Launcher {
         downloader: Downloader,
         seven_zip: SevenZip,
         host: Box<dyn Host>,
+        game: Box<dyn GameHost>,
+        desktop: Box<dyn Desktop>,
     ) -> Self {
         Self {
             state: Mutex::new(state),
@@ -186,19 +236,55 @@ impl Launcher {
             downloader,
             seven_zip,
             host,
+            game,
+            desktop,
+            feed_url: DEFAULT_FEED_URL.to_owned(),
             running: Mutex::new(HashMap::new()),
+            hashes: BuildHashCache::default(),
+            catalog: Mutex::new(CatalogState::NotRefreshed),
+            recovered: AtomicBool::new(false),
         }
     }
 
-    fn env<'a>(&'a self, injector: &'a dyn FaultInjector, cancel: &'a AtomicBool) -> Env<'a> {
+    fn env<'a>(
+        &'a self,
+        host: &'a dyn Host,
+        injector: &'a dyn FaultInjector,
+        cancel: &'a AtomicBool,
+    ) -> Env<'a> {
         Env {
             downloader: &self.downloader,
             seven_zip: &self.seven_zip,
             state: &self.state,
-            host: &*self.host,
+            host,
             injector,
             cancel,
         }
+    }
+
+    /// The running map. Entries are only added and removed whole (removal by drop
+    /// guards), so a poisoned lock is still consistent.
+    pub(super) fn running(&self) -> MutexGuard<'_, RunningMap> {
+        self.running.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// [`ErrorCode::GameRunning`] while any process runs under `d2r`.
+    pub(super) fn refuse_if_game_running(&self, d2r: &Path) -> Result<(), LauncherError> {
+        match running_under(d2r, &*self.game)?.first() {
+            Some(g) => Err(LauncherError::new(ErrorCode::GameRunning, describe(g))),
+            None => Ok(()),
+        }
+    }
+
+    /// The selected D2R root, refused when it or a parent folder is a link.
+    pub(super) fn d2r_root(&self, state: &StateStore) -> Result<PathBuf, LauncherError> {
+        let d2r = state
+            .preferences()
+            .d2r_location
+            .clone()
+            .ok_or_else(|| invalid("no D2R location is selected"))?;
+        super::game::refuse_linked_root(&d2r)?;
+        Ok(d2r)
     }
 
     /// The D2R location from Preferences and the manifests `req` acts on: the
@@ -207,11 +293,7 @@ impl Launcher {
     fn resolve(&self, req: &OperationRequest) -> Result<Resolved, LauncherError> {
         use OperationKind::*;
         let mut state = locked(&self.state)?;
-        let d2r = state
-            .preferences()
-            .d2r_location
-            .clone()
-            .ok_or_else(|| invalid("no D2R location is selected"))?;
+        let d2r = self.d2r_root(&state)?;
         let record = state.installed_release(&req.product_id).cloned();
         let installed = match &record {
             Some(r) => Some(self.releases.installed(&mut state, r)?),
@@ -237,7 +319,8 @@ impl Launcher {
 
     fn inspect(&self, resolved: &Resolved) -> Result<(Inspection, String), LauncherError> {
         let req = resolved.request();
-        let insp = ops::inspect(&self.env(&NoFaults, &AtomicBool::new(false)), &req)?;
+        let cancel = AtomicBool::new(false);
+        let insp = ops::inspect(&self.env(&*self.host, &NoFaults, &cancel), &req)?;
         let root = plan::product_root(req.d2r, req.release);
         // Everything the plan decides, but not `plan.record`: its `installed_at` is
         // the inspection's wall-clock time. Debug of these Vec-only types is
@@ -259,24 +342,6 @@ impl Launcher {
         let token = digest.iter().map(|b| format!("{b:02x}")).collect();
         Ok((insp, token))
     }
-
-    fn state_of(&self, product: &ProductId) -> Result<ProductState, LauncherError> {
-        let running = locked(&self.running)?.get(product).map(|(_, kind)| *kind);
-        let mut state = locked(&self.state)?;
-        let installed = state.installed_release(product).cloned();
-        // An unavailable feed only hides the update offer; it never implies readiness.
-        let recommended = self
-            .releases
-            .recommended(&mut state, product)
-            .ok()
-            .map(|r| ReleaseSummary::of(&r.manifest));
-        Ok(ProductState {
-            product_id: product.clone(),
-            installed,
-            recommended,
-            running,
-        })
-    }
 }
 
 /// A release as the UI names it.
@@ -288,24 +353,13 @@ pub struct ReleaseSummary {
 }
 
 impl ReleaseSummary {
-    fn of(m: &ReleaseManifest) -> Self {
+    pub(super) fn of(m: &ReleaseManifest) -> Self {
         Self {
             release_id: m.release_id.clone(),
             display_version: m.display_version.clone(),
             save_breaking: m.is_save_breaking(),
         }
     }
-}
-
-/// Reply to `get_product_state`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProductState {
-    pub product_id: ProductId,
-    pub installed: Option<InstalledRelease>,
-    /// `None` when the feed or manifest is unavailable or invalid.
-    pub recommended: Option<ReleaseSummary>,
-    /// The operation running on this product, if any.
-    pub running: Option<OperationKind>,
 }
 
 /// Why an operation would pause; mirrors [`Conflict`].
@@ -436,15 +490,6 @@ impl<F: Fn(ProgressEvent) + Send + Sync> FaultInjector for Progress<F> {
     }
 }
 
-/// `get_product_state`: installed release, recommended release, running operation.
-#[tauri::command(rename_all = "snake_case")]
-pub async fn get_product_state(
-    launcher: State<'_, Arc<Launcher>>,
-    product_id: ProductId,
-) -> Result<Versioned<ProductState>, LauncherError> {
-    launcher.state_of(&product_id).map(Versioned::new)
-}
-
 /// `inspect_operation`: the plan the player confirms before `start_operation`.
 /// Consents in the request are ignored here; `start_operation` checks them.
 #[tauri::command(rename_all = "snake_case")]
@@ -478,32 +523,37 @@ pub async fn start_operation<R: Runtime>(
     let req = request.into_current()?;
     let resolved = launcher.resolve(&req)?;
     let cancel = Arc::new(AtomicBool::new(false));
-    {
-        let mut running = locked(&launcher.running)?;
+    let reservation = {
+        let mut running = launcher.running();
         if running.contains_key(&req.product_id) {
             return Err(LauncherError::new(
                 ErrorCode::OperationInProgress,
                 format!("{} already has an operation running", req.product_id.0),
             ));
         }
+        // Under the app operation lock, so a Play cannot slip in between.
+        launcher.refuse_if_game_running(&resolved.d2r)?;
         // Reserved first so two starts cannot both pass; inspected outside the lock.
         running.insert(req.product_id.clone(), (cancel.clone(), req.kind));
-    }
-    let checked = match launcher.inspect(&resolved) {
-        Ok((_, token)) if token == inspection_token => Ok(()),
-        Ok(_) => Err(LauncherError::new(
-            ErrorCode::InventoryMismatch,
-            "the product changed since it was inspected; inspect again",
-        )),
-        Err(e) => Err(e),
+        Reservation {
+            launcher: Arc::clone(&launcher),
+            product_id: req.product_id.clone(),
+        }
     };
-    if let Err(e) = checked {
-        locked(&launcher.running)?.remove(&req.product_id);
-        return Err(e);
+    match launcher.inspect(&resolved) {
+        Ok((_, token)) if token == inspection_token => {}
+        Ok(_) => {
+            return Err(LauncherError::new(
+                ErrorCode::InventoryMismatch,
+                "the product changed since it was inspected; inspect again",
+            ))
+        }
+        Err(e) => return Err(e),
     }
+    let launcher = Arc::clone(&launcher);
     let mut finish = Finish {
         app,
-        launcher: Arc::clone(&launcher),
+        reservation: Some(reservation),
         product_id: req.product_id,
         kind: req.kind,
         outcome: None,
@@ -511,6 +561,11 @@ pub async fn start_operation<R: Runtime>(
     std::thread::spawn(move || {
         let (product_id, kind) = (finish.product_id.clone(), finish.kind);
         let app = finish.app.clone();
+        let host = GameAware {
+            host: &*launcher.host,
+            game: &*launcher.game,
+            d2r: &resolved.d2r,
+        };
         let progress = Progress {
             product_id: product_id.clone(),
             kind,
@@ -520,7 +575,7 @@ pub async fn start_operation<R: Runtime>(
             },
         };
         let result = ops::run(
-            &finish.launcher.env(&progress, &cancel),
+            &launcher.env(&host, &progress, &cancel),
             &resolved.request(),
         );
         finish.outcome = Some(match result {
@@ -538,11 +593,24 @@ pub async fn start_operation<R: Runtime>(
     Ok(())
 }
 
+/// Frees a product's `running` entry when dropped, so a panic or error between
+/// reserving and starting never leaves it reserved (#53 item 6).
+struct Reservation {
+    launcher: Arc<Launcher>,
+    product_id: ProductId,
+}
+
+impl Drop for Reservation {
+    fn drop(&mut self) {
+        self.launcher.running().remove(&self.product_id);
+    }
+}
+
 /// Ends a started operation even if it panics: frees the product, then emits the
 /// outcome (`Failed` with `Internal` when none was recorded).
 struct Finish<R: Runtime> {
     app: AppHandle<R>,
-    launcher: Arc<Launcher>,
+    reservation: Option<Reservation>,
     product_id: ProductId,
     kind: OperationKind,
     outcome: Option<OperationOutcome>,
@@ -550,13 +618,8 @@ struct Finish<R: Runtime> {
 
 impl<R: Runtime> Drop for Finish<R> {
     fn drop(&mut self) {
-        let mut running = self
-            .launcher
-            .running
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        running.remove(&self.product_id);
-        drop(running);
+        // Freed before the outcome, so state read on the outcome is not running.
+        drop(self.reservation.take());
         let outcome = self
             .outcome
             .take()
@@ -580,7 +643,7 @@ pub async fn cancel_operation(
     request: Versioned<CancelRequest>,
 ) -> Result<(), LauncherError> {
     let req = request.into_current()?;
-    let running = locked(&launcher.running)?;
+    let running = launcher.running();
     let (cancel, _) = running
         .get(&req.product_id)
         .ok_or_else(|| invalid(format!("{} has no operation running", req.product_id.0)))?;
@@ -589,37 +652,41 @@ pub async fn cancel_operation(
 }
 
 /// `recover_product`: startup recovery before Play is enabled, and the way out of
-/// [`ErrorCode::RecoveryRequired`].
+/// [`ErrorCode::RecoveryRequired`]. Refused with [`ErrorCode::GameRunning`] while
+/// any process runs under the D2R root.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn recover_product(
     launcher: State<'_, Arc<Launcher>>,
     product_id: ProductId,
 ) -> Result<Versioned<RecoveryView>, LauncherError> {
-    if locked(&launcher.running)?.contains_key(&product_id) {
-        return Err(LauncherError::new(
-            ErrorCode::OperationInProgress,
-            format!("{} has an operation running", product_id.0),
-        ));
-    }
-    let (d2r, manifest) = {
-        let mut state = locked(&launcher.state)?;
-        let d2r = state
-            .preferences()
-            .d2r_location
-            .clone()
-            .ok_or_else(|| invalid("no D2R location is selected"))?;
-        // Any manifest of the product names its install root.
-        let release = match state.installed_release(&product_id).cloned() {
-            Some(record) => launcher.releases.installed(&mut state, &record)?,
-            None => launcher.releases.recommended(&mut state, &product_id)?,
+    launcher.recover(&product_id).map(Versioned::new)
+}
+
+impl Launcher {
+    pub(super) fn recover(&self, product_id: &ProductId) -> Result<RecoveryView, LauncherError> {
+        if self.running().contains_key(product_id) {
+            return Err(LauncherError::new(
+                ErrorCode::OperationInProgress,
+                format!("{} has an operation running", product_id.0),
+            ));
+        }
+        let (d2r, manifest) = {
+            let mut state = locked(&self.state)?;
+            let d2r = self.d2r_root(&state)?;
+            // Any manifest of the product names its install root.
+            let release = match state.installed_release(product_id).cloned() {
+                Some(record) => self.releases.installed(&mut state, &record)?,
+                None => self.releases.recommended(&mut state, product_id)?,
+            };
+            (d2r, release.manifest)
         };
-        (d2r, release.manifest)
-    };
-    let cancel = AtomicBool::new(false);
-    let recovery = ops::recover(&launcher.env(&NoFaults, &cancel), &d2r, &manifest)?;
-    Ok(Versioned::new(match recovery {
-        Recovery::Nothing => RecoveryView::Nothing,
-        Recovery::RolledBack => RecoveryView::RolledBack,
-        Recovery::RolledForward => RecoveryView::RolledForward,
-    }))
+        self.refuse_if_game_running(&d2r)?;
+        let cancel = AtomicBool::new(false);
+        let env = self.env(&*self.host, &NoFaults, &cancel);
+        Ok(match ops::recover(&env, &d2r, &manifest)? {
+            Recovery::Nothing => RecoveryView::Nothing,
+            Recovery::RolledBack => RecoveryView::RolledBack,
+            Recovery::RolledForward => RecoveryView::RolledForward,
+        })
+    }
 }

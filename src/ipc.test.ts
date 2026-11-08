@@ -11,4 +11,14 @@ describe("command bindings", () => {
     expect(allowlist.length).toBeGreaterThan(1);
     expect([...invoked].sort()).toEqual([...allowlist].sort());
   });
+
+  it("mirror every Rust ErrorCode", () => {
+    const rust = readFileSync("src-tauri/src/contract/error.rs", "utf8");
+    const body = rust.slice(rust.indexOf("pub enum ErrorCode {")).split("\n}")[0];
+    const snake = names(body, /^ {4}(\w+),\r?$/gm).map((v) => v.replace(/(?<!^)([A-Z])/g, "_$1").toLowerCase());
+    const ts = readFileSync("src/ipc.ts", "utf8");
+    const union = ts.slice(ts.indexOf("export type ErrorCode =")).split(";")[0];
+    expect(snake.length).toBeGreaterThan(20);
+    expect(names(union, /"(\w+)"/g).sort()).toEqual(snake.sort());
+  });
 });
