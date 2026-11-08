@@ -2,10 +2,11 @@
 
 .window {
   position: relative;
-  width: 100vw;
-  height: 100vh;
-  min-width: 1024px;
-  min-height: 640px;
+  /* Fills the client area exactly. The native window enforces the 1024x640
+     minimum; a CSS minimum here overflows a client area a few pixels short of
+     it (resize borders, fractional DPI) and clips the close button. */
+  width: 100%;
+  height: 100%;
   display: grid;
   grid-template-columns: 220px 1fr;
   overflow: hidden;
@@ -27,11 +28,13 @@
 .titlebar .drag {
   order: 0;
   flex: 1;
+  min-width: 0;
 }
 
 .window-controls {
   order: 1;
   display: flex;
+  flex-shrink: 0;
 }
 
 .win {
