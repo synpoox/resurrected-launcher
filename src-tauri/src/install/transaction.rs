@@ -199,10 +199,15 @@ impl Tx<'_> {
             }
             Boundary::CleanInstallBackupMade => {
                 let keep = keep()?;
-                entries.push(Entry::Copy(PlannedCopy::plan(
-                    p.root.join(DISPOSABLE_SENTINEL),
-                    p.staging.join(DISPOSABLE_SENTINEL),
-                )?));
+                // Only a disposable root has the sentinel; a real mod folder (passed
+                // as `<D2R>\mods\<folder>`) has none to carry into `S` (#137).
+                let sentinel = p.root.join(DISPOSABLE_SENTINEL);
+                if std::fs::symlink_metadata(&sentinel).is_ok_and(|m| m.is_file()) {
+                    entries.push(Entry::Copy(PlannedCopy::plan(
+                        sentinel,
+                        p.staging.join(DISPOSABLE_SENTINEL),
+                    )?));
+                }
                 entries.push(Entry::Rename(PlannedRename {
                     from: p.root.clone(),
                     to: keep,
