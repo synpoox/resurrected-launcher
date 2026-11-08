@@ -93,7 +93,7 @@ fn refresh_caches_the_validated_feed_and_recommended_manifests_following_redirec
     let (pd2r, forever) = (release(PD2R_REAL_LAYOUT), release(FOREVER_1));
     let feed = support::feed(&[&pd2r, &forever]);
     rig.publish(feed.clone(), &[&forever]);
-    // GitHub answers latest/download and the asset URL with redirects.
+    // GitHub answers the feed and asset URLs with redirects.
     rig.server.route(
         &pd2r.manifest_path(),
         Reply::Redirect("/storage/pd2r".into()),

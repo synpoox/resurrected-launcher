@@ -45,13 +45,13 @@ It parses both documents with `ReleaseManifest::parse` and `Feed::parse`, and ch
 
 Add a feed file (`schema_version: 3`, see the spec) listing every product with `available` or `upcoming`. `available` products carry `recommended: {release_id, manifest_url, manifest_size, manifest_sha256}` for the published manifest bytes. Upcoming products carry no artifacts. The recommendation is chosen by the publisher, not derived from GitHub Latest or prerelease flags.
 
-The launcher's default feed URL is `https://github.com/synpoox/pd2-resurrected/releases/latest/download/feed.json` ([#62](https://github.com/synpoox/resurrected-launcher/issues/62)), so attach `feed.json` to each GitHub release. `manifest_url` is the tag's durable asset, for example `https://github.com/synpoox/pd2-resurrected/releases/download/v0.1.0-alpha/release-manifest.json`. `fixtures/catalog/real/pd2r-0.1.0-alpha/` holds the generated pair for the published 0.1.0-alpha, which the packager's output should reproduce.
+The launcher's default feed URL is `https://github.com/synpoox/resurrected-launcher/releases/download/catalog/feed.json` ([#62](https://github.com/synpoox/resurrected-launcher/issues/62), [#119](https://github.com/synpoox/resurrected-launcher/issues/119)): one feed for every product, the only asset of the launcher repo's `catalog` release. Publishing replaces that asset in place; do not attach `feed.json` to product releases. Each product release keeps its own archive, manifest and `SHA256SUMS`. `manifest_url` is the tag's durable asset, for example `https://github.com/synpoox/pd2-resurrected/releases/download/v0.1.0-alpha/release-manifest.json`. `fixtures/catalog/real/pd2r-0.1.0-alpha/` holds the generated pair for the published 0.1.0-alpha, which the packager's output should reproduce.
 
 ## Publication order
 
 1. Upload the archive and the manifest as durable public release assets (not short-lived Actions artifacts). Never overwrite an asset of an existing `release_id`; corrected content gets a new `release_id`. The 0.1.0-alpha `SHA256SUMS` listed a `release-manifest.json` and `RELEASE_NOTES` that were never uploaded; list only uploaded assets.
 2. Download them back and verify size and SHA-256 against what was generated; run `validate-release` on them.
-3. Only then attach the feed with the new `recommended` pointer, as the last step.
+3. Only then replace `feed.json` on the launcher repo's `catalog` release with the new `recommended` pointer, as the last step.
 
 If publication stops at any point before step 3, the old feed still points at the old, complete release, so players keep a usable recommended track. The launcher rejects a known `release_id` whose pointer or manifest changed (`release_changed`), so republishing in place breaks updates rather than silently changing installed releases.
 
