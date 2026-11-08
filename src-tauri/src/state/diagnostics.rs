@@ -30,6 +30,8 @@ pub struct DiagnosticsContext {
     pub os: String,
     /// Recent operation errors, oldest first.
     pub recent_errors: Vec<LauncherError>,
+    /// Whether the Run value exists: Start with Windows stores nothing else.
+    pub start_with_windows: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -357,7 +359,7 @@ impl StateStore {
             "D2R location: {}",
             location.map_or("not set".into(), |l| l.display().to_string())
         );
-        let _ = writeln!(t, "Start with Windows: {}", on_off(p.start_with_windows));
+        let _ = writeln!(t, "Start with Windows: {}", on_off(ctx.start_with_windows));
         let _ = writeln!(
             t,
             "Download launcher updates automatically: {}",
@@ -618,6 +620,7 @@ mod tests {
                 ErrorCode::AccessDenied,
                 r"cannot write C:\Users\Micah\x?token=s3cret",
             )],
+            start_with_windows: true,
         }
     }
 
@@ -631,6 +634,10 @@ mod tests {
         assert!(text.contains("pd2r: release pd2r-0.4.2 (alpha 0.4.2)"));
         assert!(text.contains(r"AccessDenied: cannot write C:\Users\<you>\x?token=<redacted>"));
         assert!(text.contains("[Launcher log]\nnot included"));
+        assert!(
+            text.contains("Start with Windows: on"),
+            "from the Run value"
+        );
         assert!(text.starts_with("Project Resurrected launcher diagnostics"));
         assert!(!text.to_lowercase().contains("micah"));
         assert!(!text.contains("s3cret"));

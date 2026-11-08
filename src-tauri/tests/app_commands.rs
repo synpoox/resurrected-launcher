@@ -14,8 +14,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use resurrected_launcher_lib::app::{
-    self, CachedReleases, CatalogState, Desktop, InspectionView, Launcher, ProductState,
-    RecoveryView, Release, Releases, OUTCOME_EVENT, PROGRESS_EVENT, STATE_EVENT,
+    self, CachedReleases, CatalogState, Desktop, InspectionView, Launcher, LocationView,
+    ProductState, RecoveryView, Release, ReleaseNotes, Releases, StartupFailed, OUTCOME_EVENT,
+    PROGRESS_EVENT, STATE_EVENT,
 };
 use resurrected_launcher_lib::catalog::{GameBuild, Platform};
 use resurrected_launcher_lib::contract::{
@@ -149,6 +150,15 @@ impl GameHost for FakeGame {
 struct FakeDesktop {
     pick: Arc<Mutex<Option<PathBuf>>>,
     opened: Arc<AtomicUsize>,
+    /// Every folder opened in "Explorer".
+    folders: Arc<Mutex<Vec<PathBuf>>>,
+    /// Every file shown in its folder.
+    shown: Arc<Mutex<Vec<PathBuf>>>,
+    /// What the save dialog returns; `None` is Cancel.
+    save_to: Arc<Mutex<Option<PathBuf>>>,
+    saved_games: Arc<Mutex<Option<PathBuf>>>,
+    /// The launcher's Run value.
+    run: Arc<Mutex<Option<String>>>,
 }
 
 impl Desktop for FakeDesktop {
@@ -157,6 +167,31 @@ impl Desktop for FakeDesktop {
     }
     fn open_loader_download_page(&self) -> std::io::Result<()> {
         self.opened.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+    fn open_folder(&self, dir: &Path) -> std::io::Result<()> {
+        self.folders.lock().unwrap().push(dir.to_owned());
+        Ok(())
+    }
+    fn show_in_folder(&self, file: &Path) -> std::io::Result<()> {
+        self.shown.lock().unwrap().push(file.to_owned());
+        Ok(())
+    }
+    fn pick_save_file(&self, _: &str) -> Option<PathBuf> {
+        self.save_to.lock().unwrap().clone()
+    }
+    fn saved_games(&self) -> std::io::Result<PathBuf> {
+        self.saved_games
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| std::io::Error::other("no Saved Games"))
+    }
+    fn run_value(&self) -> std::io::Result<Option<String>> {
+        Ok(self.run.lock().unwrap().clone())
+    }
+    fn set_run_value(&self, value: Option<&str>) -> std::io::Result<()> {
+        *self.run.lock().unwrap() = value.map(str::to_owned);
         Ok(())
     }
 }
@@ -419,6 +454,26 @@ impl Rig {
     fn root(&self, release: &FixtureRelease) -> PathBuf {
         self.game.d2r().join(release.manifest.install_root.as_str())
     }
+
+    /// The progress events so far.
+    fn progress_events(&self) -> Vec<ProgressEvent> {
+        self.progress
+            .try_iter()
+            .map(|v| {
+                serde_json::from_value::<Versioned<ProgressEvent>>(v)
+                    .unwrap()
+                    .data
+            })
+            .collect()
+    }
+
+    /// Installs `name` through the commands; returns the product root.
+    fn install(&self, name: &str) -> PathBuf {
+        let r = self.publish(name);
+        self.game.product_root(&r);
+        assert_eq!(self.run("install", json!({}))["status"], "succeeded");
+        self.root(&r)
+    }
 }
 
 /// Rejections of arguments Tauri cannot deserialize are plain strings; every
@@ -494,16 +549,14 @@ fn install_command_installs_the_recommended_release_with_progress_events() {
     assert_eq!(state.running, None);
     assert_eq!(state.recommended.unwrap().release_id, PD2R_1);
 
-    let phases: Vec<Phase> = rig
-        .progress
-        .try_iter()
-        .map(|v| {
-            serde_json::from_value::<Versioned<ProgressEvent>>(v)
-                .unwrap()
-                .data
-                .phase
-        })
-        .collect();
+    let events = rig.progress_events();
+    let phases: Vec<Phase> = events.iter().map(|e| e.phase).collect();
+    let bytes: Vec<_> = events.iter().filter(|e| e.bytes_done.is_some()).collect();
+    let last = bytes.last().expect("byte progress while downloading");
+    assert_eq!(last.phase, Phase::Downloading);
+    assert_eq!(last.bytes_done, last.bytes_total, "the final count is sent");
+    assert_eq!(last.bytes_total, Some(r1.manifest.archive.size));
+    assert!(events.iter().all(|e| e.files_done.is_none()));
     for p in [
         Phase::Planning,
         Phase::Downloading,
@@ -595,11 +648,16 @@ fn cancel_command_stops_a_download_and_keeps_the_previous_installation() {
     let again = rig.start("install", json!({}), &insp.token).unwrap_err();
     assert_eq!(code(again), "operation_in_progress");
 
+    assert!(!rig.state().cancelling);
+
     let cancel = json!({ "request": { "contract_version": CONTRACT_VERSION, "data": { "product_id": "pd2r" } } });
     rig.invoke("cancel_operation", cancel.clone()).unwrap();
+    // The download waits on the delayed reply, so the cancel is still pending.
+    assert!(rig.state().cancelling);
     assert_eq!(rig.outcome()["status"], "cancelled");
     assert!(rig.state().installed.is_none());
     assert_eq!(rig.state().running, None);
+    assert!(!rig.state().cancelling);
     // Only the sentinel is left in the product root.
     assert_eq!(fs::read_dir(rig.root(&r1)).unwrap().count(), 1);
     assert_eq!(
@@ -717,7 +775,7 @@ fn play_waits_for_startup_recovery_then_launches_the_installed_release() {
     rig.start_up();
     let state = rig.state();
     assert_eq!(state.readiness, Readiness::NotInstalled);
-    assert_eq!(state.location.unwrap().path, rig.game.d2r());
+    assert_eq!(state.location.unwrap().location.path, rig.game.d2r());
     assert_eq!(code(rig.play().unwrap_err()), "product_not_installed");
 
     assert_eq!(rig.run("install", json!({}))["status"], "succeeded");
@@ -854,12 +912,12 @@ fn choose_game_location_remembers_only_a_valid_picked_folder() {
     let other = tempfile::tempdir().unwrap();
     *rig.desktop.pick.lock().unwrap() = Some(other.path().to_owned());
     assert_eq!(code(choose().unwrap_err()), "d2r_not_found");
-    assert_eq!(rig.state().location.unwrap().path, rig.game.d2r());
+    assert_eq!(rig.state().location.unwrap().location.path, rig.game.d2r());
 
     fake_game_files(other.path());
     let chosen: Option<GameLocation> = data(choose().unwrap());
     assert_eq!(chosen.unwrap().path, other.path());
-    assert_eq!(rig.state().location.unwrap().path, other.path());
+    assert_eq!(rig.state().location.unwrap().location.path, other.path());
     let detected: Vec<GameLocation> = data(rig.invoke("detect_game_locations", json!({})).unwrap());
     assert_eq!(detected.len(), 1);
     assert_eq!(detected[0].path, other.path());
@@ -882,7 +940,7 @@ fn choose_game_location_refuses_a_junctioned_root() {
     *rig.desktop.pick.lock().unwrap() = Some(link);
     let err = rig.invoke("choose_game_location", json!({})).unwrap_err();
     assert_eq!(code(err), "d2r_not_found");
-    assert_eq!(rig.state().location.unwrap().path, rig.game.d2r());
+    assert_eq!(rig.state().location.unwrap().location.path, rig.game.d2r());
 }
 
 /// Never installed and no catalog: there is no release to offer, and the state
@@ -945,7 +1003,7 @@ fn game_commands_take_no_paths_or_urls() {
     )
     .unwrap();
     assert_eq!(rig.desktop.opened.load(Ordering::SeqCst), 1);
-    assert_eq!(rig.state().location.unwrap().path, rig.game.d2r());
+    assert_eq!(rig.state().location.unwrap().location.path, rig.game.d2r());
 }
 
 #[test]
@@ -1024,4 +1082,333 @@ fn startup_recovers_an_interrupted_first_install() {
     assert_eq!(rig.state().readiness, Readiness::NotInstalled);
     // Only the sentinel is left in the product root.
     assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+}
+
+// ---- slice 4 command gaps (#74) ----
+
+fn strings(v: &Value) -> Vec<String> {
+    serde_json::from_value(v.clone()).unwrap()
+}
+
+#[test]
+fn update_command_needs_acknowledgement_only_for_a_save_breaking_release() {
+    let rig = Rig::new();
+    let root = rig.install(PD2R_1);
+    let edited = edit_loot_filter(&root);
+    rig.publish(PD2R_2);
+    let insp = rig.inspect("update", json!({})).unwrap();
+    assert_eq!(insp.save_breaking_notice, None);
+    let outcome = rig.run("update", json!({}));
+    assert_eq!(outcome["status"], "succeeded", "{outcome}");
+    assert_eq!(strings(&outcome["report"]["preserved"]), [LOOT_FILTER]);
+    assert_eq!(fs::read(root.join(LOOT_FILTER)).unwrap(), edited);
+    assert_eq!(rig.state().installed.unwrap().release_id, PD2R_2);
+
+    let r3 = rig.publish(PD2R_3);
+    let insp = rig.inspect("update", json!({})).unwrap();
+    assert!(insp.save_breaking_notice.is_some());
+    assert!(insp.release.save_breaking);
+    rig.start("update", json!({}), &insp.token).unwrap();
+    let refused = rig.outcome();
+    assert_eq!(refused["error"]["code"], "save_breaking_not_acknowledged");
+    assert_eq!(rig.state().installed.unwrap().release_id, PD2R_2);
+    assert!(rig.server.hits().iter().all(|h| *h != r3.archive_path()));
+
+    let ack = json!({ "acknowledge_save_breaking": true });
+    let outcome = rig.run("update", ack);
+    assert_eq!(outcome["status"], "succeeded", "{outcome}");
+    assert_eq!(rig.state().installed.unwrap().release_id, PD2R_3);
+}
+
+#[test]
+fn repair_command_restores_a_deleted_managed_file_and_counts_files() {
+    let rig = Rig::new();
+    let root = rig.install(PD2R_1);
+    let r1 = release(PD2R_1);
+    let (rel, bytes) = r1
+        .payload
+        .iter()
+        .find(|(rel, _)| rel.as_str() != LOOT_FILTER)
+        .unwrap();
+    fs::remove_file(root.join(rel)).unwrap();
+    let insp = rig.inspect("repair", json!({})).unwrap();
+    assert_eq!(insp.files_added, 1);
+    rig.progress_events();
+
+    let outcome = rig.run("repair", json!({}));
+    assert_eq!(outcome["status"], "succeeded", "{outcome}");
+    assert_eq!(&fs::read(root.join(rel)).unwrap(), bytes);
+    let files: Vec<_> = rig
+        .progress_events()
+        .into_iter()
+        .filter(|e| e.files_done.is_some())
+        .collect();
+    let last = files.last().expect("file progress while Repair verifies");
+    assert_eq!(last.phase, Phase::Verifying);
+    assert_eq!(last.files_done, last.files_total);
+    assert!(last.files_total.unwrap() >= r1.payload.len() as u64);
+}
+
+#[test]
+fn uninstall_command_reports_the_files_it_left() {
+    let rig = Rig::new();
+    let root = rig.install(PD2R_1);
+    edit_loot_filter(&root);
+    add_unknown_plugin(&root);
+    let outcome = rig.run("uninstall", json!({}));
+    assert_eq!(outcome["status"], "succeeded", "{outcome}");
+    let report = &outcome["report"];
+    let remaining = strings(&report["remaining"]);
+    assert!(
+        remaining.iter().any(|r| r == UNKNOWN_PLUGIN),
+        "{remaining:?}"
+    );
+    assert!(remaining.iter().any(|r| r == LOOT_FILTER), "{remaining:?}");
+    assert_eq!(strings(&report["preserved"]), [LOOT_FILTER]);
+    assert_eq!(report["clean_install_backups"], json!([]));
+    assert!(rig.state().installed.is_none());
+}
+
+#[test]
+fn select_game_location_picks_from_the_last_detection() {
+    let rig = Rig::new();
+    let select = |i: usize| rig.invoke("select_game_location", json!({ "index": i }));
+    assert_eq!(code(select(0).unwrap_err()), "invalid_request");
+
+    let detected: Vec<LocationView> = data(rig.invoke("detect_game_locations", json!({})).unwrap());
+    assert_eq!(detected.len(), 1);
+    assert!(detected[0].installed_products.is_empty());
+    rig.install(PD2R_1);
+    let detected: Vec<LocationView> = data(rig.invoke("detect_game_locations", json!({})).unwrap());
+    assert_eq!(detected[0].installed_products, [ProductId("pd2r".into())]);
+    // The wire shape is flat, like GameLocation plus the product list.
+    let raw = rig.invoke("detect_game_locations", json!({})).unwrap();
+    assert!(raw["data"][0]["path"].is_string());
+    assert_eq!(raw["data"][0]["installed_products"], json!(["pd2r"]));
+
+    assert_eq!(code(select(1).unwrap_err()), "invalid_request");
+    let chosen: LocationView = data(select(0).unwrap());
+    assert_eq!(chosen.location.path, rig.game.d2r());
+
+    rig.host
+        .spawn(&rig.game.d2r().join("D2R.exe"), &[], rig.game.d2r())
+        .unwrap();
+    assert_eq!(code(select(0).unwrap_err()), "game_running");
+}
+
+#[test]
+fn a_game_that_exits_soon_after_play_is_a_startup_failure_until_the_next_play() {
+    let rig = Rig::new();
+    rig.install(PD2R_1);
+    rig.start_up();
+    assert_eq!(rig.state().startup_failed, None);
+    rig.play().unwrap();
+    assert_eq!(rig.state().startup_failed, None, "still running");
+    rig.host.exit_all();
+    rig.state_event();
+    // The fake pid cannot be opened as the started process, so no exit code.
+    let failed = rig.state().startup_failed.unwrap();
+    assert_eq!(failed, StartupFailed { exit_code: None });
+    rig.play().unwrap();
+    assert_eq!(rig.state().startup_failed, None);
+}
+
+#[test]
+fn release_notes_list_the_newer_release_then_the_installed_one() {
+    let rig = Rig::new();
+    let notes = || -> Vec<ReleaseNotes> {
+        data(
+            rig.invoke("get_release_notes", json!({ "product_id": "pd2r" }))
+                .unwrap(),
+        )
+    };
+    assert!(notes().is_empty(), "nothing published (offline)");
+    rig.install(PD2R_1);
+    let only = notes();
+    assert_eq!(only.len(), 1);
+    assert_eq!(only[0].release_id, PD2R_1);
+    assert_eq!(only[0].status, "alpha");
+    assert_eq!(only[0].release_date, "2026-11-01");
+    assert!(only[0]
+        .notes
+        .as_deref()
+        .unwrap()
+        .contains("Fixture release"));
+
+    rig.publish(PD2R_2);
+    let both = notes();
+    let ids: Vec<&str> = both.iter().map(|n| n.release_id.as_str()).collect();
+    assert_eq!(ids, [PD2R_2, PD2R_1]);
+    assert_eq!(both[0].release_date, "2026-11-08");
+}
+
+#[test]
+fn open_folder_builds_each_path_natively_and_creates_missing_plugins_folders() {
+    let rig = Rig::new();
+    let open = |product: Value, folder: &str| {
+        rig.invoke(
+            "open_folder",
+            json!({ "product_id": product, "folder": folder }),
+        )
+    };
+    assert_eq!(
+        code(open(json!("pd2r"), "settings").unwrap_err()),
+        "product_not_installed"
+    );
+    let root = rig.install(PD2R_1);
+    let saved = tempfile::tempdir().unwrap();
+    *rig.desktop.saved_games.lock().unwrap() = Some(saved.path().to_owned());
+
+    let saves = saved.path().join(r"Diablo II Resurrected\mods\PD2R");
+    assert_eq!(
+        code(open(json!("pd2r"), "saves").unwrap_err()),
+        "product_not_installed",
+        "never played: no saves folder yet"
+    );
+    fs::create_dir_all(&saves).unwrap();
+    open(json!("pd2r"), "saves").unwrap();
+    open(json!("pd2r"), "settings").unwrap();
+    let plugins = root.join(r"d2rloader\plugins");
+    let _ = fs::remove_dir_all(&plugins);
+    open(json!("pd2r"), "product_plugins").unwrap();
+    assert!(plugins.is_dir(), "created under the guarded product root");
+
+    // The D2R root has no disposable sentinel, so the guard refuses to create it.
+    let global = rig.game.d2r().join(r"d2rloader\plugins");
+    assert_eq!(
+        code(open(Value::Null, "global_plugins").unwrap_err()),
+        "access_denied"
+    );
+    assert!(!global.exists());
+    fs::write(
+        rig.game
+            .d2r()
+            .join(resurrected_launcher_lib::contract::DISPOSABLE_SENTINEL),
+        b"",
+    )
+    .unwrap();
+    open(Value::Null, "global_plugins").unwrap();
+    assert!(global.is_dir());
+
+    assert_eq!(
+        *rig.desktop.folders.lock().unwrap(),
+        [saves, root.clone(), plugins, global]
+    );
+    assert_eq!(
+        code(open(json!("pd2r"), "global_plugins").unwrap_err()),
+        "invalid_request"
+    );
+    assert_eq!(
+        code(open(Value::Null, "saves").unwrap_err()),
+        "invalid_request"
+    );
+    let path = json!({ "product_id": "pd2r", "folder": r"C:\Windows" });
+    assert!(
+        raw_invoke(&rig.webview, "open_folder", path).is_err(),
+        "no paths"
+    );
+}
+
+#[test]
+fn saved_diagnostics_are_exactly_the_previewed_text() {
+    let rig = Rig::new();
+    let preview = |log: bool| {
+        rig.invoke("preview_diagnostics", json!({ "include_log": log }))
+            .unwrap()
+    };
+    let save = |log: bool| -> bool {
+        data(
+            rig.invoke("save_diagnostics", json!({ "include_log": log }))
+                .unwrap(),
+        )
+    };
+    let shown = rig.invoke("show_diagnostics_in_folder", json!({}));
+    assert_eq!(code(shown.unwrap_err()), "invalid_request");
+
+    let reply = preview(false);
+    let text = reply["data"]["text"].as_str().unwrap().to_owned();
+    assert!(text.contains("Contract version: 2"));
+    assert!(text.contains("Start with Windows: off"));
+    assert!(!reply["data"]["never_included"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(!save(false), "cancelled dialog");
+
+    let out = tempfile::tempdir().unwrap();
+    let file = out.path().join("report.txt");
+    *rig.desktop.save_to.lock().unwrap() = Some(file.clone());
+    assert!(save(false));
+    assert_eq!(fs::read(&file).unwrap(), text.as_bytes());
+    rig.invoke("show_diagnostics_in_folder", json!({})).unwrap();
+    assert_eq!(*rig.desktop.shown.lock().unwrap(), [file]);
+}
+
+#[test]
+fn start_with_windows_is_only_the_run_value() {
+    let rig = Rig::new();
+    let get = || -> bool { data(rig.invoke("get_start_with_windows", json!({})).unwrap()) };
+    let set = |on: bool| rig.invoke("set_start_with_windows", json!({ "enabled": on }));
+    assert!(!get(), "off by default");
+    set(true).unwrap();
+    let exe = std::env::current_exe().unwrap();
+    assert_eq!(
+        rig.desktop.run.lock().unwrap().clone().unwrap(),
+        format!("\"{}\" --autostart", exe.display())
+    );
+    assert!(get());
+    set(false).unwrap();
+    assert_eq!(*rig.desktop.run.lock().unwrap(), None);
+    // A value left by a launcher at another path does not start this one.
+    *rig.desktop.run.lock().unwrap() = Some(r#""C:\old\launcher.exe" --autostart"#.into());
+    assert!(!get());
+}
+
+#[test]
+fn window_controls_act_on_main_and_quit_waits_for_operations() {
+    let rig = Rig::new();
+    for cmd in [
+        "minimize_window",
+        "toggle_maximize_window",
+        "start_window_drag",
+    ] {
+        rig.invoke(cmd, json!({}))
+            .unwrap_or_else(|e| panic!("{cmd}: {e:?}"));
+    }
+    let r1 = rig.publish(PD2R_1);
+    rig.game.product_root(&r1);
+    rig.server.route(
+        &r1.archive_path(),
+        Reply::Delayed(
+            Duration::from_secs(2),
+            Box::new(Reply::Body(r1.archive.clone())),
+        ),
+    );
+    let insp = rig.inspect("install", json!({})).unwrap();
+    rig.start("install", json!({}), &insp.token).unwrap();
+    let quit = rig.invoke("quit_launcher", json!({}));
+    assert_eq!(code(quit.unwrap_err()), "operation_in_progress");
+    assert_eq!(rig.outcome()["status"], "succeeded");
+}
+
+/// `AppHandle::exit` only requests the exit, so after Quit nothing may start.
+/// (The mock runtime ends the IPC channel on exit, so this drives Quit's gate.)
+#[test]
+fn nothing_starts_after_quit_is_accepted() {
+    let rig = Rig::new();
+    let r1 = rig.publish(PD2R_1);
+    rig.game.product_root(&r1);
+    rig.start_up();
+    let insp = rig.inspect("install", json!({})).unwrap();
+    let launcher = rig.webview.state::<Arc<Launcher>>();
+    launcher.begin_quit().unwrap();
+
+    let start = rig.start("install", json!({}), &insp.token).unwrap_err();
+    assert_eq!(code(start), "operation_in_progress");
+    assert_eq!(code(rig.play().unwrap_err()), "operation_in_progress");
+    let recover = rig.invoke("recover_product", json!({ "product_id": "pd2r" }));
+    assert_eq!(code(recover.unwrap_err()), "operation_in_progress");
+    let choose = rig.invoke("choose_game_location", json!({}));
+    assert_eq!(code(choose.unwrap_err()), "operation_in_progress");
+    assert!(rig.state().installed.is_none());
 }

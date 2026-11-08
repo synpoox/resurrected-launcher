@@ -12,6 +12,12 @@ describe("command bindings", () => {
     expect([...invoked].sort()).toEqual([...allowlist].sort());
   });
 
+  it("carry Rust's contract version", async () => {
+    const rust = readFileSync("src-tauri/src/contract/mod.rs", "utf8");
+    const { CONTRACT_VERSION } = await import("./ipc");
+    expect(rust).toContain(`pub const CONTRACT_VERSION: u32 = ${CONTRACT_VERSION};`);
+  });
+
   it("mirror every Rust ErrorCode", () => {
     const rust = readFileSync("src-tauri/src/contract/error.rs", "utf8");
     const body = rust.slice(rust.indexOf("pub enum ErrorCode {")).split("\n}")[0];
