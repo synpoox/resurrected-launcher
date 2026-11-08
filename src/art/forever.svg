@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1d1d1e"/>
+      <stop offset="1" stop-color="#0b0b0c"/>
+    </linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#sky)"/>
+  <g fill="#353233">
+    <path d="M560 1080L1160 0h90L650 1080z"/>
+    <path d="M820 1080L1420 0h90L910 1080z"/>
+    <path d="M1080 1080L1680 0h90l-600 1080z"/>
+    <path d="M1340 1080L1940 0h90l-600 1080z"/>
+  </g>
+  <path d="M300 340L490 0h140L440 340z" fill="#c72d37"/>
+  <path d="M440 340L630 0h40L480 340z" fill="#eb626b"/>
+  <text x="1700" y="1040" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="22" letter-spacing="4" fill="#b1adac">PLACEHOLDER ART</text>
+</svg>

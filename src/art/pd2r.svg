@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <radialGradient id="glow" cx="62%" cy="48%" r="55%">
+      <stop offset="0" stop-color="#b52b35"/>
+      <stop offset="0.45" stop-color="#1d1d1e"/>
+      <stop offset="1" stop-color="#0b0b0c"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#glow)"/>
+  <g fill="none" stroke="#353233" stroke-width="2">
+    <circle cx="1190" cy="518" r="180"/>
+    <circle cx="1190" cy="518" r="300"/>
+    <circle cx="1190" cy="518" r="440"/>
+    <circle cx="1190" cy="518" r="600"/>
+  </g>
+  <circle cx="1190" cy="518" r="96" fill="none" stroke="#eb626b" stroke-width="6"/>
+  <path d="M1222 430h40l-80 176h-40z" fill="#e3353d"/>
+  <text x="1700" y="1040" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="22" letter-spacing="4" fill="#b1adac">PLACEHOLDER ART</text>
+</svg>
