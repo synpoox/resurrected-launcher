@@ -16,6 +16,11 @@
 //! game runs under the selected D2R folder (the held phases), and once it starts it
 //! sets Quit's sticky flag so no operation can begin while the installer takes over.
 //!
+//! Quit (window and tray, [`begin_quit`]) also installs a ready update, without
+//! relaunching. Quit is itself refused while an operation or recovery runs, so it
+//! never interrupts an install transaction; a running game holds the install (Quit
+//! still exits, and the update installs on a later Quit or Restart to update).
+//!
 //! The webview drives checks: with `VITE_SELF_UPDATE` off (release builds until
 //! the #89 gate), nothing calls these commands and the launcher never checks.
 
@@ -24,10 +29,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
-use super::operations::{locked, Launcher};
+use super::operations::{locked, Launcher, Refusal};
 use crate::contract::{ErrorCode, LauncherError, Versioned};
 
 /// Event carrying `Versioned<SelfUpdateStatus>` on every phase change.
@@ -68,6 +73,11 @@ pub enum SelfUpdateStatus {
         current: String,
         next: String,
     },
+    /// Quit is installing the ready update; the launcher closes and does not relaunch.
+    Quitting {
+        current: String,
+        next: String,
+    },
     /// After the restart that installed it: `current` is the new version.
     Updated {
         current: String,
@@ -84,6 +94,21 @@ pub enum SelfUpdateStatus {
 }
 
 impl SelfUpdateStatus {
+    /// The phases from which the update the last check found may be downloaded.
+    /// `UpToDate`/`Updated` with a found update is the moment between an automatic
+    /// check and the download it starts.
+    fn downloadable(&self) -> bool {
+        use SelfUpdateStatus::*;
+        matches!(
+            self,
+            UpToDate { .. }
+                | Updated { .. }
+                | Available { .. }
+                | DownloadFailed { .. }
+                | SignatureRejected { .. }
+        )
+    }
+
     fn next(&self) -> Option<&str> {
         use SelfUpdateStatus::*;
         match self {
@@ -92,6 +117,7 @@ impl SelfUpdateStatus {
             | Downloading { next, .. }
             | Ready { next, .. }
             | Restarting { next, .. }
+            | Quitting { next, .. }
             | DownloadFailed { next, .. }
             | SignatureRejected { next, .. } => Some(next),
         }
@@ -100,8 +126,14 @@ impl SelfUpdateStatus {
 
 /// The two things the updater does outside the process. Tests record them.
 pub trait UpdateHost: Send + Sync {
-    /// Runs the verified installer. The real one exits the launcher on success.
-    fn install(&self, update: &Update, bytes: &[u8]) -> Result<(), tauri_plugin_updater::Error>;
+    /// Runs the verified installer; `restart` relaunches the launcher afterwards
+    /// (Restart to update), else not (Quit). The real one exits on success.
+    fn install(
+        &self,
+        update: &Update,
+        bytes: &[u8],
+        restart: bool,
+    ) -> Result<(), tauri_plugin_updater::Error>;
     /// Opens a [`RELEASE_PAGE`] address in the default browser.
     fn open_page(&self, url: &str) -> io::Result<()>;
 }
@@ -111,8 +143,14 @@ pub trait UpdateHost: Send + Sync {
 pub struct SystemUpdateHost;
 
 impl UpdateHost for SystemUpdateHost {
-    fn install(&self, update: &Update, bytes: &[u8]) -> Result<(), tauri_plugin_updater::Error> {
-        update.install(bytes)
+    fn install(
+        &self,
+        update: &Update,
+        bytes: &[u8],
+        restart: bool,
+    ) -> Result<(), tauri_plugin_updater::Error> {
+        // Without `/R`, the NSIS installer does not start the launcher afterwards.
+        update.clone().restart_after_install(restart).install(bytes)
     }
 
     fn open_page(&self, url: &str) -> io::Result<()> {
@@ -246,6 +284,7 @@ impl SelfUpdater {
             SelfUpdateStatus::Downloading { .. }
                 | SelfUpdateStatus::Ready { .. }
                 | SelfUpdateStatus::Restarting { .. }
+                | SelfUpdateStatus::Quitting { .. }
         ) {
             return Ok(false);
         }
@@ -306,14 +345,7 @@ impl SelfUpdater {
             // Checked and claimed under one lock, so two calls never download at once.
             let mut inner = self.inner();
             let update = match (&inner.status, &inner.found) {
-                (
-                    SelfUpdateStatus::UpToDate { .. }
-                    | SelfUpdateStatus::Updated { .. }
-                    | SelfUpdateStatus::Available { .. }
-                    | SelfUpdateStatus::DownloadFailed { .. }
-                    | SelfUpdateStatus::SignatureRejected { .. },
-                    Some(update),
-                ) => update.clone(),
+                (status, Some(update)) if status.downloadable() => update.clone(),
                 (status, _) => {
                     return Err(LauncherError::new(
                         ErrorCode::InvalidRequest,
@@ -404,6 +436,26 @@ impl SelfUpdater {
         }
     }
 
+    /// Whether [`Self::download`] would start now.
+    fn can_download(&self) -> bool {
+        let inner = self.inner();
+        inner.found.is_some() && inner.status.downloadable()
+    }
+
+    /// The update in hand when it is ready: `(update, current, next)`.
+    fn ready(&self) -> Result<(Update, String, String), LauncherError> {
+        let inner = self.inner();
+        match (&inner.status, &inner.found) {
+            (SelfUpdateStatus::Ready { current, next }, Some(update)) => {
+                Ok((update.clone(), current.clone(), next.clone()))
+            }
+            (status, _) => Err(LauncherError::new(
+                ErrorCode::InvalidRequest,
+                format!("no launcher update is ready ({status:?})"),
+            )),
+        }
+    }
+
     /// Installs the ready update and restarts. Refused in the held phases. The kept
     /// installer is verified again first; a mismatch deletes it and installs nothing.
     pub fn restart_to_update<R: Runtime>(
@@ -411,21 +463,39 @@ impl SelfUpdater {
         app: &AppHandle<R>,
         launcher: &Launcher,
     ) -> Result<(), LauncherError> {
-        let (update, current, next) = {
-            let inner = self.inner();
-            match (&inner.status, &inner.found) {
-                (SelfUpdateStatus::Ready { current, next }, Some(update)) => {
-                    (update.clone(), current.clone(), next.clone())
-                }
-                (status, _) => {
-                    return Err(LauncherError::new(
-                        ErrorCode::InvalidRequest,
-                        format!("no launcher update is ready ({status:?})"),
-                    ))
-                }
-            }
-        };
+        let ready = self.ready()?;
         launcher.begin_self_update_install()?;
+        self.install(app, ready, true)
+            .inspect_err(|_| launcher.end_self_update_install())
+    }
+
+    /// Quit's install: once [`Launcher::begin_quit`] has passed (no operation or
+    /// recovery runs, and none can start), installs a ready update without
+    /// relaunching. Held while a game runs under the selected D2R folder, or when
+    /// that can't be told. Returns true when the installer was started (the real
+    /// host does not return then); false when nothing is ready or the install is held.
+    pub fn install_on_quit<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        launcher: &Launcher,
+    ) -> Result<bool, LauncherError> {
+        let Ok(ready) = self.ready() else {
+            return Ok(false);
+        };
+        if launcher.game_holds_self_update() {
+            return Ok(false);
+        }
+        self.install(app, ready, false).map(|()| true)
+    }
+
+    /// Verifies the kept installer again, writes the marker and runs it. A
+    /// mismatch deletes it and installs nothing.
+    fn install<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        (update, current, next): (Update, String, String),
+        restart: bool,
+    ) -> Result<(), LauncherError> {
         let path = self.download_path(&next);
         let verified = std::fs::read(&path)
             .map_err(|e| failed(ErrorCode::VerificationFailed, "reading the update", e))
@@ -440,7 +510,6 @@ impl SelfUpdater {
         let bytes = match verified {
             Ok(bytes) => bytes,
             Err(e) => {
-                launcher.end_self_update_install();
                 let _ = std::fs::remove_file(&path);
                 self.set(app, SelfUpdateStatus::SignatureRejected { current, next });
                 return Err(e);
@@ -454,24 +523,30 @@ impl SelfUpdater {
             .map_err(io::Error::other)
             .and_then(|b| keep(&self.dir.join(INSTALLING_MARKER), &b));
         if let Err(e) = written {
-            launcher.end_self_update_install();
             return Err(failed(
                 ErrorCode::AccessDenied,
                 "preparing the launcher update",
                 e,
             ));
         }
+        let (current_now, next_now) = (current.clone(), next.clone());
         self.set(
             app,
-            SelfUpdateStatus::Restarting {
-                current: current.clone(),
-                next: next.clone(),
+            if restart {
+                SelfUpdateStatus::Restarting {
+                    current: current_now,
+                    next: next_now,
+                }
+            } else {
+                SelfUpdateStatus::Quitting {
+                    current: current_now,
+                    next: next_now,
+                }
             },
         );
         // The real host does not return on success: the installer takes over.
-        self.host.install(&update, &bytes).map_err(|e| {
+        self.host.install(&update, &bytes, restart).map_err(|e| {
             let _ = std::fs::remove_file(self.dir.join(INSTALLING_MARKER));
-            launcher.end_self_update_install();
             let signature = is_signature_error(&e);
             if signature {
                 let _ = std::fs::remove_file(&path);
@@ -542,11 +617,35 @@ impl Launcher {
         self.running().quitting = false;
     }
 
+    /// Quit's hold on a ready update: a game runs under the selected D2R folder,
+    /// or the process list or state can't be read (fail closed).
+    fn game_holds_self_update(&self) -> bool {
+        let Ok(state) = locked(&self.state) else {
+            return true;
+        };
+        let d2r = state.preferences().d2r_location.clone();
+        drop(state);
+        d2r.is_some_and(|d2r| self.refuse_if_game_running(&d2r).is_err())
+    }
+
     fn auto_download(&self) -> Result<bool, LauncherError> {
         Ok(locked(&self.state)?
             .preferences()
             .download_launcher_updates_automatically)
     }
+}
+
+/// Quit's gate for the window and the tray: [`Launcher::begin_quit`] (refused
+/// while an operation or recovery runs), then [`SelfUpdater::install_on_quit`].
+/// The caller exits on `Ok`. A failed or held install never stops the Quit: the
+/// update stays kept, and the current launcher keeps working next time.
+pub fn begin_quit<R: Runtime>(app: &AppHandle<R>) -> Result<(), Refusal> {
+    let launcher = app.state::<Arc<Launcher>>();
+    launcher.begin_quit()?;
+    if let Some(updater) = app.try_state::<Arc<SelfUpdater>>() {
+        let _ = updater.install_on_quit(app, &launcher);
+    }
+    Ok(())
 }
 
 fn spawn_download<R: Runtime>(app: AppHandle<R>, updater: Arc<SelfUpdater>) {
@@ -585,13 +684,8 @@ pub async fn download_launcher_update<R: Runtime>(
     app: AppHandle<R>,
     updater: State<'_, Arc<SelfUpdater>>,
 ) -> Result<(), LauncherError> {
-    let ok = matches!(
-        updater.status(),
-        SelfUpdateStatus::Available { .. }
-            | SelfUpdateStatus::DownloadFailed { .. }
-            | SelfUpdateStatus::SignatureRejected { .. }
-    );
-    if !ok {
+    // The same guard `download` claims under its lock; this one answers the caller.
+    if !updater.can_download() {
         return Err(LauncherError::new(
             ErrorCode::InvalidRequest,
             "nothing to download",
@@ -668,7 +762,12 @@ mod tests {
     fn download_path_stays_in_the_update_dir() {
         struct NoHost;
         impl UpdateHost for NoHost {
-            fn install(&self, _: &Update, _: &[u8]) -> Result<(), tauri_plugin_updater::Error> {
+            fn install(
+                &self,
+                _: &Update,
+                _: &[u8],
+                _: bool,
+            ) -> Result<(), tauri_plugin_updater::Error> {
                 unreachable!()
             }
             fn open_page(&self, _: &str) -> io::Result<()> {

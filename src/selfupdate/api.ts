@@ -10,6 +10,8 @@ export type SelfUpdateStatus =
   /** Restart to update may still be held by product state (see hold.ts). */
   | { phase: "ready"; current: string; next: string }
   | { phase: "restarting"; current: string; next: string }
+  /** Quit is installing the ready update; the launcher closes and doesn't relaunch. */
+  | { phase: "quitting"; current: string; next: string }
   /** After the restart that installed it: `current` is the new version. */
   | { phase: "updated"; current: string }
   | { phase: "download_failed"; current: string; next: string }
@@ -57,6 +59,7 @@ export const SELF_UPDATE_FIXTURES: readonly SelfUpdateFixture[] = [
   { key: "downloading", name: "Downloading", status: { phase: "downloading", ...v, percent: 38 }, autoDownload: true },
   { key: "ready", name: "Ready", status: { phase: "ready", ...v }, autoDownload: true },
   { key: "restarting", name: "Restarting", status: { phase: "restarting", ...v }, autoDownload: true },
+  { key: "quitting", name: "Installing on Quit", status: { phase: "quitting", ...v }, autoDownload: true },
   { key: "updated", name: "Updated", status: { phase: "updated", current: FIXTURE_NEXT }, autoDownload: true },
   { key: "download-failed", name: "Download failed", status: { phase: "download_failed", ...v }, autoDownload: true },
   { key: "signature-rejected", name: "Signature rejected", status: { phase: "signature_rejected", ...v }, autoDownload: true },
