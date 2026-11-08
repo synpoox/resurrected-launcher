@@ -53,6 +53,9 @@ pub enum NewsState {
 pub struct NewsItem {
     pub tag: String,
     pub title: String,
+    /// Short description under the title (#139); omitted when the file has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
     pub published: String,
 }
 
@@ -106,6 +109,7 @@ impl Launcher {
                 .map(|e| NewsItem {
                     tag: e.tag.to_owned(),
                     title: e.title.clone(),
+                    summary: e.summary.clone(),
                     published: e.published.clone(),
                 })
                 .collect(),

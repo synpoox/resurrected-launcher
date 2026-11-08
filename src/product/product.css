@@ -6,6 +6,11 @@
   inset: 0;
 }
 
+/* News feed column width (issue 139): 280px at the 1024 minimum, up to 360px at 1280. */
+.page {
+  --feed-width: clamp(280px, 28vw, 360px);
+}
+
 /* Hero */
 .art {
   position: absolute;
@@ -30,7 +35,8 @@
   left: 44px;
   top: 44%;
   translate: 0 -50%;
-  max-width: 560px;
+  /* Stays left of the news column at the 1024 minimum. */
+  max-width: min(560px, calc(100% - 120px - var(--feed-width)));
   animation: lift 450ms ease-out;
 }
 
@@ -71,7 +77,7 @@
   color: var(--hero-copy);
 }
 
-/* Bottom: notices + action row on the left, the 250px news feed on the right. */
+/* Bottom: notices + action row on the left, the news feed on the right. */
 .bottom {
   position: absolute;
   z-index: 2;
@@ -79,7 +85,7 @@
   right: 44px;
   bottom: 34px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 250px;
+  grid-template-columns: minmax(0, 1fr) var(--feed-width);
   gap: 32px;
   align-items: end;
 }
@@ -210,27 +216,34 @@
   display: none;
 }
 
-/* News feed: text only. */
+/* News feed: text only, cards stacked vertically (issue 139). */
 .feed {
   display: grid;
-  border-top: 1px solid var(--rule);
 }
 
 .feed h2 {
-  padding: 10px 0;
+  padding: 0 0 10px;
 }
 
 .feed ul {
   list-style: none;
+  display: grid;
+  gap: 8px;
 }
 
 .feed-item {
   width: 100%;
   display: grid;
-  gap: 3px;
-  padding: 12px 0;
+  gap: 6px;
+  padding: 14px 16px;
   text-align: left;
-  border-bottom: 1px solid var(--rule);
+  background: var(--scrim);
+  border: 1px solid var(--line);
+  transition: border-color 120ms ease-out;
+}
+
+.feed-item:hover {
+  border-color: var(--muted);
 }
 
 .feed-item:hover .feed-title {
@@ -238,21 +251,43 @@
 }
 
 .feed-meta {
-  font-size: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
   letter-spacing: 1px;
   text-transform: uppercase;
   color: var(--muted);
 }
 
-.feed-title {
-  font-size: 13px;
+.feed-tag {
   font-weight: 700;
+  color: var(--text);
+}
+
+.feed-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+/* At most two lines; the full text is still in the button's accessible name. */
+.feed-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--hero-copy);
 }
 
 .feed-empty {
-  padding: 12px 0;
-  font-size: 12px;
+  padding: 14px 16px;
+  font-size: 13px;
   color: var(--muted);
+  background: var(--scrim);
+  border: 1px solid var(--line);
 }
 
 /* Overview | Patch Notes: top-centre, in a square frame, clear of the title bar. */

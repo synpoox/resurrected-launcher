@@ -185,6 +185,27 @@ describe("product page", () => {
     expect(api.calls.at(-1)).toEqual({ name: "openNewsLink", args: ["pd2r", 1] });
   });
 
+  it("news cards show tag, date, title and an optional summary, inside the link (issue 139)", async () => {
+    const { api, user } = mount("ready", (a) => {
+      a.scene.news.pd2r = {
+        status: "ok",
+        items: [
+          { tag: "Announcement", title: "With summary", summary: "A short description.", published: "2026-11-05" },
+          { tag: "Guide", title: "No summary", published: "2026-11-01" },
+        ],
+      };
+    });
+    const feed = await screen.findByRole("region", { name: "News" });
+    const [first, second] = await within(feed).findAllByRole("button");
+    expect(within(first).getByText("Announcement").className).toBe("feed-tag");
+    expect(within(first).getByText("A short description.").className).toBe("feed-summary");
+    expect(first.textContent).toMatch(/With summary.*A short description\./);
+    expect(second.querySelector(".feed-summary")).toBeNull();
+    expect(within(second).getByText("Guide").className).toBe("feed-tag");
+    await user.click(within(first).getByText("A short description."));
+    expect(api.calls.at(-1)).toEqual({ name: "openNewsLink", args: ["pd2r", 0] });
+  });
+
   it("news: a refused link shows why and reloads the feed", async () => {
     const { api, user } = mount("ready", (a) => {
       a.openNewsLink = () => Promise.reject({ code: "invalid_request", message: "no news item 0 for pd2r; load news again" });
