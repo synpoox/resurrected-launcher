@@ -2,9 +2,7 @@
 
 Developer guide for the launcher. For what the launcher does for players, see the [README](README.md).
 
-## Status
-
-The native core is implemented and tested. The UI runs on fixture data until it is connected to the native commands in [#79](https://github.com/synpoox/resurrected-launcher/issues/79).
+## Roadmap
 
 Remaining v1 work is tracked in the [launcher v1 map (#41)](https://github.com/synpoox/resurrected-launcher/issues/41) and its open sub-issues.
 
@@ -25,7 +23,7 @@ Remaining v1 work is tracked in the [launcher v1 map (#41)](https://github.com/s
 - Rust through [rustup](https://rustup.rs). `src-tauri/rust-toolchain.toml` pins 1.90.0 with clippy and rustfmt, and rustup installs it on first use.
 - [Tauri's Windows prerequisites](https://tauri.app/start/prerequisites/#windows): Microsoft C++ Build Tools and WebView2.
 
-You don't need D2R for development. The UI uses fixtures, and the Rust tests use disposable fixture installations.
+You don't need D2R for development. The browser UI and the frontend tests use fixtures, and the Rust tests use disposable fixture installations.
 
 ## Getting started
 
@@ -36,7 +34,7 @@ npm ci
 npm run tauri dev
 ```
 
-In dev builds, `?fixture=<key>` picks a journey state, and ← / → cycle through them. To work on the UI in a browser without the native shell, run `npm run dev` and open <http://localhost:1420>.
+`npm run tauri dev` runs the UI against the native commands, so it uses your real launcher state and detects your real D2R. To work on the UI with fixture data instead, run `npm run dev` and open <http://localhost:1420> in a browser. In dev builds, `?fixture=<key>` picks a journey state (even under Tauri), and ← / → cycle through them.
 
 To make a release build, run:
 
@@ -67,7 +65,7 @@ The slice 3 gate's phase A runs against a real D2R copy only when `SLICE3_GATE_D
 
 ```text
 src/                 React UI
-  api/               LauncherApi seam and fixture scenes
+  api/               LauncherApi: live adapter and fixture scenes
   art/               hero art (placeholders) and the mark
   shell/             window, sidebar, title bar
   product/           product page, Patch Notes, journey dialogs
