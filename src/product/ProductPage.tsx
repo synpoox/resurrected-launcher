@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useApi } from "../api/context";
+import { subscribe } from "../api/subscribe";
 import type { SceneOpen } from "../api/fixtures";
-import type { Inspection, NewsState, OperationKind, OutcomeReport, ProductState, ReleaseNotes } from "../api/types";
+import type { Inspection, NewsState, OperationKind, OutcomeReport, ProductState, ReleaseNotes, TrayRequest } from "../api/types";
 import type { Product } from "../products";
 import { arrowKeys } from "../ui/focus";
 import { Menu, type MenuItem } from "../ui/Menu";
@@ -22,7 +23,7 @@ export type Tab = "overview" | "notes";
 /** A tray request for this product: the save-breaking dialog, or the Overview with its notice. */
 export interface TrayFocus {
   product_id: string;
-  action: "save-breaking" | "notice";
+  action: Exclude<TrayRequest["action"], "quit_while_busy">;
   /** Increments per request, so the same request twice acts twice. */
   seq: number;
 }
@@ -48,10 +49,12 @@ export interface ProductPageProps {
   onOpenSettings: () => void;
   /** Clears this product's clean-install backup notice. */
   onDismissBackups?: () => void;
+  /** Shows "About <product>"; off in live mode until news and product pages are native (#80). */
+  showAbout?: boolean;
 }
 
 export function ProductPage(props: ProductPageProps) {
-  return props.product.hasRelease ? <ReleasedProduct {...props} /> : <ComingSoon product={props.product} />;
+  return props.product.hasRelease ? <ReleasedProduct {...props} /> : <ComingSoon product={props.product} showAbout={props.showAbout ?? true} />;
 }
 
 function useNews(productId: string) {
@@ -69,7 +72,7 @@ function useNews(productId: string) {
 }
 
 /** Forever and 09 today: ribbon, description and "About <product>"; no tabs. */
-function ComingSoon({ product }: { product: Product }) {
+function ComingSoon({ product, showAbout }: { product: Product; showAbout: boolean }) {
   const api = useApi();
   const feed = useNews(product.id);
   return (
@@ -78,11 +81,13 @@ function ComingSoon({ product }: { product: Product }) {
       <HeroCopy product={product} />
       <div className="bottom">
         <div className="action-col">
-          <div className="act">
-            <button type="button" className="btn ghost" onClick={() => void api.openProductPage(product.id)}>
-              About {product.short}
-            </button>
-          </div>
+          {showAbout && (
+            <div className="act">
+              <button type="button" className="btn ghost" onClick={() => void api.openProductPage(product.id)}>
+                About {product.short}
+              </button>
+            </div>
+          )}
         </div>
         <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} />
       </div>
@@ -172,22 +177,16 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
 
   // Outcomes: failures toast; an uninstall's report fills its dialog.
   useEffect(() => {
-    let stop: (() => void) | undefined;
-    let live = true;
-    api
-      .onOutcome((o) => {
+    return subscribe(
+      api.onOutcome((o) => {
         if (o.product_id !== product.id) return;
         if (o.status === "failed") fail(o.error);
         if (o.status === "succeeded" && o.kind === "uninstall") {
           setDialog((d) => (d?.kind === "uninstall" ? { ...d, report: o.report } : d));
         }
         void refresh();
-      })
-      .then((un) => (live ? (stop = un) : un()));
-    return () => {
-      live = false;
-      stop?.();
-    };
+      }),
+    ).stop;
   }, [api, product.id, fail, refresh]);
 
   const start = useCallback(
@@ -266,7 +265,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
     const action = trayFocus.action;
     void Promise.resolve().then(() => {
       setTab("overview");
-      if (action === "save-breaking") return run("update");
+      if (action === "save_breaking") return run("update");
     });
   }, [trayFocus, run]);
 

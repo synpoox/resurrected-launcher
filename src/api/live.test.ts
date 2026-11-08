@@ -72,16 +72,16 @@ describe("live adapter", () => {
 describe("selectApi with live", () => {
   it("selects the live adapter under Tauri", () => {
     const s = selectApi("", false, true);
-    expect(s.ok && s.key).toBeNull();
+    expect(s.ok && s.mode).toBe("live");
   });
 
   it("?fixture= still selects a fixture in dev builds under Tauri", () => {
     const s = selectApi("?fixture=install", true, true);
-    expect(s.ok && s.key).toBe("install");
+    expect(s.ok && s.mode === "fixture" && s.key).toBe("install");
   });
 
   it("ignores ?fixture= outside dev builds under Tauri", () => {
     const s = selectApi("?fixture=install", false, true);
-    expect(s.ok && s.key).toBeNull();
+    expect(s.ok && s.mode).toBe("live");
   });
 });

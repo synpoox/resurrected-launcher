@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useApi } from "../api/context";
+import { subscribe } from "../api/subscribe";
 import type { SceneOpen } from "../api/fixtures";
 import { DEFAULT_PRODUCT_ID, PRODUCTS, productById } from "../products";
 import { badgeOf, journeyOf, type Badge } from "../product/journey";
@@ -29,16 +30,17 @@ export interface ShellProps {
   open?: SceneOpen;
   /** Dev fixtures: open the first product page on this tab. */
   tab?: Tab;
+  /** Shows "About <product>" (default on); App turns it off in live mode until #80. */
+  showAbout?: boolean;
 }
 
 /** The window: seamless title bar, sidebar, and the product page or Settings in the main area. */
-export function Shell({ product, open, tab }: ShellProps) {
+export function Shell({ product, open, tab, showAbout = true }: ShellProps) {
   const api = useApi();
   const { products, refresh, dismissBackups } = useProducts(api);
   const [view, setView] = useState<View>(() => ({ kind: "product", id: initialProduct(product) }));
-  const [quitOpen, setQuitOpen] = useState(open === "quit");
-  /** The product a tray Quit asked about; otherwise the busy one. */
-  const [quitFor, setQuitFor] = useState<string | null>(null);
+  /** The Quit dialog: for the product a tray Quit asked about, or (null) the busy one. */
+  const [quit, setQuit] = useState<{ productId: string | null } | null>(open === "quit" ? { productId: null } : null);
   // A scene's dialog or menu opens once, on the product the window opened on.
   const [sceneOpen, setSceneOpen] = useState(open);
   const [trayFocus, setTrayFocus] = useState<TrayFocus | null>(null);
@@ -54,31 +56,20 @@ export function Shell({ product, open, tab }: ShellProps) {
 
   // Tray requests: Rust has already shown the window (except for Quit while busy, which asks here).
   useEffect(() => {
-    let live = true;
-    let stop: (() => void) | undefined;
-    api
-      .onTrayRequest((r) => {
+    return subscribe(
+      api.onTrayRequest((r) => {
         if (!productById(r.product_id)) return;
         if (r.action === "quit_while_busy") {
-          setQuitFor(r.product_id);
-          setQuitOpen(true);
+          setQuit({ productId: r.product_id });
           return;
         }
         select({ kind: "product", id: r.product_id });
         traySeq.current += 1;
-        setTrayFocus({
-          product_id: r.product_id,
-          action: r.action === "save_breaking" ? "save-breaking" : "notice",
-          seq: traySeq.current,
-        });
+        setTrayFocus({ product_id: r.product_id, action: r.action, seq: traySeq.current });
         if (r.error) toast.show({ tone: "error", text: r.error.message });
         void refresh();
-      })
-      .then((un) => (live ? (stop = un) : un()));
-    return () => {
-      live = false;
-      stop?.();
-    };
+      }),
+    ).stop;
   }, [api, select, toast, refresh]);
 
   const badges = useMemo(() => {
@@ -103,13 +94,11 @@ export function Shell({ product, open, tab }: ShellProps) {
     if (view.kind === "settings" && dot) clearDot?.();
   }, [view.kind, dot, clearDot]);
 
-  const closeQuit = useCallback(() => {
-    setQuitOpen(false);
-    setQuitFor(null);
-  }, []);
+  const closeQuit = useCallback(() => setQuit(null), []);
 
   const current = view.kind === "product" ? productById(view.id)! : null;
-  const busy = (quitFor ? productById(quitFor) : undefined) ?? PRODUCTS.find((p) => products[p.id]?.state?.running);
+  const busy =
+    (quit?.productId ? productById(quit.productId) : undefined) ?? PRODUCTS.find((p) => products[p.id]?.state?.running);
   return (
     <div className="window">
       <TitleBar />
@@ -126,12 +115,13 @@ export function Shell({ product, open, tab }: ShellProps) {
             trayFocus={trayFocus?.product_id === current.id ? trayFocus : undefined}
             onOpenSettings={() => select({ kind: "settings" })}
             onDismissBackups={() => dismissBackups(current.id)}
+            showAbout={showAbout}
           />
         ) : (
           <Settings />
         )}
         <RestartingScreen />
-        {quitOpen && busy && (
+        {quit && busy && (
           <QuitDialog
             product={busy}
             hasInstalled={Boolean(products[busy.id]?.state?.installed)}

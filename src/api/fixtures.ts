@@ -430,7 +430,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
     },
     cancelOperation(id) {
       record("cancelOperation", id);
-      if (!state.running) return Promise.resolve();
+      if (!state.running) return refuse("invalid_request", `${id} has no operation running`);
       const kind = state.running;
       set({ cancelling: true });
       setTimeout(() => {

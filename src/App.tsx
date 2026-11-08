@@ -36,7 +36,7 @@ export function App({ search, dev, live = isTauri(), selfUpdate = false }: AppPr
   useEffect(() => () => void (update?.ok && update.api.dispose()), [update]);
 
   useEffect(() => {
-    if (!dev || !selection.ok || selection.key === null) return;
+    if (!dev || !selection.ok || selection.mode !== "fixture") return;
     const key = selection.key;
     const onKey = (e: KeyboardEvent) => {
       if ((e.key !== "ArrowLeft" && e.key !== "ArrowRight") || e.defaultPrevented || claimsArrows(e.target)) return;
@@ -60,18 +60,27 @@ export function App({ search, dev, live = isTauri(), selfUpdate = false }: AppPr
       </div>
     );
   }
-  const scene = selection.key === null ? undefined : sceneByKey(selection.key);
+  const fixture = selection.mode === "fixture" ? selection.key : null;
+  const scene = fixture === null ? undefined : sceneByKey(fixture);
   const params = new URLSearchParams(query);
   const tab = dev && params.get("tab") === "notes" ? "notes" : undefined;
-  const shell = <Shell key={selection.key ?? "live"} product={scene?.product} open={scene?.open} tab={tab} />;
+  const shell = (
+    <Shell
+      key={fixture ?? "live"}
+      product={scene?.product}
+      open={scene?.open}
+      tab={tab}
+      showAbout={selection.mode === "fixture"}
+    />
+  );
   return (
     <ApiContext.Provider value={selection.api}>
       <ToastProvider>
         {update?.ok ? <SelfUpdateProvider api={update.api}>{shell}</SelfUpdateProvider> : shell}
       </ToastProvider>
-      {dev && selection.key !== null && params.get("chrome") !== "0" && (
+      {dev && fixture !== null && params.get("chrome") !== "0" && (
         <p className="fixture-bar" aria-live="polite">
-          Fixture: {selection.key}
+          Fixture: {fixture}
           {update?.ok ? ` · launcher ${update.key}` : ""} · ← →
         </p>
       )}

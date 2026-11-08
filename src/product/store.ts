@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { LauncherApi, LauncherError, ProductState } from "../api/types";
 import { isLauncherError } from "../api/types";
+import { subscribe } from "../api/subscribe";
 import { PRODUCTS } from "../products";
 import type { Sample } from "./stats";
 
@@ -110,12 +111,9 @@ export function useProducts(api: LauncherApi): Products {
   );
 
   useEffect(() => {
-    let live = true;
-    const stops: (() => void)[] = [];
-    const reread = () => void (live && refresh());
-    const keep = (p: Promise<() => void>) => p.then((un) => (live ? stops.push(un) : un()));
-    keep(api.onStateChanged(reread));
-    keep(
+    const reread = () => void refresh();
+    const sub = subscribe(
+      api.onStateChanged(reread),
       api.onProgress((event) => {
         setProducts((m) => {
           const cur = m[event.product_id];
@@ -125,8 +123,6 @@ export function useProducts(api: LauncherApi): Products {
         });
         reread();
       }),
-    );
-    keep(
       api.onOutcome((o) => {
         if (o.status === "succeeded" && o.report.clean_install_backups.length > 0) {
           const backups = o.report.clean_install_backups;
@@ -136,10 +132,7 @@ export function useProducts(api: LauncherApi): Products {
       }),
     );
     reread();
-    return () => {
-      live = false;
-      stops.forEach((un) => un());
-    };
+    return sub.stop;
   }, [api, refresh]);
 
   return { products, refresh, dismissBackups };

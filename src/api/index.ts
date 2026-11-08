@@ -8,8 +8,10 @@ export interface SelectedApi extends LauncherApi {
   dispose(): void;
 }
 
-/** `key` is the fixture scene, or null for the live adapter. */
-export type Selection = { ok: true; api: SelectedApi; key: string | null } | { ok: false; error: string };
+export type Selection =
+  | { ok: true; mode: "live"; api: SelectedApi }
+  | { ok: true; mode: "fixture"; api: SelectedApi; key: string }
+  | { ok: false; error: string };
 
 export const FIXTURE_KEYS: readonly string[] = SCENES.map((s) => s.key);
 
@@ -18,13 +20,13 @@ export function selectApi(search: string, dev: boolean, live = false): Selection
   if (asked === null && live) {
     // News stays on fixtures until #80.
     const news = createFixtureApi(DEFAULT_SCENE);
-    return { ok: true, api: { ...createLiveApi(news), dispose: () => news.dispose() }, key: null };
+    return { ok: true, mode: "live", api: { ...createLiveApi(news), dispose: () => news.dispose() } };
   }
   const key = asked ?? DEFAULT_SCENE;
   if (!sceneByKey(key)) {
     return { ok: false, error: `Unknown fixture "${key}". Known fixtures: ${FIXTURE_KEYS.join(", ")}.` };
   }
-  return { ok: true, api: createFixtureApi(key), key };
+  return { ok: true, mode: "fixture", api: createFixtureApi(key), key };
 }
 
 export type { LauncherApi } from "./types";

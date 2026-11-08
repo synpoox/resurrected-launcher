@@ -225,6 +225,64 @@ describe("quit while busy", () => {
   });
 });
 
+describe("quit when the operation already ended", () => {
+  const refused = () => Promise.reject({ code: "invalid_request", message: "pd2r has no operation running" } satisfies LauncherError);
+
+  it("a cancel refused because nothing is running goes on to quit", async () => {
+    const { api, user } = mount("downloading");
+    await loaded();
+    await act(async () => api.emitTrayRequest({ action: "quit_while_busy", product_id: "pd2r", error: null }));
+    const dialog = await screen.findByRole("dialog", { name: "Quit while PD2R is downloading?" });
+    const read = api.getProductState;
+    api.getProductState = async (id) => ({ ...(await read(id)), running: null });
+    api.cancelOperation = refused;
+    let quits = 0;
+    api.quitLauncher = () => {
+      quits += 1;
+      return Promise.resolve();
+    };
+    await user.click(within(dialog).getByRole("button", { name: "Cancel download and quit" }));
+    await waitFor(() => expect(quits).toBe(1));
+    expect(screen.queryByText(/no operation running/)).toBeNull();
+  });
+
+  it("a cancel refused while still running shows the error and lets the player try again", async () => {
+    const { api, user } = mount("downloading");
+    await loaded();
+    await act(async () => api.emitTrayRequest({ action: "quit_while_busy", product_id: "pd2r", error: null }));
+    const dialog = await screen.findByRole("dialog", { name: "Quit while PD2R is downloading?" });
+    api.cancelOperation = refused;
+    await user.click(within(dialog).getByRole("button", { name: "Cancel download and quit" }));
+    expect(await screen.findByText(/no operation running/)).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Cancel download and quit" })).toBeTruthy();
+    expect(names(api)).not.toContain("quitLauncher");
+  });
+});
+
+describe("About in live mode", () => {
+  const renderForever = (showAbout?: boolean) => {
+    api = createFixtureApi("coming-soon");
+    render(
+      <ApiContext.Provider value={api}>
+        <ToastProvider>
+          <Shell product="project-forever" showAbout={showAbout} />
+        </ToastProvider>
+      </ApiContext.Provider>,
+    );
+  };
+
+  it("is hidden when the shell is told to (live mode until #80)", async () => {
+    renderForever(false);
+    expect(await screen.findByText("Coming soon")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "About Forever" })).toBeNull();
+  });
+
+  it("is shown by default (fixtures)", async () => {
+    renderForever();
+    expect(await screen.findByRole("button", { name: "About Forever" })).toBeTruthy();
+  });
+});
+
 describe("outcome report", () => {
   it("keeps clean-install backup locations that arrive while the product page isn't shown", async () => {
     const { api, user } = mount("ready");

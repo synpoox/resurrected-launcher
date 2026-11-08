@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useApi } from "../api/context";
+import { subscribe } from "../api/subscribe";
 import type { Product } from "../products";
 import { Dialog } from "../ui/Dialog";
 import { useToast } from "../ui/Toast";
@@ -25,27 +26,28 @@ export function QuitDialog({ product, hasInstalled, onClose }: QuitDialogProps) 
   // Once per stop: listen for the outcome, then cancel; quit after the cancelled (or finished) outcome.
   useEffect(() => {
     if (!stopping) return;
-    let live = true;
-    let stop: (() => void) | undefined;
-    api
-      .onOutcome((o) => {
+    const fail = (e: unknown) => toast.show({ tone: "error", text: asError(e).message });
+    const quit = () => void api.quitLauncher().catch(fail);
+    const sub = subscribe(
+      api.onOutcome((o) => {
         if (o.product_id !== product.id) return;
-        if (o.status === "cancelled" || o.status === "succeeded") void api.quitLauncher().catch((e) => toast.show({ tone: "error", text: asError(e).message }));
+        if (o.status === "cancelled" || o.status === "succeeded") quit();
         else {
-          toast.show({ tone: "error", text: asError(o.error).message });
+          fail(o.error);
           close.current();
         }
-      })
-      .then((un) => (live ? (stop = un) : un()))
+      }),
+    );
+    sub.ready
       .then(() => api.cancelOperation(product.id))
-      .catch((e) => {
-        toast.show({ tone: "error", text: asError(e).message });
+      .catch(async (e) => {
+        // Refused because nothing is running: the operation already ended, so it's safe to quit.
+        const state = await api.getProductState(product.id).catch(() => null);
+        if (state && !state.running) return quit();
+        fail(e);
         setStopping(false);
       });
-    return () => {
-      live = false;
-      stop?.();
-    };
+    return sub.stop;
   }, [stopping, api, product.id, toast]);
 
   return (
