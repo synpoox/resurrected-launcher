@@ -31,7 +31,8 @@ describe("design tokens", () => {
 
   it("no colour literal appears outside tokens.css", () => {
     for (const { name, text } of sources) {
-      if (name.endsWith("tokens.css")) continue;
+      // src/art SVGs can't read CSS vars as images; src/art/art.test.ts holds their colours to token values.
+      if (name.endsWith("tokens.css") || /^src[\\/]art[\\/][^\\/]+\.svg$/.test(name)) continue;
       expect(text, name).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|hwb\(|lab\(|lch\(|oklab\(|oklch\(|color\(/i);
     }
   });
