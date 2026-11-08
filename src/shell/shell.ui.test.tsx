@@ -67,10 +67,14 @@ describe("shell", () => {
     const { api, user } = mount("ready");
     await loaded();
     await user.click(screen.getByRole("button", { name: "Minimise" }));
-    await user.click(screen.getByRole("button", { name: "Maximise" }));
     await user.click(screen.getByRole("button", { name: "Close" }));
     await user.pointer({ keys: "[MouseLeft]", target: screen.getByTestId("drag-region") });
-    expect(names(api)).toEqual(expect.arrayContaining(["minimizeWindow", "toggleMaximizeWindow", "closeWindow", "startWindowDrag"]));
+    expect(names(api)).toEqual(expect.arrayContaining(["minimizeWindow", "closeWindow", "startWindowDrag"]));
+    // No maximise (issue 135): no button, and double-clicking the drag region does nothing more.
+    expect(screen.queryByRole("button", { name: "Maximise" })).toBeNull();
+    const before = api.calls.length;
+    await user.dblClick(screen.getByTestId("drag-region"));
+    expect(names(api).slice(before).filter((n) => n !== "startWindowDrag")).toEqual([]);
   });
 
   it("tab order: window controls → sidebar → tabs → action row → news", async () => {
@@ -78,13 +82,12 @@ describe("shell", () => {
     await loaded();
     await screen.findByText(/TCP\/IP co-op testing weekend/);
     const order: string[] = [];
-    for (let i = 0; i < 11; i++) {
+    for (let i = 0; i < 10; i++) {
       await user.tab();
       order.push(focused().getAttribute("aria-label") ?? focused().textContent!.replace(/\s+/g, " ").trim());
     }
-    expect(order.slice(0, 8)).toEqual([
+    expect(order.slice(0, 7)).toEqual([
       "Minimise",
-      "Maximise",
       "Close",
       "Project Diablo 2: Resurrected",
       "Settings",
@@ -92,7 +95,7 @@ describe("shell", () => {
       "Play",
       "Manage PD2R",
     ]);
-    expect(order.slice(8).every((t) => /ago/.test(t))).toBe(true);
+    expect(order.slice(7).every((t) => /ago/.test(t))).toBe(true);
   });
 
   it("arrow keys move within the sidebar list; Enter activates", async () => {
@@ -147,12 +150,21 @@ describe("product page", () => {
     expect(screen.getByRole("img", { name: /Placeholder hero art for Project Diablo 2/ })).toBeTruthy();
   });
 
-  it("products without a release: no tabs, ribbon and description; no About without a page", async () => {
-    mount("coming-soon");
+  it("products without a release: no tabs, ribbon and description; About opens the About dialog without a page", async () => {
+    const { api, user } = mount("coming-soon");
     expect(await screen.findByText("Coming soon")).toBeTruthy();
     expect(screen.queryByRole("tablist")).toBeNull();
-    // Forever has no public repository yet (#80): no page, no button.
-    expect(screen.queryByRole("button", { name: "About Forever" })).toBeNull();
+    // Forever has no public page yet (#80): About opens the in-launcher dialog (issue 135).
+    const about = screen.getByRole("button", { name: "About Forever" });
+    await user.click(about);
+    const dialog = screen.getByRole("dialog", { name: "About Diablo II: Resurrected Forever" });
+    expect(dialog.textContent).toContain("no release to install yet");
+    expect(names(api)).not.toContain("openProductPage");
+    await user.click(within(dialog).getByRole("button", { name: "Join the Discord ↗" }));
+    expect(api.calls.at(-1)).toEqual({ name: "openCommunityPage", args: [] });
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(about);
   });
 
   it("About opens the product page by product id when the product has one", async () => {
@@ -168,6 +180,15 @@ describe("product page", () => {
     );
     await user.click(await screen.findByRole("button", { name: "About Forever" }));
     expect(api.calls.at(-1)).toEqual({ name: "openProductPage", args: ["project-forever"] });
+  });
+
+  it("About's Discord link shows why when opening it is refused", async () => {
+    const { user } = mount("coming-soon", (a) => {
+      a.openCommunityPage = () => Promise.reject({ code: "internal", message: "opening the Discord failed" });
+    });
+    await user.click(await screen.findByRole("button", { name: "About Forever" }));
+    await user.click(screen.getByRole("button", { name: "Join the Discord ↗" }));
+    expect(await screen.findByText("opening the Discord failed")).toBeTruthy();
   });
 
   it("news: up to three items, opened by index", async () => {

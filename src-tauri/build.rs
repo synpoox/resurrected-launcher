@@ -25,7 +25,6 @@ fn main() {
         "get_start_with_windows",
         "set_start_with_windows",
         "minimize_window",
-        "toggle_maximize_window",
         "close_window",
         "start_window_drag",
         "quit_launcher",
@@ -39,6 +38,7 @@ fn main() {
         "get_news",
         "open_news_link",
         "open_product_page",
+        "open_community_page",
     ]);
     let attributes = tauri_build::Attributes::new()
         .windows_attributes(windows)

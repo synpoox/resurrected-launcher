@@ -17,7 +17,7 @@ import { arrowKeys } from "../ui/focus";
 import { Menu, type MenuItem } from "../ui/Menu";
 import { Notice } from "../ui/Notice";
 import { useToast } from "../ui/Toast";
-import { CleanInstallDialog, LocationDialog, SaveBreakingDialog, UninstallDialog } from "./dialogs";
+import { AboutDialog, CleanInstallDialog, LocationDialog, SaveBreakingDialog, UninstallDialog } from "./dialogs";
 import { formatBytes, formatCount, formatTimeLeft, releaseLabel, startedAgo } from "./format";
 import { HeroArt, HeroCopy } from "./Hero";
 import { existingOf, hasNotice, journeyOf, type Journey } from "./journey";
@@ -91,12 +91,15 @@ function useNews(productId: string) {
   };
 }
 
-/** Forever and 09 today: ribbon, description and, when it has a page, "About <product>"; no tabs. */
+/** Forever and 09 today: ribbon, description and "About <product>"; no tabs. About opens the
+ *  product's public page when it has one, otherwise an in-launcher About dialog (issue 135). */
 function ComingSoon({ product }: { product: Product }) {
   const api = useApi();
   const toast = useToast();
-  const about = () =>
-    void api.openProductPage(product.id).catch((e: unknown) => toast.show({ tone: "error", text: asError(e).message }));
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const fail = (e: unknown) => toast.show({ tone: "error", text: asError(e).message });
+  const about = () => (product.aboutPage ? void api.openProductPage(product.id).catch(fail) : setAboutOpen(true));
+  const discord = () => void api.openCommunityPage().catch(fail);
   const feed = useNews(product.id);
   return (
     <div className="page overview">
@@ -104,16 +107,15 @@ function ComingSoon({ product }: { product: Product }) {
       <HeroCopy product={product} />
       <div className="bottom">
         <div className="action-col">
-          {product.aboutPage && (
-            <div className="act">
-              <button type="button" className="btn ghost" onClick={about}>
-                About {product.short}
-              </button>
-            </div>
-          )}
+          <div className="act">
+            <button type="button" className="btn ghost" onClick={about}>
+              About {product.short}
+            </button>
+          </div>
         </div>
         <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} />
       </div>
+      {aboutOpen && <AboutDialog product={product} onDiscord={discord} onClose={() => setAboutOpen(false)} />}
     </div>
   );
 }

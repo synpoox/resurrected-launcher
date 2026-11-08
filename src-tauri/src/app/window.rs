@@ -28,18 +28,6 @@ pub async fn minimize_window<R: Runtime>(window: WebviewWindow<R>) -> Result<(),
     window.minimize().map_err(failed)
 }
 
-#[tauri::command(rename_all = "snake_case")]
-pub async fn toggle_maximize_window<R: Runtime>(
-    window: WebviewWindow<R>,
-) -> Result<(), LauncherError> {
-    main_only(&window)?;
-    if window.is_maximized().map_err(failed)? {
-        window.unmaximize().map_err(failed)
-    } else {
-        window.maximize().map_err(failed)
-    }
-}
-
 /// A normal close request, which #75 turns into hide-to-tray.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn close_window<R: Runtime>(window: WebviewWindow<R>) -> Result<(), LauncherError> {
