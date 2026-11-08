@@ -11,15 +11,14 @@ pub mod tray;
 use std::error::Error;
 use std::sync::Arc;
 
-use serde::Serialize;
 use tauri::path::BaseDirectory;
 use tauri::{
     App, AppHandle, Builder, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder, Window,
     WindowEvent,
 };
 
-use crate::app::{CachedReleases, Launcher, SystemDesktop};
-use crate::contract::{ProductId, Versioned, UMBRELLA_DISPLAY_NAME};
+use crate::app::{CachedReleases, Launcher, SystemDesktop, TRAY_EVENT};
+use crate::contract::{ProductId, TrayAction, TrayRequest, Versioned, UMBRELLA_DISPLAY_NAME};
 use crate::game::SystemGameHost;
 use crate::install::download::Downloader;
 use crate::install::extract::SevenZip;
@@ -31,31 +30,10 @@ pub use tray::{quit, Quit};
 /// The flag the Start with Windows Run value passes (#74): start in the tray only.
 pub const AUTOSTART_FLAG: &str = "--autostart";
 
-/// Event (`Versioned<TrayRequest>`): the tray opened the window and asks the
-/// frontend to show something.
-pub const TRAY_REQUEST_EVENT: &str = "tray-request";
-
 /// Marker in app-local data: the first-close notice was shown.
 const FIRST_CLOSE_MARKER: &str = "tray-notice-shown";
 
 const FIRST_CLOSE_NOTICE: &str = "Still running in the tray. Downloads and update checks carry on here. To exit, right-click the icon and choose Quit.";
-
-/// Payload of [`TRAY_REQUEST_EVENT`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct TrayRequest {
-    pub action: TrayAction,
-    pub product_id: ProductId,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TrayAction {
-    /// Update on a save-breaking release: the acknowledgement is needed first (ADR 0001).
-    SaveBreaking,
-    ShowWhatHappened,
-    /// Quit while an operation runs; nothing exits until the frontend calls `quit_launcher`.
-    QuitWhileBusy,
-}
 
 /// Application entry point.
 pub fn run() {
@@ -134,7 +112,7 @@ fn request<R: Runtime>(app: &AppHandle<R>, action: TrayAction, product_id: &Prod
         action,
         product_id: product_id.clone(),
     };
-    let _ = app.emit(TRAY_REQUEST_EVENT, Versioned::new(request));
+    let _ = app.emit(TRAY_EVENT, Versioned::new(request));
 }
 
 /// Closing the main window hides it to the tray.

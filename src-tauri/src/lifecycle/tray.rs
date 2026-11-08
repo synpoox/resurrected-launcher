@@ -16,12 +16,12 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, Tray
 use tauri::{AppHandle, Emitter, Listener, Manager, Runtime};
 
 use super::icon::{self, Overlay};
-use super::{request, show_main, TrayAction};
+use super::{request, show_main};
 use crate::app::{self, Launcher, ProductState, OUTCOME_EVENT, PROGRESS_EVENT, STATE_EVENT};
 use crate::catalog::{Feed, FEED_IDENTITY};
 use crate::contract::{
     CancelRequest, OperationKind, OperationOutcome, OperationRequest, Phase, ProductId,
-    ProgressEvent, Readiness, Versioned, UMBRELLA_DISPLAY_NAME,
+    ProgressEvent, Readiness, TrayAction, Versioned, UMBRELLA_DISPLAY_NAME,
 };
 
 /// One menu entry for a product.
@@ -53,17 +53,24 @@ pub enum Quit {
     Busy(ProductId),
 }
 
-/// Tray Quit. Decided from the launcher's live running map, never from the tray's
-/// filtered view, so an operation always blocks it. On `Busy` it shows the window
-/// and emits `quit_while_busy`; on `Exit` the caller exits (the game keeps running).
+/// Tray Quit, through the same gate as `quit_launcher`: [`Launcher::begin_quit`]
+/// refuses while an operation or recovery runs, else sets the sticky quitting
+/// flag so nothing starts before the exit. On `Busy` it shows the window and emits
+/// `quit_while_busy`; on `Exit` the caller exits (the game keeps running).
 pub fn quit<R: Runtime>(app: &AppHandle<R>) -> Quit {
-    match app.state::<Arc<Launcher>>().busy_product() {
-        None => Quit::Exit,
-        Some(product) => {
+    let launcher = app.state::<Arc<Launcher>>();
+    // Retried: the operation may end between the refusal and naming its product.
+    for _ in 0..3 {
+        if launcher.begin_quit().is_ok() {
+            return Quit::Exit;
+        }
+        if let Some(product) = launcher.busy_product() {
             request(app, TrayAction::QuitWhileBusy, &product);
-            Quit::Busy(product)
+            return Quit::Busy(product);
         }
     }
+    // Refused with nothing running: already quitting.
+    Quit::Exit
 }
 
 /// shortcut: the upper-cased product id ("pd2r" → "PD2R"); use a catalog display
@@ -100,6 +107,13 @@ pub fn view(
     };
     if let Some(kind) = state.running {
         let pct = progress.map_or(0, percent);
+        if state.cancelling {
+            return shown(
+                Overlay::Progress(pct),
+                "Stopping safely…".into(),
+                vec![Item::Disabled(format!("Stopping {name} safely…"))],
+            );
+        }
         let target = match (kind, &state.recommended) {
             (OperationKind::Install | OperationKind::Update, Some(r)) => {
                 format!(" {}", r.display_version)
@@ -153,6 +167,9 @@ pub fn view(
     };
     if failed.is_some() {
         return error("Something went wrong");
+    }
+    if state.startup_failed.is_some() {
+        return error("The game didn't start");
     }
     let installed = state
         .installed
@@ -572,6 +589,8 @@ mod tests {
             running_game: None,
             loader_guidance: None,
             catalog: CatalogState::Refreshed,
+            cancelling: false,
+            startup_failed: None,
         }
     }
 
@@ -629,6 +648,8 @@ mod tests {
             boundary: None,
             bytes_done: Some(52),
             bytes_total: Some(100),
+            files_done: None,
+            files_total: None,
         };
         let v = view(&s, Some(&p), None);
         assert_eq!(v.overlay, Overlay::Progress(52));
@@ -682,6 +703,8 @@ mod tests {
             boundary: None,
             bytes_done: None,
             bytes_total: None,
+            files_done: None,
+            files_total: None,
         });
         view(&s, p.as_ref(), None)
     }
@@ -701,6 +724,15 @@ mod tests {
         // An install starts as a download, before its first progress event.
         let v = running(OperationKind::Install, None);
         assert_eq!(labels(&v)[0], "Downloading PD2R · 0% (disabled)");
+    }
+
+    #[test]
+    fn cancelling_offers_no_second_cancel() {
+        let mut s = state(Readiness::Ready, Some("0.4.2"), "0.4.2");
+        s.running = Some(OperationKind::Update);
+        s.cancelling = true;
+        let v = view(&s, None, None);
+        assert_eq!(labels(&v), ["Stopping PD2R safely… (disabled)"]);
     }
 
     #[test]

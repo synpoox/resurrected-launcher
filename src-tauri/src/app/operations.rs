@@ -341,8 +341,8 @@ impl Launcher {
         self.running.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// A product with an operation or recovery running, if any: tray Quit asks
-    /// first instead of exiting (#75).
+    /// A product with an operation or recovery running, if any: names the product
+    /// when tray Quit is refused by [`Launcher::begin_quit`] (#75).
     pub(crate) fn busy_product(&self) -> Option<ProductId> {
         let running = self.running();
         running

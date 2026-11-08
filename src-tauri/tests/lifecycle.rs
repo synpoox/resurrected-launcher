@@ -26,7 +26,7 @@ use resurrected_launcher_lib::game::launch::play;
 use resurrected_launcher_lib::game::SystemGameHost;
 use resurrected_launcher_lib::install::download::Downloader;
 use resurrected_launcher_lib::install::preflight::SystemHost;
-use resurrected_launcher_lib::lifecycle::{self, Quit, TRAY_REQUEST_EVENT};
+use resurrected_launcher_lib::lifecycle::{self, Quit};
 use resurrected_launcher_lib::state::{InstalledRelease, Preferences, StateStore};
 use serde_json::{json, Value};
 use support::{DisposableGame, FixtureServer, Reply};
@@ -177,6 +177,24 @@ impl Desktop for NoDesktop {
         None
     }
     fn open_loader_download_page(&self) -> std::io::Result<()> {
+        Ok(())
+    }
+    fn open_folder(&self, _: &Path) -> std::io::Result<()> {
+        Ok(())
+    }
+    fn show_in_folder(&self, _: &Path) -> std::io::Result<()> {
+        Ok(())
+    }
+    fn pick_save_file(&self, _: &str) -> Option<PathBuf> {
+        None
+    }
+    fn saved_games(&self) -> std::io::Result<PathBuf> {
+        Err(std::io::Error::other("no Saved Games in tests"))
+    }
+    fn run_value(&self) -> std::io::Result<Option<String>> {
+        Ok(None)
+    }
+    fn set_run_value(&self, _: Option<&str>) -> std::io::Result<()> {
         Ok(())
     }
 }
@@ -356,10 +374,7 @@ fn quit_while_an_install_downloads_asks_and_does_not_exit() {
         Box::new(Published(release)),
         downloader,
     );
-    let (requests, outcomes) = (
-        events(&app, TRAY_REQUEST_EVENT),
-        events(&app, OUTCOME_EVENT),
-    );
+    let (requests, outcomes) = (events(&app, app::TRAY_EVENT), events(&app, OUTCOME_EVENT));
     let request = json!({
         "contract_version": CONTRACT_VERSION,
         "data": { "product_id": "pd2r", "kind": "install" },
