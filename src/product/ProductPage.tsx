@@ -49,12 +49,10 @@ export interface ProductPageProps {
   onOpenSettings: () => void;
   /** Clears this product's clean-install backup notice. */
   onDismissBackups?: () => void;
-  /** Shows "About <product>"; off in live mode until news and product pages are native (#80). */
-  showAbout?: boolean;
 }
 
 export function ProductPage(props: ProductPageProps) {
-  return props.product.hasRelease ? <ReleasedProduct {...props} /> : <ComingSoon product={props.product} showAbout={props.showAbout ?? true} />;
+  return props.product.hasRelease ? <ReleasedProduct {...props} /> : <ComingSoon product={props.product} />;
 }
 
 function useNews(productId: string) {
@@ -71,8 +69,8 @@ function useNews(productId: string) {
   };
 }
 
-/** Forever and 09 today: ribbon, description and "About <product>"; no tabs. */
-function ComingSoon({ product, showAbout }: { product: Product; showAbout: boolean }) {
+/** Forever and 09 today: ribbon, description and, when it has a page, "About <product>"; no tabs. */
+function ComingSoon({ product }: { product: Product }) {
   const api = useApi();
   const feed = useNews(product.id);
   return (
@@ -81,7 +79,7 @@ function ComingSoon({ product, showAbout }: { product: Product; showAbout: boole
       <HeroCopy product={product} />
       <div className="bottom">
         <div className="action-col">
-          {showAbout && (
+          {product.aboutPage && (
             <div className="act">
               <button type="button" className="btn ghost" onClick={() => void api.openProductPage(product.id)}>
                 About {product.short}

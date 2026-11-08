@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { ApiContext } from "../api/context";
 import { createFixtureApi, sceneByKey, type FixtureApi } from "../api/fixtures";
-import { seenKey } from "../product/ProductPage";
+import { ProductPage, seenKey } from "../product/ProductPage";
+import { productById } from "../products";
 import { ToastProvider } from "../ui/Toast";
 import { BRANDING } from "./branding";
 import { LAST_PRODUCT_KEY, Shell } from "./Shell";
@@ -145,13 +146,27 @@ describe("product page", () => {
     expect(screen.getByRole("img", { name: /Placeholder hero art for Project Diablo 2/ })).toBeTruthy();
   });
 
-  it("products without a release: no tabs, ribbon, description and About", async () => {
-    const { api, user } = mount("coming-soon");
-    await user.click(await screen.findByRole("button", { name: "About Forever" }));
+  it("products without a release: no tabs, ribbon and description; no About without a page", async () => {
+    mount("coming-soon");
+    expect(await screen.findByText("Coming soon")).toBeTruthy();
     expect(screen.queryByRole("tablist")).toBeNull();
-    expect(screen.getByText("Coming soon")).toBeTruthy();
-    expect(names(api)).toContain("openProductPage");
-    expect(api.calls.find((c) => c.name === "openProductPage")!.args).toEqual(["project-forever"]);
+    // Forever has no public repository yet (#80): no page, no button.
+    expect(screen.queryByRole("button", { name: "About Forever" })).toBeNull();
+  });
+
+  it("About opens the product page by product id when the product has one", async () => {
+    api = createFixtureApi("coming-soon");
+    const user = userEvent.setup();
+    const forever = { ...productById("project-forever")!, aboutPage: true };
+    render(
+      <ApiContext.Provider value={api}>
+        <ToastProvider>
+          <ProductPage product={forever} data={undefined} refresh={() => Promise.resolve()} onOpenSettings={() => {}} />
+        </ToastProvider>
+      </ApiContext.Provider>,
+    );
+    await user.click(await screen.findByRole("button", { name: "About Forever" }));
+    expect(api.calls.at(-1)).toEqual({ name: "openProductPage", args: ["project-forever"] });
   });
 
   it("news: up to three items, opened by index", async () => {

@@ -158,6 +158,11 @@ pub struct Launcher {
     /// Where `refresh_catalog` downloads the feed: [`DEFAULT_FEED_URL`] unless a
     /// test points it elsewhere.
     pub feed_url: String,
+    /// Where `get_news` downloads `news.json`: [`super::news::DEFAULT_NEWS_URL`]
+    /// unless a test points it elsewhere.
+    pub news_url: String,
+    /// The session's news file and the links of the last replies.
+    pub(super) news: Mutex<super::news::NewsHeld>,
     /// Running operations and recoveries. Also the app operation lock:
     /// `start_operation` and recovery reserve under it, and `play_product` holds
     /// it from assessment to spawn.
@@ -322,6 +327,8 @@ impl Launcher {
             game,
             desktop,
             feed_url: DEFAULT_FEED_URL.to_owned(),
+            news_url: super::news::DEFAULT_NEWS_URL.to_owned(),
+            news: Mutex::default(),
             running: Mutex::new(Running::default()),
             hashes: BuildHashCache::default(),
             catalog: Mutex::new(CatalogState::NotRefreshed),

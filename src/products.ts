@@ -16,6 +16,10 @@ export interface Product {
   description: string;
   /** False for products without a release (Forever and 09 today): no tabs, no install. */
   hasRelease: boolean;
+  /** Shows "About <product>" (products without a release). True only when Rust bundles a
+   *  page for it in `app::news::PRODUCT_PAGES`; `products.test.ts` checks. Forever and 09
+   *  have no public repository yet, so they have no page. */
+  aboutPage: boolean;
 }
 
 /** In the spec's sidebar order. */
@@ -29,6 +33,7 @@ export const PRODUCTS: readonly Product[] = [
     title: ["The game you know.", "A world reborn."],
     description: "The Project Diablo 2 experience, rebuilt on Diablo II: Resurrected.",
     hasRelease: true,
+    aboutPage: true,
   },
   {
     id: "project-forever",
@@ -39,6 +44,7 @@ export const PRODUCTS: readonly Product[] = [
     title: ["A different future.", "A resurrected world."],
     description: "Class changes, legacy items, league mechanics and a reworked endgame.",
     hasRelease: false,
+    aboutPage: false,
   },
   {
     id: "project-09",
@@ -49,6 +55,7 @@ export const PRODUCTS: readonly Product[] = [
     title: ["An earlier era.", "A world revisited."],
     description: "Lord of Destruction 1.09d, ported to Diablo II: Resurrected 3.3.",
     hasRelease: false,
+    aboutPage: false,
   },
 ];
 
