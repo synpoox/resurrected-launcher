@@ -7,11 +7,11 @@ mod support;
 
 use std::ffi::c_void;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::windows::io::AsRawHandle;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Mutex, OnceLock};
+use std::process::{Child, ChildStdout, Command, Stdio};
+use std::sync::{mpsc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use resurrected_launcher_lib::catalog::ReleaseManifest;
@@ -102,16 +102,20 @@ impl Rig {
     /// Runs [`helper_plays_and_exits`] in a child test process, assigned to `job`
     /// before it plays, and waits for it to exit. Returns the game's PID.
     fn play_in_helper(&self, job: Option<&Job>) -> u32 {
+        self.play_in_piped_helper(job).0
+    }
+
+    /// [`Rig::play_in_helper`], also returning the read end of the helper's
+    /// stdout pipe.
+    fn play_in_piped_helper(&self, job: Option<&Job>) -> (u32, ChildStdout) {
         let mut helper = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "helper_plays_and_exits", "--nocapture"])
             .env(HELPER_ROOT, &self.root)
             .env(OUT, self.out())
             .env(SLEEP, LONG_MS)
             .env(HELPER_PID, self.tmp.path().join("pid"))
-            // Not piped: the game inherits the helper's std handles, so a stdout
-            // pipe would stay open until the game exits.
             .stdin(Stdio::piped())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .spawn()
             .unwrap();
         if let Some(job) = job {
@@ -119,11 +123,13 @@ impl Rig {
         }
         // The helper plays only after this line, so it is in the job by then.
         helper.stdin.take().unwrap().write_all(b"go\n").unwrap();
+        let stdout = helper.stdout.take().unwrap();
         assert!(helper.wait().unwrap().success(), "helper failed");
-        fs::read_to_string(self.tmp.path().join("pid"))
+        let pid = fs::read_to_string(self.tmp.path().join("pid"))
             .unwrap()
             .parse()
-            .unwrap()
+            .unwrap();
+        (pid, stdout)
     }
 }
 
@@ -432,6 +438,23 @@ fn the_game_outlives_the_launcher_process_that_played_it() {
     std::thread::sleep(Duration::from_millis(300));
     assert!(game.alive());
     assert_eq!(pids_under(&rig.root), vec![game.pid]);
+}
+
+#[test]
+fn the_launchers_stdout_pipe_closes_when_it_exits_while_the_game_runs() {
+    let rig = Rig::new();
+    let (pid, mut stdout) = rig.play_in_piped_helper(None);
+    let game = Killer::open(pid);
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(stdout.read_to_end(&mut Vec::new()).map(|_| ()));
+    });
+    let eof = rx.recv_timeout(Duration::from_secs(10));
+    assert!(
+        matches!(eof, Ok(Ok(()))),
+        "the game held the launcher's stdout pipe open: {eof:?}"
+    );
+    assert!(game.alive());
 }
 
 #[test]
