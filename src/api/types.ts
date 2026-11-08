@@ -94,6 +94,7 @@ export interface DiagnosticsPreview {
 export interface TrayRequest {
   action: "save_breaking" | "show_what_happened" | "quit_while_busy";
   product_id: string;
+  error: LauncherError | null;
 }
 
 // ---- News view types (#80 produces them later) ----

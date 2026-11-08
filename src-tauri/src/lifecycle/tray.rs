@@ -20,10 +20,9 @@ use super::{request, show_main};
 use crate::app::{
     self, Launcher, ProductState, Refusal, OUTCOME_EVENT, PROGRESS_EVENT, STATE_EVENT,
 };
-use crate::catalog::{Feed, FEED_IDENTITY};
 use crate::contract::{
-    CancelRequest, OperationKind, OperationOutcome, OperationRequest, Phase, ProductId,
-    ProgressEvent, Readiness, TrayAction, Versioned, UMBRELLA_DISPLAY_NAME,
+    CancelRequest, LauncherError, OperationKind, OperationOutcome, OperationRequest, Phase,
+    ProductId, ProgressEvent, Readiness, TrayAction, Versioned, UMBRELLA_DISPLAY_NAME,
 };
 
 /// One menu entry for a product.
@@ -249,12 +248,13 @@ enum Msg {
     Click(String),
 }
 
-/// What the tray knows beyond `get_product_state`.
+/// What the tray knows beyond `get_product_state`. `failed` keeps the kind of the
+/// last failed operation and, when known, its error for Show what happened.
 #[derive(Default)]
-struct Model {
+pub struct Model {
     states: Vec<ProductState>,
     progress: HashMap<ProductId, ProgressEvent>,
-    failed: HashMap<ProductId, OperationKind>,
+    failed: HashMap<ProductId, (OperationKind, Option<LauncherError>)>,
 }
 
 /// Creates the tray icon and its worker thread.
@@ -323,14 +323,17 @@ fn run_loop<R: Runtime>(app: &AppHandle<R>, tray: &TrayIcon<R>, rx: Receiver<Msg
             Msg::Outcome(outcome) => {
                 let (product, failed) = match outcome {
                     OperationOutcome::Failed {
-                        product_id, kind, ..
-                    } => (product_id, Some(kind)),
+                        product_id,
+                        kind,
+                        error,
+                        ..
+                    } => (product_id, Some((kind, Some(error)))),
                     OperationOutcome::Succeeded { product_id, .. }
                     | OperationOutcome::Cancelled { product_id, .. } => (product_id, None),
                 };
                 model.progress.remove(&product);
                 match failed {
-                    Some(kind) => model.failed.insert(product, kind),
+                    Some(failure) => model.failed.insert(product, failure),
                     None => model.failed.remove(&product),
                 };
                 model.refresh(app);
@@ -347,13 +350,17 @@ impl Model {
             .iter()
             .map(|s| {
                 let id = &s.product_id;
-                view(s, self.progress.get(id), self.failed.get(id).copied())
+                view(
+                    s,
+                    self.progress.get(id),
+                    self.failed.get(id).map(|(kind, _)| *kind),
+                )
             })
             .collect()
     }
 
     fn refresh<R: Runtime>(&mut self, app: &AppHandle<R>) {
-        let ids = product_ids(&app.state::<Arc<Launcher>>());
+        let ids = app.state::<Arc<Launcher>>().known_products();
         self.states = ids
             .into_iter()
             .filter_map(|id| block_on(app::get_product_state(app.state(), id)).ok())
@@ -362,7 +369,8 @@ impl Model {
             .collect();
     }
 
-    fn click<R: Runtime>(&mut self, app: &AppHandle<R>, id: &str) {
+    /// Runs the tray menu item `id`, as a click on it would.
+    pub fn click<R: Runtime>(&mut self, app: &AppHandle<R>, id: &str) {
         if id == "open" {
             return show_main(app);
         }
@@ -386,7 +394,7 @@ impl Model {
                 });
                 let _ = block_on(app::cancel_operation(app.state(), cancel));
             }
-            "retry" => match self.failed.get(&product).copied() {
+            "retry" => match self.failed.get(&product).map(|(kind, _)| *kind) {
                 // Never Uninstall or Clean install again without the window.
                 Some(
                     kind @ (OperationKind::Install | OperationKind::Update | OperationKind::Repair),
@@ -398,7 +406,10 @@ impl Model {
                     self.refresh(app);
                 }
             },
-            "show" => request(app, TrayAction::ShowWhatHappened, &product, None),
+            "show" => {
+                let error = self.failed.get(&product).and_then(|(_, e)| e.clone());
+                request(app, TrayAction::ShowWhatHappened, &product, error)
+            }
             _ => {}
         }
     }
@@ -434,28 +445,9 @@ impl Model {
         // A refused start shows as an error; Show what happened opens the window.
         match started {
             Ok(()) => self.failed.remove(&product),
-            Err(_) => self.failed.insert(product, kind),
+            Err(e) => self.failed.insert(product, (kind, Some(e))),
         };
     }
-}
-
-/// Feed products in feed order, then installed products the feed no longer lists.
-fn product_ids(launcher: &Launcher) -> Vec<ProductId> {
-    let mut state = launcher.state.lock().unwrap_or_else(|e| e.into_inner());
-    let feed = state
-        .cached(FEED_IDENTITY)
-        .and_then(|c| Feed::parse(&c.bytes).ok());
-    let mut ids: Vec<ProductId> = feed
-        .into_iter()
-        .flat_map(|f| f.products)
-        .map(|p| p.product_id)
-        .collect();
-    for r in state.installed_releases() {
-        if !ids.contains(&r.product_id) {
-            ids.push(r.product_id.clone());
-        }
-    }
-    ids
 }
 
 /// What the tray last showed, with its product menu items for in-place updates.

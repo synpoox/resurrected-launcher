@@ -422,7 +422,26 @@ fn a_refused_tray_play_sends_its_error_to_the_window() {
     assert!(states.try_recv().is_err());
 }
 
-/// The notification and single-instance plugins are registered Rust-side, but no
+/// A refused tray Update shows as an error; Show what happened then opens the
+/// window with that refusal's error.
+#[test]
+fn a_refused_tray_update_sends_its_error_to_the_window() {
+    let (state, d2r) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let releases = Box::new(CachedReleases);
+    let (app, _webview) = mount(state.path(), d2r.path(), releases, Downloader::new());
+    let requests = events(&app, app::TRAY_EVENT);
+    let mut tray = lifecycle::Model::default();
+    // Nothing installed: Update is refused before anything starts.
+    tray.click(app.handle(), "update:pd2r");
+    assert!(requests.try_recv().is_err());
+    tray.click(app.handle(), "show:pd2r");
+    let asked = requests.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(asked["data"]["action"], "show_what_happened");
+    assert_eq!(asked["data"]["product_id"], "pd2r");
+    assert!(asked["data"]["error"]["code"].is_string(), "{asked}");
+}
+
+/// The notification, single-instance, tray and menu plugins are registered Rust-side, but no
 /// capability grants their commands to the webview.
 #[test]
 fn lifecycle_plugin_commands_are_refused_over_ipc() {
@@ -443,6 +462,10 @@ fn lifecycle_plugin_commands_are_refused_over_ipc() {
         "plugin:notification|permission_state",
         "plugin:notification|register_listener",
         "plugin:single-instance|anything",
+        "plugin:tray|new",
+        "plugin:tray|set_icon",
+        "plugin:tray|set_menu",
+        "plugin:menu|new",
     ] {
         let err = get_ipc_response(
             &webview,

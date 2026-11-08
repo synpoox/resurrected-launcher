@@ -27,7 +27,7 @@ use crate::install::extract::SevenZip;
 use crate::install::preflight::SystemHost;
 use crate::state::StateStore;
 
-pub use tray::{play, quit, Quit};
+pub use tray::{play, quit, Model, Quit};
 
 /// The flag the Start with Windows Run value passes (#74): start in the tray only.
 pub const AUTOSTART_FLAG: &str = "--autostart";
@@ -80,8 +80,11 @@ pub fn builder<R: Runtime>(
     setup: impl FnOnce(&mut App<R>) -> Result<(), Box<dyn Error>> + Send + 'static,
 ) -> Builder<R> {
     plugins(
-        builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            show_main(app)
+        builder.plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            // A second instance started by Windows at sign-in stays in the tray.
+            if !args.iter().any(|a| a == AUTOSTART_FLAG) {
+                show_main(app)
+            }
         })),
     )
     .invoke_handler(crate::app::invoke_handler())
