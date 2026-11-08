@@ -42,6 +42,9 @@ pub trait Desktop: Send + Sync {
     fn pick_folder(&self) -> Option<PathBuf>;
     /// Opens [`LOADER_DOWNLOAD_PAGE`] in the default browser. No other URL.
     fn open_loader_download_page(&self) -> io::Result<()>;
+    /// Opens an `https` URL in the default browser: a link from a validated
+    /// `news.json` or a bundled product page, never one from the frontend.
+    fn open_link(&self, url: &str) -> io::Result<()>;
     /// Opens `dir` in Explorer. Paths are built natively only.
     fn open_folder(&self, dir: &Path) -> io::Result<()>;
     /// Opens Explorer with `file` selected.
@@ -80,6 +83,11 @@ impl Desktop for SystemDesktop {
     fn open_loader_download_page(&self) -> io::Result<()> {
         // explorer.exe hands an https URL to the default browser; no shell parses it.
         explorer().arg(LOADER_DOWNLOAD_PAGE).spawn().map(drop)
+    }
+
+    fn open_link(&self, url: &str) -> io::Result<()> {
+        // As above: explorer.exe hands the URL to the browser; no shell parses it.
+        explorer().arg(url).spawn().map(drop)
     }
 
     fn open_folder(&self, dir: &Path) -> io::Result<()> {

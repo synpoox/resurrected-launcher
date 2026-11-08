@@ -36,6 +36,9 @@ fn main() {
         "open_launcher_whats_new",
         "get_launcher_auto_download",
         "set_launcher_auto_download",
+        "get_news",
+        "open_news_link",
+        "open_product_page",
     ]);
     let attributes = tauri_build::Attributes::new()
         .windows_attributes(windows)

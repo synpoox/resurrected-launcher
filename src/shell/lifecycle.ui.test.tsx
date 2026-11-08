@@ -277,30 +277,6 @@ describe("quit refused", () => {
   });
 });
 
-describe("About in live mode", () => {
-  const renderForever = (showAbout?: boolean) => {
-    api = createFixtureApi("coming-soon");
-    render(
-      <ApiContext.Provider value={api}>
-        <ToastProvider>
-          <Shell product="project-forever" showAbout={showAbout} />
-        </ToastProvider>
-      </ApiContext.Provider>,
-    );
-  };
-
-  it("is hidden when the shell is told to (live mode until #80)", async () => {
-    renderForever(false);
-    expect(await screen.findByText("Coming soon")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "About Forever" })).toBeNull();
-  });
-
-  it("is shown by default (fixtures)", async () => {
-    renderForever();
-    expect(await screen.findByRole("button", { name: "About Forever" })).toBeTruthy();
-  });
-});
-
 describe("outcome report", () => {
   it("keeps clean-install backup locations that arrive while the product page isn't shown", async () => {
     const { api, user } = mount("ready");

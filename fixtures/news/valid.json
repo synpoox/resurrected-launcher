@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "published_by": "fixture: unknown top-level fields are ignored",
+  "items": [
+    {
+      "product_id": "pd2r",
+      "kind": "announcement",
+      "title": "TCP/IP co-op testing weekend",
+      "published": "2026-11-01",
+      "url": "https://discord.gg/mGpHT26Xak"
+    },
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "Backing up your saves before an update",
+      "published": "2026-10-20",
+      "url": "https://github.com/synpoox/pd2-resurrected/wiki/Backups",
+      "image": "https://evil.example/ignored.png"
+    },
+    {
+      "product_id": "pd2r",
+      "kind": "release_notes",
+      "title": "Alpha 0.4.2 patch notes (dropped: Patch Notes owns these)",
+      "published": "2026-11-05",
+      "url": "https://github.com/synpoox/pd2-resurrected/releases/tag/v0.4.2"
+    },
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "Setting up D2RLoader",
+      "published": "2026-09-01T12:00:00Z",
+      "url": "https://github.com/synpoox/pd2-resurrected/wiki/D2RLoader"
+    },
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "Oldest guide (fourth, not shown)",
+      "published": "2026-01-01",
+      "url": "https://github.com/synpoox/pd2-resurrected/wiki"
+    },
+    {
+      "product_id": "project-forever",
+      "kind": "announcement",
+      "title": "Legacy items: first look",
+      "published": "2026-11-03",
+      "url": "https://discord.com/channels/1/2"
+    }
+  ]
+}

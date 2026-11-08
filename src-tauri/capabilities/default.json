@@ -35,6 +35,9 @@
     "allow-open-launcher-whats-new",
     "allow-get-launcher-auto-download",
     "allow-set-launcher-auto-download",
+    "allow-get-news",
+    "allow-open-news-link",
+    "allow-open-product-page",
     "core:event:allow-listen",
     "core:event:allow-unlisten"
   ]

@@ -1,11 +1,9 @@
 // The live LauncherApi: every member passes straight through to `src/ipc.ts`, the only module that
-// imports `@tauri-apps/api`. News has no native commands until #80, so it comes from `news`.
+// imports `@tauri-apps/api`.
 import * as ipc from "../ipc";
 import type { LauncherApi } from "./types";
 
-export type NewsApi = Pick<LauncherApi, "getNews" | "openNewsLink" | "openProductPage">;
-
-export function createLiveApi(news: NewsApi) {
+export function createLiveApi() {
   return {
     getProductState: ipc.getProductState,
     inspectOperation: ipc.inspectOperation,
@@ -34,9 +32,9 @@ export function createLiveApi(news: NewsApi) {
     startWindowDrag: ipc.startWindowDrag,
     quitLauncher: ipc.quitLauncher,
 
-    getNews: (productId: string) => news.getNews(productId),
-    openNewsLink: (productId: string, index: number) => news.openNewsLink(productId, index),
-    openProductPage: (productId: string) => news.openProductPage(productId),
+    getNews: ipc.getNews,
+    openNewsLink: ipc.openNewsLink,
+    openProductPage: ipc.openProductPage,
 
     onStateChanged: ipc.onStateChanged,
     onProgress: ipc.onProgress,

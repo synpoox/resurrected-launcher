@@ -442,3 +442,32 @@ export async function setLauncherAutoDownload(enabled: boolean): Promise<void> {
 export function onLauncherUpdatePhase(handler: (status: LauncherUpdateStatus) => void): Promise<UnlistenFn> {
   return listen<Versioned<LauncherUpdateStatus>>("self-update-phase", (e) => handler(current(e.payload)));
 }
+
+// ---- News feed and outbound links (#80). Mirror `app::news`. ----
+
+/** Mirrors `app::NewsItem`: text only; the link stays native. */
+export interface NewsItem {
+  /** "Announcement" or "Guide". */
+  tag: string;
+  title: string;
+  /** YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ */
+  published: string;
+}
+
+/** Mirrors `app::NewsState`. Offline also covers a missing or invalid news.json. */
+export type NewsState = { status: "ok"; items: NewsItem[] } | { status: "offline" };
+
+/** Up to three announcements and guides, newest first. Never rejects for offline. */
+export async function getNews(productId: string): Promise<NewsState> {
+  return current(await invoke<Versioned<NewsState>>("get_news", { product_id: productId }));
+}
+
+/** Opens item `index` of the last getNews reply for the product. Takes no URL. */
+export async function openNewsLink(productId: string, index: number): Promise<void> {
+  await invoke("open_news_link", { product_id: productId, index });
+}
+
+/** "About <product>": the bundled page. Rejects for a product without one. */
+export async function openProductPage(productId: string): Promise<void> {
+  await invoke("open_product_page", { product_id: productId });
+}
