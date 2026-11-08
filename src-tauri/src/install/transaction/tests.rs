@@ -904,3 +904,22 @@ fn junction_inside_the_product_root_is_never_written_through() {
         fs::remove_dir(fx.root.join("data")).unwrap(); // the junction, not its target
     }
 }
+
+#[test]
+fn recovery_refuses_while_the_game_runs_and_keeps_the_journal() {
+    let case = update_case();
+    let ends = ends(&case);
+    let fx = Fixture::new(&case);
+    let crash = FailAt {
+        boundary: Boundary::BackupRestoredToLive,
+        point: FaultPoint::AfterEntry(0),
+    };
+    let fail = Some((Boundary::LiveVerified, ErrorCode::InventoryMismatch));
+    fx.run_with(&case, &crash, &Plenty, fail).unwrap_err();
+    let before = fx.snapshot();
+    let err = recover(&fx.root, &fx.ctx(&NoFaults, &GameRunning)).unwrap_err();
+    assert_eq!(err.code, ErrorCode::GameRunning, "{err}");
+    assert_eq!(fx.snapshot(), before, "recovery wrote while the game ran");
+    assert_eq!(fx.recover(&NoFaults), Ok(Recovery::RolledBack));
+    assert_whole(&fx, &ends, false, "recovery after the game exits");
+}
