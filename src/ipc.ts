@@ -56,7 +56,12 @@ export type ErrorCode =
   | "mandatory_setting_conflict"
   | "cancelled"
   | "recovery_required"
-  | "internal";
+  | "internal"
+  | "d2r_not_found"
+  | "game_build_unsupported"
+  | "loader_not_ready"
+  | "product_not_installed"
+  | "launch_failed";
 
 /**
  * Mirrors `contract::LauncherError`. Every command rejects with one, except a
@@ -92,13 +97,62 @@ export interface ReleaseSummary {
   save_breaking: boolean;
 }
 
-/** Mirrors `app::ProductState`. */
+/** Mirrors `contract::GameLocation`. */
+export interface GameLocation {
+  path: string;
+  /** `D2R.exe`'s ProductVersion, for display only. */
+  build: string;
+  store: "battle_net" | "unknown";
+}
+
+/** Mirrors `contract::Readiness`: the first reason Play is refused, or ready. */
+export type Readiness =
+  | { status: "d2r_missing" }
+  | { status: "running"; since: number }
+  | { status: "recovery_required" }
+  | { status: "build_unsupported"; found: string }
+  | { status: "loader_missing" }
+  | { status: "loader_unsupported"; found: string; allowed: string[] }
+  | { status: "not_installed" }
+  | { status: "update_available" }
+  | { status: "ready" };
+
+/** Mirrors `contract::LoaderGuidance`. Open the page with `openLoaderDownloadPage`. */
+export interface LoaderGuidance {
+  found: string | null;
+  allowed: string[];
+  download_page: string;
+}
+
+/** Mirrors `contract::RunningGame`. */
+export interface RunningGame {
+  pid: number;
+  image: string;
+  since: number;
+}
+
+/** Mirrors `app::CatalogState`: the last catalog refresh in this launcher run. */
+export type CatalogState =
+  | { status: "not_refreshed" }
+  | { status: "refreshing" }
+  | { status: "refreshed" }
+  | { status: "failed"; error: LauncherError };
+
+/**
+ * Mirrors `app::ProductState`. Offline/no-catalog: `installed` and `recommended`
+ * are both null, so there is no release to offer; `catalog` says why.
+ */
 export interface ProductState {
   product_id: string;
   installed: InstalledRelease | null;
   /** Null when the feed or manifest is unavailable; never implies readiness. */
   recommended: ReleaseSummary | null;
   running: OperationKind | null;
+  location: GameLocation | null;
+  readiness: Readiness;
+  running_game: RunningGame | null;
+  loader_guidance: LoaderGuidance | null;
+  catalog: CatalogState;
 }
 
 /** Mirrors `app::ConflictView`. */
@@ -171,6 +225,41 @@ export async function cancelOperation(productId: string): Promise<void> {
 /** Startup recovery before Play is enabled, and the way out of `recovery_required`. */
 export async function recoverProduct(productId: string): Promise<Recovery> {
   return current(await invoke<Versioned<Recovery>>("recover_product", { product_id: productId }));
+}
+
+// ---- D2R location, readiness, catalog and Play (#60). Mirror `app::game`. ----
+
+/** Valid D2R locations, the remembered one first. */
+export async function detectGameLocations(): Promise<GameLocation[]> {
+  return current(await invoke<Versioned<GameLocation[]>>("detect_game_locations"));
+}
+
+/** Opens the native folder picker; null when the player cancels. Sends no path. */
+export async function chooseGameLocation(): Promise<GameLocation | null> {
+  return current(await invoke<Versioned<GameLocation | null>>("choose_game_location"));
+}
+
+/** Starts a background catalog refresh; `onStateChanged` fires when it ends. */
+export async function refreshCatalog(): Promise<void> {
+  await invoke("refresh_catalog");
+}
+
+/** Launches the installed release; `onStateChanged` fires when the game exits. */
+export async function playProduct(productId: string): Promise<RunningGame> {
+  return current(await invoke<Versioned<RunningGame>>("play_product", { product_id: productId }));
+}
+
+/** Opens the official D2RLoader download page in the default browser. */
+export async function openLoaderDownloadPage(): Promise<void> {
+  await invoke("open_loader_download_page");
+}
+
+/** `product-state-changed`: read `getProductState` again. */
+export function onStateChanged(handler: () => void): Promise<UnlistenFn> {
+  return listen<Versioned<null>>("product-state-changed", (e) => {
+    current(e.payload);
+    handler();
+  });
 }
 
 export function onProgress(handler: (event: ProgressEvent) => void): Promise<UnlistenFn> {

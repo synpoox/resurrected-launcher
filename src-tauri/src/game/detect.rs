@@ -108,7 +108,7 @@ fn validate_with(
 }
 
 /// A Windows symlink, junction or other reparse point (or a Unix symlink).
-pub(super) fn is_link(meta: &fs::Metadata) -> bool {
+pub(crate) fn is_link(meta: &fs::Metadata) -> bool {
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;

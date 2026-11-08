@@ -9,6 +9,11 @@
     "allow-inspect-operation",
     "allow-start-operation",
     "allow-cancel-operation",
-    "allow-recover-product"
+    "allow-recover-product",
+    "allow-detect-game-locations",
+    "allow-choose-game-location",
+    "allow-refresh-catalog",
+    "allow-play-product",
+    "allow-open-loader-download-page"
   ]
 }
