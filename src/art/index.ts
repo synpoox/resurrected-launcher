@@ -17,20 +17,20 @@ export interface HeroArt {
   placeholder: boolean;
 }
 
-const placeholder = (src: string, position: string, size?: string): HeroArt => ({
+const placeholder = (product: string, src: string, position: string, size?: string): HeroArt => ({
   src,
   position,
   size,
   name: "Placeholder hero",
   source: "Original placeholder made for this launcher",
-  accessibleName: "Placeholder hero art (abstract shapes, not game art)",
+  accessibleName: `Placeholder hero art for ${product} (abstract shapes, not game art)`,
   placeholder: true,
 });
 
 export const HERO_ART: Record<HeroProductId, HeroArt> = {
-  pd2r: placeholder(pd2r, "55% center"),
-  forever: placeholder(forever, "20% 30%"),
-  "09": placeholder(nine, "74% 22%", "auto 135%"),
+  pd2r: placeholder("Project Diablo 2: Resurrected", pd2r, "55% center"),
+  forever: placeholder("Diablo II: Resurrected Forever", forever, "20% 30%"),
+  "09": placeholder("Diablo II: Resurrected 09", nine, "74% 22%", "auto 135%"),
 };
 
 export const MARK_SRC: string = mark;

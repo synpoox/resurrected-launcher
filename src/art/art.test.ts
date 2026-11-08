@@ -4,6 +4,14 @@ import { HERO_ART, MARK_SRC } from "./index";
 
 const dir = "src/art";
 const index = readFileSync(`${dir}/index.ts`, "utf8");
+const tokens: string[] = readFileSync("src/tokens.css", "utf8").match(/#[0-9a-f]+(?=;)/gi) ?? [];
+
+// Paint values, as attributes (fill="…") or style declarations (fill: …), that aren't a token, none, transparent or a url(#…) reference.
+const PAINT = /(?:^|[\s;"'{])(?:fill|stroke|stop-color|flood-color|lighting-color|color)\s*(?:=\s*["']([^"']*)["']|:\s*([^;"'}]*))/gi;
+const badPaints = (svg: string) =>
+  [...svg.matchAll(PAINT)]
+    .map(([, attr, decl]) => (attr ?? decl).trim())
+    .filter((v) => !tokens.includes(v) && !/^(?:none|transparent|url\(#[\w-]+\))$/i.test(v));
 
 describe("bundled art", () => {
   it("every file in src/art is referenced from index.ts", () => {
@@ -14,12 +22,17 @@ describe("bundled art", () => {
   });
 
   it("every colour in the art is a token value", () => {
-    const tokens = readFileSync("src/tokens.css", "utf8").match(/#[0-9a-f]+(?=;)/gi) ?? [];
     for (const file of readdirSync(dir).filter((f) => f.endsWith(".svg"))) {
       const svg = readFileSync(`${dir}/${file}`, "utf8");
-      expect(svg, file).not.toMatch(/rgba?\(|hsla?\(|hwb\(|lab\(|lch\(|color\(/i);
+      expect(badPaints(svg), file).toEqual([]);
       for (const colour of svg.match(/#[0-9a-f]+\b/gi) ?? []) expect(tokens, `${file}: ${colour}`).toContain(colour);
     }
+  });
+
+  it("the colour check would catch a named, current or off-token colour", () => {
+    const bad = `<path fill="red"/><path stroke="currentColor"/><stop stop-color="white"/><path style="fill: #e3353e"/>`;
+    expect(badPaints(bad)).toHaveLength(4);
+    expect(badPaints(`<path fill="#e3353d" stroke="none"/><rect fill="url(#glow)"/>`)).toEqual([]);
   });
 
   it("no art source is a remote URL", () => {
