@@ -13,7 +13,6 @@ import {
   folderName,
   GAME_RUNNING_REASON,
   STATE_FAILED_REASON,
-  isPluginFolder,
   recheckText,
   STORE_NAME,
 } from "./copy";
@@ -157,19 +156,6 @@ export function LauncherPanel() {
 
 // ---- Folders and plugins ----
 
-/** localStorage: plugin folders the player has opened before (a missing one is created on first open). */
-export const openedKey = (productId: string | null) => `launcher.pluginsOpened.${productId ?? "global"}`;
-
-function firstOpen(key: string): boolean {
-  try {
-    if (localStorage.getItem(key)) return false;
-    localStorage.setItem(key, "1");
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export function FoldersPanel({ product, state }: PanelProps) {
   const api = useApi();
   const toast = useToast();
@@ -180,12 +166,11 @@ export function FoldersPanel({ product, state }: PanelProps) {
     const owner = productId ? product : null;
     const name = folderName(folder, owner);
     try {
-      await api.openFolder(productId, folder);
-      const created = isPluginFolder(folder) && firstOpen(openedKey(productId));
+      const created = await api.openFolder(productId, folder);
       toast.show({
         tone: "info",
         text: created
-          ? `Opened the ${name} in File Explorer. If it didn't exist yet, the launcher created it empty.`
+          ? `Opened the ${name} in File Explorer. It didn't exist yet, so the launcher created it empty.`
           : `Opened the ${name} in File Explorer.`,
       });
     } catch (e) {
