@@ -21,7 +21,7 @@ function mount(phase: string, scene = "ready", tick = 20, prepare?: (api: Fixtur
   api = createFixtureApi(scene, { tick: 60_000 });
   prepare?.(api);
   su = createSelfUpdateFixture(phase, { tick });
-  const user = userEvent.setup();
+  const user = userEvent.setup(vi.isFakeTimers() ? { advanceTimers: vi.advanceTimersByTime } : {});
   render(
     <ApiContext.Provider value={api}>
       <ToastProvider>
@@ -40,6 +40,21 @@ async function openLauncherSettings(user: ReturnType<typeof userEvent.setup>) {
   return screen.getByRole("tabpanel");
 }
 
+/**
+ * Fake timers that move only when the test moves them, so real time never decides a result. A toast's
+ * auto-dismiss timer starts in an effect after its text renders; on a slow runner that effect landed
+ * after a findBy* had resolved and the clock had been advanced, so the timer never fired (#109).
+ */
+const useFakeClock = () => {
+  vi.useFakeTimers();
+  // Testing Library drains a setTimeout(0) after each user event, and advances it only for Jest's fake timers.
+  vi.stubGlobal("jest", { advanceTimersByTime: (ms: number) => vi.advanceTimersByTime(ms) });
+};
+/** Runs pending promise-driven updates, renders and their effects inside act, without moving the clock. */
+const settle = () => act(() => vi.advanceTimersByTimeAsync(0));
+/** Moves the fake clock, running whatever falls due, and the updates it causes, inside act. */
+const advance = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
+
 const notifications = () => screen.getByRole("region", { name: "Notifications" });
 const settingsItem = () => screen.getByRole("button", { name: /^Settings/ });
 const names = (a: SelfUpdateFixtureApi) => a.calls.map((c) => c.name);
@@ -52,6 +67,7 @@ afterEach(() => {
   api = su = null;
   vi.useRealTimers();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("self-update flag", () => {
@@ -135,16 +151,16 @@ describe("toasts", () => {
   });
 
   it("ready doesn't auto-dismiss; Later leaves a dot on Settings until Settings opens", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    mount("ready");
-    const toast = (await within(notifications()).findByText("Launcher 1.3.0 is ready")).closest(".toast") as HTMLElement;
+    useFakeClock();
+    const { user } = mount("ready");
+    await settle();
+    const toast = within(notifications()).getByText("Launcher 1.3.0 is ready").closest(".toast") as HTMLElement;
     expect(within(toast).getAllByRole("button").map((b) => b.textContent)).toEqual([
       "Restart to update",
       "What's new",
       "Later",
     ]);
-    act(() => void vi.advanceTimersByTime(TOAST_MS * 3));
+    await advance(TOAST_MS * 3);
     expect(within(notifications()).getByText("Launcher 1.3.0 is ready")).toBeTruthy();
     expect(settingsItem().textContent).toBe("Settings");
 
@@ -223,10 +239,12 @@ describe("toasts", () => {
   });
 
   it("available auto-dismisses like other information toasts, without leaving the dot", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    useFakeClock();
     mount("available");
-    await within(notifications()).findByText("Launcher 1.3.0 is available");
-    act(() => void vi.advanceTimersByTime(TOAST_MS + 10));
+    await settle();
+    await advance(TOAST_MS - 1);
+    expect(within(notifications()).getByText("Launcher 1.3.0 is available")).toBeTruthy();
+    await advance(1);
     expect(within(notifications()).queryByText("Launcher 1.3.0 is available")).toBeNull();
     expect(screen.queryByRole("img", { name: "launcher update" })).toBeNull();
   });
@@ -266,34 +284,42 @@ describe("toasts", () => {
   });
 
   it("a failure after Try again shows its error toast again", async () => {
+    useFakeClock();
     const { user, su } = mount("download-failed");
-    const first = await within(notifications()).findByRole("alert");
+    await settle();
+    const first = within(notifications()).getByRole("alert");
     await user.click(within(first).getByRole("button", { name: "Try again" }));
     expect(within(notifications()).queryByRole("alert")).toBeNull();
     act(() => su.emit({ phase: "downloading", current: "1.2.0", next: "1.3.0", percent: 12 }));
     act(() => su.emit({ phase: "download_failed", current: "1.2.0", next: "1.3.0" }));
-    expect((await within(notifications()).findByRole("alert")).textContent).toContain("Couldn't download the launcher update");
+    expect(within(notifications()).getByRole("alert").textContent).toContain("Couldn't download the launcher update");
   });
 
   it("a signature rejected again after Try again in Settings shows its error toast again", async () => {
+    useFakeClock();
     const { user, su } = mount("signature-rejected");
-    await user.click(within(await within(notifications()).findByRole("alert")).getByRole("button", { name: "Later" }));
+    await settle();
+    await user.click(within(within(notifications()).getByRole("alert")).getByRole("button", { name: "Later" }));
     const panel = await openLauncherSettings(user);
     await user.click(within(panel).getByRole("button", { name: "Try again" }));
     act(() => su.emit({ phase: "signature_rejected", current: "1.2.0", next: "1.3.0" }));
-    expect((await within(notifications()).findByRole("alert")).textContent).toContain("Launcher update rejected");
+    expect(within(notifications()).getByRole("alert").textContent).toContain("Launcher update rejected");
   });
 
   it("available offers Download, What's new and Later; Download starts the download silently", async () => {
+    useFakeClock();
     const { user, su } = mount("available");
-    const toast = (await within(notifications()).findByText("Launcher 1.3.0 is available")).closest(".toast") as HTMLElement;
+    await settle();
+    const toast = within(notifications()).getByText("Launcher 1.3.0 is available").closest(".toast") as HTMLElement;
     expect(within(toast).getAllByRole("button").map((b) => b.textContent)).toEqual(["Download", "What's new", "Later"]);
     await user.click(within(toast).getByRole("button", { name: "Download" }));
+    await advance(20 * 3);
     expect(names(su)).toContain("download");
     expect(within(notifications()).queryByText(/Launcher/)).toBeNull();
     expect(settingsItem().textContent).toBe("Settings");
-    // Ready arrives once the download finishes.
-    expect(await within(notifications()).findByText("Launcher 1.3.0 is ready")).toBeTruthy();
+    // Ready arrives once the download finishes (four 20 ms steps, then ready).
+    await advance(20);
+    expect(within(notifications()).getByText("Launcher 1.3.0 is ready")).toBeTruthy();
   });
 
   it("What's new opens the release notes and doesn't leave the dot", async () => {
@@ -304,30 +330,30 @@ describe("toasts", () => {
   });
 
   it("Restart to update shows the restarting screen, then Updated with What's new, which auto-dismisses", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    mount("ready");
-    await user.click(await within(notifications()).findByRole("button", { name: "Restart to update" }));
+    useFakeClock();
+    const { user } = mount("ready");
+    await settle();
+    await user.click(within(notifications()).getByRole("button", { name: "Restart to update" }));
     const screenEl = within(screen.getByRole("main")).getByRole("status");
     expect(screenEl.textContent).toContain("Updating the launcher…");
     expect(screenEl.textContent).toContain("Back in a few seconds.");
     expect(screenEl.querySelector("img")?.getAttribute("alt")).toBe("");
-    act(() => void vi.advanceTimersByTime(100));
+    await advance(100);
     expect(screen.queryByText("Updating the launcher…")).toBeNull();
     const updated = within(notifications()).getByText("Updated to launcher 1.3.0").closest(".toast") as HTMLElement;
     expect(within(updated).getAllByRole("button").map((b) => b.textContent)).toEqual(["What's new", "Dismiss"]);
-    act(() => void vi.advanceTimersByTime(TOAST_MS + 10));
+    await advance(TOAST_MS);
     expect(within(notifications()).queryByText("Updated to launcher 1.3.0")).toBeNull();
     expect(settingsItem().textContent).toBe("Settings");
   });
 
   it("download failed: an error toast with Try again that stays until dismissed", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    const { su } = mount("download-failed");
-    const alert = await within(notifications()).findByRole("alert");
+    useFakeClock();
+    const { user, su } = mount("download-failed");
+    await settle();
+    const alert = within(notifications()).getByRole("alert");
     expect(alert.textContent).toContain("Couldn't download the launcher update. Launcher 1.2.0 keeps working.");
-    act(() => void vi.advanceTimersByTime(TOAST_MS * 2));
+    await advance(TOAST_MS * 2);
     expect(within(notifications()).getByRole("alert")).toBe(alert);
     await user.click(within(alert).getByRole("button", { name: "Try again" }));
     expect(names(su)).toContain("download");
@@ -374,22 +400,30 @@ describe("Settings → Launcher", () => {
   });
 
   it("Check for updates shows Checking…, then downloads in the background", async () => {
+    useFakeClock();
     const { user, su } = mount("up-to-date");
+    await settle();
     const panel = await openLauncherSettings(user);
-    const check = await within(panel).findByRole("button", { name: "Check for updates" });
+    const check = within(panel).getByRole("button", { name: "Check for updates" });
     await user.click(check);
+    await advance(19);
     expect(within(panel).getByText("Launcher 1.2.0 · Checking…")).toBeTruthy();
     expect(check.getAttribute("aria-disabled")).toBe("true");
-    expect(await within(panel).findByText(/Downloading 1\.3\.0 · \d+%/)).toBeTruthy();
+    // The check resolves at 20 ms and starts the download; its first step is a 0 ms timer, which runs 1 ms later.
+    await advance(2);
+    expect(within(panel).getByText("Launcher 1.2.0 · Downloading 1.3.0 · 12%")).toBeTruthy();
     expect(names(su)).toContain("checkForUpdates");
     expect(within(notifications()).queryByText(/Launcher/)).toBeNull();
-    expect(await within(panel).findByRole("button", { name: "Restart to update" })).toBeTruthy();
+    await advance(20 * 4);
+    expect(within(panel).getByRole("button", { name: "Restart to update" })).toBeTruthy();
   });
 
   it("available: Download replaces Check for updates; the switch is off with its hint, and Space turns it on", async () => {
+    useFakeClock();
     const { user, su } = mount("available");
+    await settle();
     const panel = await openLauncherSettings(user);
-    expect(await within(panel).findByText("Launcher 1.2.0 · 1.3.0 is available")).toBeTruthy();
+    expect(within(panel).getByText("Launcher 1.2.0 · 1.3.0 is available")).toBeTruthy();
     expect(within(panel).queryByRole("button", { name: "Check for updates" })).toBeNull();
     const sw = within(panel).getByRole("switch", { name: "Download launcher updates automatically" });
     expect(sw.getAttribute("aria-checked")).toBe("false");
@@ -401,7 +435,8 @@ describe("Settings → Launcher", () => {
     expect(su.calls.find((c) => c.name === "setAutoDownload")?.args).toEqual([true]);
     within(panel).getByRole("button", { name: "Download" }).focus();
     await user.keyboard("{Enter}");
-    expect(await within(panel).findByText(/Downloading 1\.3\.0/)).toBeTruthy();
+    await advance(1);
+    expect(within(panel).getByText(/Downloading 1\.3\.0 · 12%/)).toBeTruthy();
   });
 
   it("rapid toggles: only the latest request decides, and a failure reverts to the last confirmed value", async () => {
@@ -440,8 +475,9 @@ describe("Settings → Launcher", () => {
   });
 
   it("ready: Restart to update, reachable with the keyboard", async () => {
+    useFakeClock();
     const { user, su } = mount("ready");
-    await within(notifications()).findByText("Launcher 1.3.0 is ready");
+    await settle();
     const panel = await openLauncherSettings(user);
     const restart = within(panel).getByRole("button", { name: "Restart to update" });
     restart.focus();

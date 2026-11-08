@@ -30,7 +30,7 @@ mod game;
 mod news;
 mod operations;
 mod settings;
-mod winapi;
+pub(crate) mod winapi;
 mod window;
 
 #[cfg(test)]
