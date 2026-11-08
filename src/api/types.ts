@@ -129,7 +129,8 @@ export interface LauncherApi {
 
   // Patch Notes, folders, diagnostics, Start with Windows (#74)
   getReleaseNotes(productId: string): Promise<ReleaseNotes[]>;
-  openFolder(productId: string | null, folder: Folder): Promise<void>;
+  /** `true` when the call created the (plugins) folder. */
+  openFolder(productId: string | null, folder: Folder): Promise<boolean>;
   previewDiagnostics(includeLog: boolean): Promise<DiagnosticsPreview>;
   saveDiagnostics(includeLog: boolean): Promise<boolean>;
   showDiagnosticsInFolder(): Promise<void>;
