@@ -142,16 +142,16 @@ state), with the launcher built from this branch:
 4. Phase B step 7: on a copy without the loader, run Set up D2RLoader.
    Expected: an unsigned disclosure and a consent prompt, the installer's own
    UI or UAC prompt, then the loader shows ready.
-5. Phase B step 8: repeat steps 1-3 on Windows 10 22H2 and on a stock
-   Battle.net install, and record the exact versions.
+Phase B step 8 (Windows 10 22H2, stock Battle.net install) is out of scope
+for this gate: Windows 10 is tracked in #87.
 
 To restore the clone afterwards:
 `robocopy C:\Users\micah\source\repos\d2r-game-backup-2026-11-08 C:\Users\micah\source\repos\d2r-game /MIR`.
 
 ## Gaps
 
-- The owner steps above are not run. Because of them, this PR is "Part of
-  #61", not "Closes #61".
+- The owner steps 1-4 above are not run yet. Because of them, this PR is
+  "Part of #61", not "Closes #61". Step 8 is out of scope (#87).
 - After a rolled-back recovery, readiness is Ready even though the old
   installation lacks the file the repair was restoring. This matches the
   fixture restart test and the spec ("complete installation, old or new"),
