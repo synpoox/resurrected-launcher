@@ -1,6 +1,6 @@
 # Launcher release signing
 
-Status: scaffolding only (slice 5 prep). The workflow exists and skips its build until the owner adds the secrets (#86). Updater wiring is #88, and the gate is #89. Nothing here has been run with a real key.
+Status: the workflow exists and skips its build until the owner adds the secrets (#86). The updater is wired (#88; install on Quit #113), behind `VITE_SELF_UPDATE` until the #89 gate. Nothing here has been run with a real key.
 
 Policy comes from the [#8 resolution](https://github.com/synpoox/resurrected-launcher/issues/8) (slice 5, launcher self-updates) and [ADR 0003](../adr/0003-tauri-with-signed-launcher-updates.md). Launcher updates use Tauri's key-based updater signatures. These signatures are not Authenticode, so the launcher must not claim a verified Windows publisher. Product releases stay unsigned (HTTPS and hashes, `docs/specs/release-manifest.md`), and their feed never supplies a launcher key.
 
@@ -16,7 +16,7 @@ Policy comes from the [#8 resolution](https://github.com/synpoox/resurrected-lau
 
 It never creates, drafts or publishes a GitHub release, and it never writes a tag. Publishing and promotion belong to slice 6.
 
-`latest.json` points at `https://github.com/<repo>/releases/download/launcher-v<version>/<installer>`. That URL only works after someone publishes those assets by hand. The updater endpoint the app trusts is decided on #86 and set by #88.
+`latest.json` points at `https://github.com/<repo>/releases/download/launcher-v<version>/<installer>`. That URL only works after someone publishes those assets by hand. The updater endpoint the app trusts is `plugins.updater.endpoints` in `tauri.conf.json` (`https://github.com/synpoox/resurrected-launcher/releases/latest/download/latest.json`, decided on #86, set by #88), so it only answers once a release is published.
 
 ## Secrets
 
@@ -27,7 +27,7 @@ Both secrets live in the GitHub **environment** `launcher-release`, not in repos
 | `TAURI_SIGNING_PRIVATE_KEY` | The full contents of the private key file made by `tauri signer generate`. Tauri also accepts a path, but CI has no such file. |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The key's password. The workflow requires one: an empty password counts as missing. |
 
-No other secret is needed, and `GITHUB_TOKEN` stays read-only. The **public** key is not a secret: #88 commits it to `tauri.conf.json` as `plugins.updater.pubkey`.
+No other secret is needed, and `GITHUB_TOKEN` stays read-only. The **public** key is not a secret: it is committed in `tauri.conf.json` as `plugins.updater.pubkey` (#88), and a test pins it to the key posted on #86.
 
 Environment settings:
 - Required reviewer: the owner.
@@ -62,7 +62,7 @@ Signing-key backup and a tested recovery procedure are slice 5 release gates (#8
 **Restore drill** (once now, then after any change)
 1. On a different machine, decrypt the recovery copy into a scratch folder outside any repository.
 2. Sign a scratch file with it: `npm run tauri signer sign -- -f <restored.key> <scratch-file>`. Set the password in `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for that shell only, or pass it with `-p` and then clear the shell history. This proves the copy decrypts and the password is right.
-3. Once #88 has landed, the #89 gate checks this properly: an installed launcher must accept an update signed with the restored key.
+3. The #89 gate checks this properly: an installed launcher must accept an update signed with the restored key.
 4. Delete the restored key and the scratch files. Record the drill date on #86.
 
 **Rotation:** ship a launcher release, signed with the current key, whose `tauri.conf.json` carries the new public key. Only after that release is installed widely do you start signing with the new key. Never accept a new key from the unsigned product feed.
@@ -88,6 +88,7 @@ Hosted CI does not prove this matrix. Use clean machines and revert to a snapsho
 | 5 | Bad signature: a tampered installer, a wrong-key `.sig` and an unsigned artifact are each rejected, and N keeps running | required | required |
 | 6 | Interrupted update: kill the updater, and separately power off during install. Afterwards N or N+1 works, or the recovery installer restores it with player data intact | required | required |
 | 7 | Restart waits while a game or product operation runs (held phases), then completes | required | required |
+| 7a | Quit with an update ready installs it without relaunching; Quit while a game runs exits without installing, and a later Quit installs it (#113) | required | required |
 | 8 | Key recovery: N accepts an update signed with the key restored from the recovery copy | once, on either machine | |
 | 9 | Uninstall leaves player files and D2R untouched | required | required |
 
@@ -97,4 +98,3 @@ For each run, record the exact Windows build, launcher versions N and N+1, the W
 
 - Authenticode signing: deferred (#8). SmartScreen warnings are expected.
 - Publishing, the public test channel and promotion: slice 6.
-- The updater endpoint and embedded public key: #86 decides them, and #88 sets them.

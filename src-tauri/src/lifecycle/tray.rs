@@ -54,12 +54,13 @@ pub enum Quit {
     Busy(ProductId),
 }
 
-/// Tray Quit, through the same gate as `quit_launcher`: [`Launcher::begin_quit`]
-/// refuses while an operation or recovery runs, else sets the sticky quitting
-/// flag so nothing starts before the exit. On `Busy` it shows the window and emits
+/// Tray Quit, through the same gate as `quit_launcher` ([`app::begin_quit`]):
+/// [`Launcher::begin_quit`] refuses while an operation or recovery runs, else sets
+/// the sticky quitting flag so nothing starts before the exit, and a ready launcher
+/// update installs unless a game holds it. On `Busy` it shows the window and emits
 /// `quit_while_busy`; on `Exit` the caller exits (the game keeps running).
 pub fn quit<R: Runtime>(app: &AppHandle<R>) -> Quit {
-    match app.state::<Arc<Launcher>>().begin_quit() {
+    match app::begin_quit(app) {
         Err(Refusal {
             product: Some(product),
             ..

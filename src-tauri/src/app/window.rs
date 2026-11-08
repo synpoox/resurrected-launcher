@@ -2,9 +2,7 @@
 //! calling window, which must be `main`; capabilities grant them to `main` only,
 //! and no `core:window` permission is granted. #75 turns close into hide-to-tray.
 
-use std::sync::Arc;
-
-use tauri::{AppHandle, Runtime, State, WebviewWindow};
+use tauri::{AppHandle, Runtime, WebviewWindow};
 
 use super::operations::{invalid, Launcher, Refusal};
 use crate::contract::{ErrorCode, LauncherError};
@@ -56,15 +54,15 @@ pub async fn start_window_drag<R: Runtime>(window: WebviewWindow<R>) -> Result<(
 }
 
 /// `quit_launcher`: exits; refused with `OperationInProgress` while an operation
-/// or recovery runs. A running game keeps running.
+/// or recovery runs. A running game keeps running. A ready launcher update
+/// installs first unless a game holds it ([`super::begin_quit`]).
 #[tauri::command(rename_all = "snake_case")]
 pub async fn quit_launcher<R: Runtime>(
     app: AppHandle<R>,
     window: WebviewWindow<R>,
-    launcher: State<'_, Arc<Launcher>>,
 ) -> Result<(), LauncherError> {
     main_only(&window)?;
-    launcher.begin_quit()?;
+    super::begin_quit(&app)?;
     app.exit(0);
     Ok(())
 }

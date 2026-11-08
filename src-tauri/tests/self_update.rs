@@ -110,8 +110,8 @@ fn publish(server: &FixtureServer, installer: &[u8], signature: &str) {
 
 // ---- fakes ----
 
-/// `(version, installer bytes)` for each install the launcher started.
-type Installs = Vec<(String, Vec<u8>)>;
+/// `(version, installer bytes, restart afterwards)` for each install the launcher started.
+type Installs = Vec<(String, Vec<u8>, bool)>;
 
 #[derive(Default, Clone)]
 struct Recorder {
@@ -124,11 +124,12 @@ impl UpdateHost for Recorder {
         &self,
         update: &tauri_plugin_updater::Update,
         bytes: &[u8],
+        restart: bool,
     ) -> Result<(), tauri_plugin_updater::Error> {
         self.installs
             .lock()
             .unwrap()
-            .push((update.version.clone(), bytes.to_vec()));
+            .push((update.version.clone(), bytes.to_vec(), restart));
         Ok(())
     }
 
@@ -333,6 +334,19 @@ impl Rig {
         self.updater.status()
     }
 
+    /// Quit's gate, as `quit_launcher` and tray Quit run it (minus the exit).
+    fn quit(&self) -> Result<(), app::Refusal> {
+        app::begin_quit(self.app.handle())
+    }
+
+    fn run_game(&self) {
+        self.game.0.lock().unwrap().push(RunningGame {
+            pid: 4242,
+            image: self.d2r.d2r().join("D2R.exe"),
+            since: 0,
+        });
+    }
+
     /// Checks (automatic downloads off) and downloads to Ready.
     fn ready(&self) {
         assert!(!self.check(false).unwrap());
@@ -523,7 +537,10 @@ fn a_signed_update_downloads_into_app_data_and_installs_on_restart() {
     );
 
     rig.restart().unwrap();
-    assert_eq!(rig.host.installs(), [(NEXT.to_owned(), INSTALLER.to_vec())]);
+    assert_eq!(
+        rig.host.installs(),
+        [(NEXT.to_owned(), INSTALLER.to_vec(), true)]
+    );
     assert_eq!(
         rig.status(),
         SelfUpdateStatus::Restarting {
@@ -872,6 +889,9 @@ fn restart_waits_while_a_product_operation_runs() {
 
     let err = rig.restart().unwrap_err();
     assert_eq!(err.code, ErrorCode::OperationInProgress, "{err:?}");
+    // Quit is refused too, so it never installs during the install transaction.
+    let quit = rig.quit().unwrap_err();
+    assert_eq!(quit.error.code, ErrorCode::OperationInProgress, "{quit:?}");
     assert_eq!(rig.status(), ready_status());
     assert!(rig.host.installs().is_empty());
 
@@ -928,4 +948,108 @@ fn a_second_download_while_one_runs_is_refused() {
     assert_eq!(second.unwrap_err().code, ErrorCode::InvalidRequest);
     assert_eq!(rig.status(), ready_status());
     assert_eq!(server.hits().iter().filter(|h| *h == SETUP).count(), 1);
+}
+
+/// A release whose `latest.json` entry has no `signature` field at all: the check
+/// itself fails, so nothing downloads, nothing is kept and nothing installs.
+#[test]
+fn a_release_with_no_signature_field_never_downloads_or_installs() {
+    let (server, key) = (FixtureServer::start(), TestKey::generate());
+    server.route(
+        LATEST,
+        Reply::Body(
+            serde_json::to_vec(&json!({
+                "version": NEXT,
+                "pub_date": "2026-11-01T00:00:00Z",
+                "platforms": { "windows-x86_64": { "url": server.url(SETUP) } }
+            }))
+            .unwrap(),
+        ),
+    );
+    server.route(SETUP, Reply::Body(INSTALLER.to_vec()));
+    let rig = Rig::new(&server, &key);
+    let err = rig.check(true).unwrap_err();
+    assert_eq!(err.code, ErrorCode::DownloadFailed, "{err:?}");
+    assert_eq!(
+        rig.status(),
+        SelfUpdateStatus::UpToDate { current: current() }
+    );
+    let refused = rig
+        .invoke("download_launcher_update", json!({}))
+        .unwrap_err();
+    assert_eq!(refused["code"], "invalid_request", "{refused}");
+    assert!(rig.restart().is_err());
+    rig.quit().unwrap();
+    assert!(!server.hits().iter().any(|h| h == SETUP), "never fetched");
+    assert!(rig.kept().is_empty());
+    assert!(rig.host.installs().is_empty());
+}
+
+// ---- install on Quit ----
+
+/// Quit installs a ready update, verified, without relaunching, and leaves the
+/// marker that turns into Updated on the next start.
+#[test]
+fn quit_installs_a_ready_update_without_restarting() {
+    let (server, key) = (FixtureServer::start(), TestKey::generate());
+    publish(&server, INSTALLER, &key.sign(INSTALLER, NEXT));
+    let rig = Rig::new(&server, &key);
+    rig.ready();
+    rig.quit().unwrap();
+    assert_eq!(
+        rig.host.installs(),
+        vec![(NEXT.to_owned(), INSTALLER.to_vec(), false)]
+    );
+    assert!(rig.dir.join("installing.json").exists());
+    // Restart to update still relaunches.
+    let (server, key) = (FixtureServer::start(), TestKey::generate());
+    publish(&server, INSTALLER, &key.sign(INSTALLER, NEXT));
+    let rig = Rig::new(&server, &key);
+    rig.ready();
+    rig.restart().unwrap();
+    assert!(rig.host.installs()[0].2, "restart relaunches");
+}
+
+/// Quit with nothing ready (up to date, available, failed) just exits.
+#[test]
+fn quit_with_no_ready_update_installs_nothing() {
+    let (server, key) = (FixtureServer::start(), TestKey::generate());
+    publish(&server, INSTALLER, &key.sign(INSTALLER, NEXT));
+    let rig = Rig::new(&server, &key);
+    assert!(!rig.check(false).unwrap());
+    rig.quit().unwrap();
+    assert!(rig.host.installs().is_empty());
+}
+
+/// A running game holds the install: Quit still exits (the game keeps running),
+/// and the verified installer stays kept for a later Quit.
+#[test]
+fn quit_while_a_game_runs_exits_without_installing() {
+    let (server, key) = (FixtureServer::start(), TestKey::generate());
+    publish(&server, INSTALLER, &key.sign(INSTALLER, NEXT));
+    let rig = Rig::new(&server, &key);
+    rig.ready();
+    rig.run_game();
+    rig.quit().unwrap();
+    assert!(rig.host.installs().is_empty());
+    assert_eq!(rig.status(), ready_status());
+    assert_eq!(rig.kept(), vec![format!("launcher-{NEXT}-setup.exe")]);
+    assert!(!rig.dir.join("installing.json").exists());
+}
+
+/// An installer changed on disk after it was verified is caught at Quit: it is
+/// deleted, nothing installs, and Quit still exits.
+#[test]
+fn quit_rejects_a_kept_installer_tampered_after_download() {
+    let (server, key) = (FixtureServer::start(), TestKey::generate());
+    publish(&server, INSTALLER, &key.sign(INSTALLER, NEXT));
+    let rig = Rig::new(&server, &key);
+    rig.ready();
+    let kept = rig.dir.join(format!("launcher-{NEXT}-setup.exe"));
+    fs::write(&kept, b"swapped after verification").unwrap();
+    rig.quit().unwrap();
+    assert!(rig.host.installs().is_empty());
+    assert_eq!(rig.status(), rejected_status());
+    assert!(!kept.exists());
+    assert!(!rig.dir.join("installing.json").exists());
 }
