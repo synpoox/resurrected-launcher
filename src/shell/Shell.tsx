@@ -1,11 +1,12 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useApi } from "../api/context";
 import type { SceneOpen } from "../api/fixtures";
 import { DEFAULT_PRODUCT_ID, PRODUCTS, productById } from "../products";
 import { badgeOf, journeyOf, type Badge } from "../product/journey";
-import { ProductPage, type Tab } from "../product/ProductPage";
+import { ProductPage, type TrayFocus, type Tab } from "../product/ProductPage";
 import { progressStats } from "../product/stats";
 import { useProducts } from "../product/store";
+import { useToast } from "../ui/Toast";
 import { Settings } from "../settings";
 import { QuitDialog } from "./QuitDialog";
 import { Sidebar, type View } from "./Sidebar";
@@ -34,14 +35,49 @@ export function Shell({ product, open, tab }: ShellProps) {
   const { products, refresh } = useProducts(api);
   const [view, setView] = useState<View>(() => ({ kind: "product", id: initialProduct(product) }));
   const [quitOpen, setQuitOpen] = useState(open === "quit");
+  /** The product a tray Quit asked about; otherwise the busy one. */
+  const [quitFor, setQuitFor] = useState<string | null>(null);
   // A scene's dialog or menu opens once, on the product the window opened on.
   const [sceneOpen, setSceneOpen] = useState(open);
+  const [trayFocus, setTrayFocus] = useState<TrayFocus | null>(null);
+  const traySeq = useRef(0);
+  const toast = useToast();
 
   const select = useCallback((v: View) => {
     if (v.kind === "product") localStorage.setItem(LAST_PRODUCT_KEY, v.id);
     setSceneOpen(undefined);
+    setTrayFocus(null);
     setView(v);
   }, []);
+
+  // Tray requests: Rust has already shown the window (except for Quit while busy, which asks here).
+  useEffect(() => {
+    let live = true;
+    let stop: (() => void) | undefined;
+    api
+      .onTrayRequest((r) => {
+        if (!productById(r.product_id)) return;
+        if (r.action === "quit_while_busy") {
+          setQuitFor(r.product_id);
+          setQuitOpen(true);
+          return;
+        }
+        select({ kind: "product", id: r.product_id });
+        traySeq.current += 1;
+        setTrayFocus({
+          product_id: r.product_id,
+          action: r.action === "save_breaking" ? "save-breaking" : "notice",
+          seq: traySeq.current,
+        });
+        if (r.error) toast.show({ tone: "error", text: r.error.message });
+        void refresh();
+      })
+      .then((un) => (live ? (stop = un) : un()));
+    return () => {
+      live = false;
+      stop?.();
+    };
+  }, [api, select, toast, refresh]);
 
   const badges = useMemo(() => {
     const out: Record<string, Badge | null> = {};
@@ -58,7 +94,7 @@ export function Shell({ product, open, tab }: ShellProps) {
   }, [products]);
 
   const current = view.kind === "product" ? productById(view.id)! : null;
-  const busy = PRODUCTS.find((p) => products[p.id]?.state?.running);
+  const busy = (quitFor ? productById(quitFor) : undefined) ?? PRODUCTS.find((p) => products[p.id]?.state?.running);
   return (
     <div className="window">
       <TitleBar />
@@ -72,6 +108,7 @@ export function Shell({ product, open, tab }: ShellProps) {
             refresh={refresh}
             open={sceneOpen}
             tab={sceneOpen === open ? tab : undefined}
+            trayFocus={trayFocus?.product_id === current.id ? trayFocus : undefined}
             onOpenSettings={() => select({ kind: "settings" })}
           />
         ) : (
@@ -81,7 +118,10 @@ export function Shell({ product, open, tab }: ShellProps) {
           <QuitDialog
             product={busy}
             hasInstalled={Boolean(products[busy.id]?.state?.installed)}
-            onClose={() => setQuitOpen(false)}
+            onClose={() => {
+              setQuitOpen(false);
+              setQuitFor(null);
+            }}
           />
         )}
       </main>

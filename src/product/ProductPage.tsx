@@ -19,6 +19,14 @@ import { asError, type ProductData } from "./store";
 
 export type Tab = "overview" | "notes";
 
+/** A tray request for this product: the save-breaking dialog, or the Overview with its notice. */
+export interface TrayFocus {
+  product_id: string;
+  action: "save-breaking" | "notice";
+  /** Increments per request, so the same request twice acts twice. */
+  seq: number;
+}
+
 /** localStorage: the installed release whose Patch Notes were last opened automatically. */
 export const seenKey = (productId: string) => `launcher.patchNotesSeen.${productId}`;
 
@@ -36,6 +44,7 @@ export interface ProductPageProps {
   open?: SceneOpen;
   /** Overrides the default tab (dev fixtures). */
   tab?: Tab;
+  trayFocus?: TrayFocus;
   onOpenSettings: () => void;
 }
 
@@ -111,7 +120,7 @@ function initialTab(productId: string, installedId: string | undefined): Tab {
   return installedId && seen !== null && seen !== installedId ? "notes" : "overview";
 }
 
-function Loaded({ product, data, refresh, open, tab: forcedTab, onOpenSettings, state }: ProductPageProps & { state: ProductState }) {
+function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpenSettings, state }: ProductPageProps & { state: ProductState }) {
   const api = useApi();
   const toast = useToast();
   const feed = useNews(product.id);
@@ -122,7 +131,10 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, onOpenSettings, 
   const [installInspection, setInstallInspection] = useState<Inspection | null>(null);
   const [repairInspection, setRepairInspection] = useState<Inspection | null>(null);
   const [showFix, setShowFix] = useState(false);
+  /** Clean-install backup locations from the last outcome report (display only). */
+  const [backups, setBackups] = useState<string[]>([]);
   const opened = useRef(false);
+  const focused = useRef(0);
   const ids = { overview: useId(), notes: useId(), notice: useId(), line: useId(), why: useId() };
 
   const samples = data?.samples ?? [];
@@ -165,6 +177,9 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, onOpenSettings, 
       .onOutcome((o) => {
         if (o.product_id !== product.id) return;
         if (o.status === "failed") fail(o.error);
+        if (o.status === "succeeded" && o.report.clean_install_backups.length > 0) {
+          setBackups(o.report.clean_install_backups);
+        }
         if (o.status === "succeeded" && o.kind === "uninstall") {
           setDialog((d) => (d?.kind === "uninstall" ? { ...d, report: o.report } : d));
         }
@@ -245,6 +260,17 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, onOpenSettings, 
     // The same path the button takes; it only sets state after the API answers.
     if (kind) void Promise.resolve(kind).then(run);
   }, [open, run]);
+
+  // Tray requests: the save-breaking dialog (through the Update path), or the Overview's notice.
+  useEffect(() => {
+    if (!trayFocus || focused.current === trayFocus.seq) return;
+    focused.current = trayFocus.seq;
+    const action = trayFocus.action;
+    void Promise.resolve().then(() => {
+      setTab("overview");
+      if (action === "save-breaking") return run("update");
+    });
+  }, [trayFocus, run]);
 
   const label = (releaseId: string, version: string) => releaseLabel(releaseId, version, releases ?? []);
   const installed = state.installed;
@@ -557,6 +583,21 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, onOpenSettings, 
           <HeroCopy product={product} />
           <div className="bottom">
             <div className="action-col">
+              {backups.length > 0 && (
+                <Notice>
+                  <b>Clean install finished.</b> Your previous files were moved to{" "}
+                  {backups.map((p, i) => (
+                    <span key={p}>
+                      {i > 0 && ", "}
+                      <code>{p}</code>
+                    </span>
+                  ))}
+                  .{" "}
+                  <button type="button" className="link" onClick={() => setBackups([])}>
+                    Dismiss
+                  </button>
+                </Notice>
+              )}
               {notice()}
               <div className="act">{actions(false)}</div>
             </div>
