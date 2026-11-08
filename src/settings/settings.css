@@ -5,9 +5,9 @@
   inset: 0;
   display: grid;
   grid-template-columns: 220px 1fr;
-  color: var(--hero-copy);
-  /* Body type matches Patch Notes readability (issue 135). */
-  font-size: 15px;
+  /* Readable at a glance (issue 135): body text in --text, hints in --hero-copy. */
+  color: var(--text);
+  font-size: 16px;
   line-height: 1.6;
 }
 
@@ -19,8 +19,8 @@
 }
 
 .subnav h1 {
-  padding: 0 28px 18px;
-  font-size: 28px;
+  padding: 0 28px 22px;
+  font-size: 30px;
   font-weight: 900;
   color: var(--text);
 }
@@ -28,14 +28,15 @@
 .subnav [role="tablist"] {
   display: flex;
   flex-direction: column;
+  gap: 4px;
 }
 
 .subnav [role="tab"] {
-  padding: 11px 28px;
+  padding: 14px 28px;
   text-align: left;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
-  color: var(--muted);
+  color: var(--hero-copy);
 }
 
 .subnav [role="tab"]:hover {
@@ -64,17 +65,17 @@
 
 .ssec {
   display: grid;
-  padding-top: 26px;
+  padding-top: 32px;
 }
 
 .slabel {
-  padding-bottom: 8px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--line);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 1.2px;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--hero-copy);
 }
 
 .srow {
@@ -82,21 +83,21 @@
   grid-template-columns: 1fr auto;
   gap: 24px;
   align-items: center;
-  padding: 16px 0;
+  padding: 20px 0;
   border-bottom: 1px solid var(--line);
 }
 
 .srow-text b {
   display: block;
-  font-size: 16px;
+  font-size: 18px;
   color: var(--text);
 }
 
 .settings-page .hint {
   display: block;
   margin-top: 4px;
-  font-size: 14px;
-  color: var(--muted);
+  font-size: 15px;
+  color: var(--hero-copy);
 }
 
 .ctl {
@@ -119,24 +120,24 @@
 .settings-page .notice {
   max-width: none;
   margin: 12px 0 0;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 /* Shared controls, one step up inside Settings (issue 135). */
 .settings-page .btn.small {
-  min-height: 36px;
-  font-size: 12px;
+  min-height: 40px;
+  font-size: 13px;
 }
 
 .settings-page .why,
 .settings-page .inline-error {
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .fine {
   margin-top: 12px;
-  font-size: 14px;
-  color: var(--muted);
+  font-size: 15px;
+  color: var(--hero-copy);
 }
 
 .credits {

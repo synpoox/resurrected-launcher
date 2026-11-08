@@ -312,36 +312,3 @@ export function CleanInstallDialog({ product, inspection, onConfirm, onClose }: 
     </Dialog>
   );
 }
-
-interface AboutProps {
-  product: Product;
-  /** Opens the project Discord; the caller reports a refusal. */
-  onDiscord: () => void;
-  onClose: () => void;
-}
-
-/** "About <product>" for a product without a public page (issue 135): what it is, that there is no
- *  release yet, and the project Discord. Plain bundled copy; nothing is fetched. */
-export function AboutDialog({ product, onDiscord, onClose }: AboutProps) {
-  return (
-    <Dialog
-      title={`About ${product.name}`}
-      onClose={onClose}
-      actions={
-        <>
-          <button type="button" className="btn primary" onClick={onDiscord}>
-            Join the Discord ↗
-          </button>
-          <button type="button" className="btn ghost" onClick={onClose} data-autofocus="">
-            Close
-          </button>
-        </>
-      }
-    >
-      <p>{product.description}</p>
-      <p>
-        {product.short} is coming soon. There is no release to install yet. Follow its progress on the project Discord.
-      </p>
-    </Dialog>
-  );
-}

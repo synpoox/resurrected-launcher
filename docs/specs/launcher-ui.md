@@ -57,7 +57,7 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 
 **Sidebar** (220px, `--rail`):
 - Umbrella branding at the top: `/` glyph in accent at 44px, plus **Project Resurrected** in uppercase, 16px, weight 900. The label is provisional and lives in one swappable place.
-- A text-only product list in this order: Project Diablo 2: Resurrected, Diablo II: Resurrected Forever, Diablo II: Resurrected 09. The active product is white with a 2px accent inset, and the others are muted.
+- A text-only product list in this order: Project Diablo 2: Resurrected, Diablo II: Resurrected Forever, Diablo II: Resurrected 09. The active product is white with a 2px accent inset, and the others are muted. Items are 16px apart vertically (16px padding each side of the name; #135).
 - Settings sits at the bottom with a cog icon, 34px from the bottom edge.
 - There is no Home entry; the launcher opens on a product. D2R Tools does not appear.
 
@@ -84,11 +84,11 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 - The installed release's notes ship with it and display offline. Newer releases offline show "Patch notes for newer releases need a connection. Retry".
 
 **Rules for both tabs:**
-- **Products without a release** (Forever and 09 today) show no tabs. They get only the Coming soon ribbon, the description and an outlined "About <product>" button, with no install, date, signup or account. About opens the product's bundled public page when it has one (#80, `docs/specs/news-feed.md`). Otherwise it opens an in-launcher **About dialog**: the product's name and description, "coming soon, no release to install yet", and **Join the Discord ↗**, which opens the bundled project Discord. Forever and 09 use the dialog today (#135).
+- **Products without a release** (Forever and 09 today) show no tabs. They get only the Coming soon ribbon, the description and one outlined link button, with no install, date, signup or account. A product with a bundled public page shows **About <product>**, which opens it (#80, `docs/specs/news-feed.md`). A product without one shows **Follow for updates on Discord ↗**, which opens the bundled project Discord directly, with no dialog. Forever and 09 show Follow today (#135).
 - **Default tab**: Overview. The first launch after an update installs opens Patch Notes once, on the new release.
 
 **Settings** (layout B, approved in [#19](https://github.com/synpoox/resurrected-launcher/issues/19)):
-- Type scale (#135), raised to match Patch Notes readability: body 15px, row labels and sub-nav tabs 16px, hints and notes 14px, section labels 12px uppercase, and the heading 28px.
+- Type scale and contrast (#135): body 16px in `--text`; row labels 18px; sub-nav tabs 17px in `--hero-copy` (selected `--text`), 14px vertical padding with 4px between tabs; hints, notes and notices 15px in `--hero-copy`; section labels 13px uppercase in `--hero-copy`; the heading 30px; rows have 20px vertical padding.
 - Opens in the main area. A 220px sub-nav holds the tabs **Game · Launcher · Folders and plugins · Troubleshooting**. One panel shows at a time, and each row has a label, a hint and a right-hand control.
 - **Game**:
   - The D2R location with its store and build, and "Change…", which opens the location dialog. Choosing a location moves nothing.
@@ -184,7 +184,7 @@ Every state keeps the hero, ribbon, title and description. The state appears in 
 | Uninstall | `uninstall` | Accent-topped dialog: removes PD2R's files only. **Kept:** saves and settings with path and Open. **Not touched:** D2R, D2RLoader and other products. |
 | Offline | `offline` | Play still works: "Offline · alpha 0.4.1 verified · can't check for updates". The news feed reads "News needs a connection. Retry". |
 | Offline, never installed | `offline-empty` | No release to offer: Install is replaced by "Can't reach the release catalog" with "Try again" (refreshes the catalog). Nothing is downloaded or installed until it loads. |
-| Coming soon | `coming-soon` | Ribbon, description and "About Forever"; no tabs. About opens the About dialog until Forever has a public page. |
+| Coming soon | `coming-soon` | Ribbon, description and "Follow for updates on Discord ↗"; no tabs. It becomes "About Forever" once Forever has a public page. |
 
 ## Motion
 

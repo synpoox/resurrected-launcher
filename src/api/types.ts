@@ -90,7 +90,7 @@ export interface LauncherApi {
   openNewsLink(productId: string, index: number): Promise<void>;
   /** "About <product>". */
   openProductPage(productId: string): Promise<void>;
-  /** The project Discord (issue 135), from the About dialog of products without a page. */
+  /** The project Discord (issue 135), from "Follow for updates on Discord" on products without a page. */
   openCommunityPage(): Promise<void>;
 
   // Events

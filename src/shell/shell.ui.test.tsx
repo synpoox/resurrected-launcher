@@ -150,21 +150,16 @@ describe("product page", () => {
     expect(screen.getByRole("img", { name: /Placeholder hero art for Project Diablo 2/ })).toBeTruthy();
   });
 
-  it("products without a release: no tabs, ribbon and description; About opens the About dialog without a page", async () => {
+  it("products without a release: no tabs, ribbon and description; without a page, Follow opens the Discord", async () => {
     const { api, user } = mount("coming-soon");
     expect(await screen.findByText("Coming soon")).toBeTruthy();
     expect(screen.queryByRole("tablist")).toBeNull();
-    // Forever has no public page yet (#80): About opens the in-launcher dialog (issue 135).
-    const about = screen.getByRole("button", { name: "About Forever" });
-    await user.click(about);
-    const dialog = screen.getByRole("dialog", { name: "About Diablo II: Resurrected Forever" });
-    expect(dialog.textContent).toContain("no release to install yet");
-    expect(names(api)).not.toContain("openProductPage");
-    await user.click(within(dialog).getByRole("button", { name: "Join the Discord ↗" }));
+    // Forever has no public page yet (#80): no About, a straight link to the Discord (issue 135).
+    expect(screen.queryByRole("button", { name: "About Forever" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Follow for updates on Discord" }));
     expect(api.calls.at(-1)).toEqual({ name: "openCommunityPage", args: [] });
-    await user.keyboard("{Escape}");
+    expect(names(api)).not.toContain("openProductPage");
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(document.activeElement).toBe(about);
   });
 
   it("About opens the product page by product id when the product has one", async () => {
@@ -182,12 +177,11 @@ describe("product page", () => {
     expect(api.calls.at(-1)).toEqual({ name: "openProductPage", args: ["project-forever"] });
   });
 
-  it("About's Discord link shows why when opening it is refused", async () => {
+  it("Follow shows why when opening the Discord is refused", async () => {
     const { user } = mount("coming-soon", (a) => {
       a.openCommunityPage = () => Promise.reject({ code: "internal", message: "opening the Discord failed" });
     });
-    await user.click(await screen.findByRole("button", { name: "About Forever" }));
-    await user.click(screen.getByRole("button", { name: "Join the Discord ↗" }));
+    await user.click(await screen.findByRole("button", { name: "Follow for updates on Discord" }));
     expect(await screen.findByText("opening the Discord failed")).toBeTruthy();
   });
 

@@ -20,7 +20,7 @@ export interface Product {
   hasRelease: boolean;
   /** "About <product>" (products without a release) opens a public page: the product has an
    *  entry in `product-pages.json`. Forever and 09 have no public page yet, so their About opens
-   *  the in-launcher About dialog instead (issue 135). */
+   *  "Follow for updates on Discord" instead (issue 135). */
   aboutPage: boolean;
 }
 
