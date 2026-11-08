@@ -6,8 +6,10 @@ import { badgeOf, journeyOf, type Badge } from "../product/journey";
 import { ProductPage, type TrayFocus, type Tab } from "../product/ProductPage";
 import { progressStats } from "../product/stats";
 import { useProducts } from "../product/store";
-import { useToast } from "../ui/Toast";
+import { RestartingScreen } from "../selfupdate/RestartingScreen";
+import { useSelfUpdate } from "../selfupdate/SelfUpdate";
 import { Settings } from "../settings";
+import { useToast } from "../ui/Toast";
 import { QuitDialog } from "./QuitDialog";
 import { Sidebar, type View } from "./Sidebar";
 import { TitleBar } from "./TitleBar";
@@ -93,6 +95,14 @@ export function Shell({ product, open, tab }: ShellProps) {
     return out;
   }, [products]);
 
+  // Opening Settings clears the launcher-update dot (and keeps it clear while Settings is open).
+  const selfUpdate = useSelfUpdate();
+  const clearDot = selfUpdate?.clearDot;
+  const dot = selfUpdate?.dot;
+  useEffect(() => {
+    if (view.kind === "settings" && dot) clearDot?.();
+  }, [view.kind, dot, clearDot]);
+
   const current = view.kind === "product" ? productById(view.id)! : null;
   const busy = (quitFor ? productById(quitFor) : undefined) ?? PRODUCTS.find((p) => products[p.id]?.state?.running);
   return (
@@ -114,6 +124,7 @@ export function Shell({ product, open, tab }: ShellProps) {
         ) : (
           <Settings />
         )}
+        <RestartingScreen />
         {quitOpen && busy && (
           <QuitDialog
             product={busy}

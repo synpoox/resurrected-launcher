@@ -353,6 +353,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
   };
   const productOnly = (id: string) =>
     id === state.product_id ? null : refuse("unknown_product", `No release for ${id}.`);
+  const openedPlugins = new Set<string>();
   const done = (name: keyof LauncherApi, ...args: unknown[]) => {
     record(name, ...args);
     return Promise.resolve();
@@ -474,7 +475,14 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
       record("getReleaseNotes", id);
       return productOnly(id) ?? Promise.resolve(structuredClone(s.notes));
     },
-    openFolder: (id, folder) => done("openFolder", id, folder),
+    openFolder(id, folder) {
+      record("openFolder", id, folder);
+      // Like the backend: a plugins folder is created on its first open only.
+      const key = `${id}/${folder}`;
+      const created = folder.endsWith("plugins") && !openedPlugins.has(key);
+      openedPlugins.add(key);
+      return Promise.resolve(created);
+    },
     previewDiagnostics(includeLog) {
       record("previewDiagnostics", includeLog);
       return Promise.resolve({

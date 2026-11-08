@@ -1250,6 +1250,7 @@ fn open_folder_builds_each_path_natively_and_creates_missing_plugins_folders() {
             "open_folder",
             json!({ "product_id": product, "folder": folder }),
         )
+        .map(data::<bool>)
     };
     assert_eq!(
         code(open(json!("pd2r"), "settings").unwrap_err()),
@@ -1266,12 +1267,19 @@ fn open_folder_builds_each_path_natively_and_creates_missing_plugins_folders() {
         "never played: no saves folder yet"
     );
     fs::create_dir_all(&saves).unwrap();
-    open(json!("pd2r"), "saves").unwrap();
-    open(json!("pd2r"), "settings").unwrap();
+    assert!(!open(json!("pd2r"), "saves").unwrap());
+    assert!(!open(json!("pd2r"), "settings").unwrap());
     let plugins = root.join(r"d2rloader\plugins");
     let _ = fs::remove_dir_all(&plugins);
-    open(json!("pd2r"), "product_plugins").unwrap();
+    assert!(
+        open(json!("pd2r"), "product_plugins").unwrap(),
+        "reports that it created the folder"
+    );
     assert!(plugins.is_dir(), "created under the guarded product root");
+    assert!(
+        !open(json!("pd2r"), "product_plugins").unwrap(),
+        "already there"
+    );
 
     // The D2R root has no disposable sentinel, so the guard refuses to create it.
     let global = rig.game.d2r().join(r"d2rloader\plugins");
@@ -1287,12 +1295,12 @@ fn open_folder_builds_each_path_natively_and_creates_missing_plugins_folders() {
         b"",
     )
     .unwrap();
-    open(Value::Null, "global_plugins").unwrap();
+    assert!(open(Value::Null, "global_plugins").unwrap());
     assert!(global.is_dir());
 
     assert_eq!(
         *rig.desktop.folders.lock().unwrap(),
-        [saves, root.clone(), plugins, global]
+        [saves, root.clone(), plugins.clone(), plugins, global]
     );
     assert_eq!(
         code(open(json!("pd2r"), "global_plugins").unwrap_err()),

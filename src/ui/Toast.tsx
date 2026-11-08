@@ -1,8 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 export interface ToastAction {
   label: string;
   onSelect: () => void;
+  /**
+   * Shows the action disabled (`aria-disabled`, still focusable, so focus isn't lost when an
+   * update() disables it); the toast's text says why.
+   */
+  disabled?: boolean;
 }
 
 export interface ToastInput {
@@ -11,6 +16,13 @@ export interface ToastInput {
   actions?: ToastAction[];
   /** Information toasts auto-dismiss unless this is false. Errors always stay until dismissed. */
   autoDismiss?: boolean;
+  /** The dismiss button's label (default "Dismiss"). */
+  dismissLabel?: string;
+  /**
+   * Called when the toast closes without an action: `"player"` for the dismiss button, `"timeout"`
+   * for auto-dismiss. Choosing an action or a programmatic dismiss() doesn't call it.
+   */
+  onDismiss?: (by: "player" | "timeout") => void;
 }
 
 interface Toast extends ToastInput {
@@ -19,6 +31,11 @@ interface Toast extends ToastInput {
 
 interface ToastApi {
   show(toast: ToastInput): number;
+  /**
+   * Replaces an open toast's content in place. Does nothing if it has closed. The auto-dismiss
+   * timer is not restarted unless the update changes whether the toast auto-dismisses.
+   */
+  update(id: number, toast: ToastInput): void;
   dismiss(id: number): void;
 }
 
@@ -42,7 +59,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((t) => [...t, { ...toast, id }]);
     return id;
   }, []);
-  const api = useMemo(() => ({ show, dismiss }), [show, dismiss]);
+  const update = useCallback(
+    (id: number, toast: ToastInput) => setToasts((t) => t.map((x) => (x.id === id ? { ...toast, id } : x))),
+    [],
+  );
+  const api = useMemo(() => ({ show, update, dismiss }), [show, update, dismiss]);
   return (
     <ToastContext.Provider value={api}>
       {children}
@@ -57,25 +78,33 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 function ToastView({ toast, dismiss }: { toast: Toast; dismiss: () => void }) {
   const auto = toast.tone === "info" && toast.autoDismiss !== false;
-  const latest = useRef(dismiss);
+  const text = useId();
+  const latest = useRef({ dismiss, onDismiss: toast.onDismiss });
   useEffect(() => {
-    latest.current = dismiss;
+    latest.current = { dismiss, onDismiss: toast.onDismiss };
   });
   useEffect(() => {
     if (!auto) return;
-    const t = setTimeout(() => latest.current(), TOAST_MS);
+    const t = setTimeout(() => {
+      latest.current.dismiss();
+      latest.current.onDismiss?.("timeout");
+    }, TOAST_MS);
     return () => clearTimeout(t);
   }, [auto]);
   return (
     <div className={`toast ${toast.tone}`} role={toast.tone === "error" ? "alert" : "status"}>
-      <p>{toast.text}</p>
+      <p id={text}>{toast.text}</p>
       <div className="toast-actions">
-        {toast.actions?.map((a) => (
+        {toast.actions?.map((a, i) => (
           <button
-            key={a.label}
+            // By position, so an update() that relabels an action keeps its button (and focus).
+            key={i}
             type="button"
             className="link"
+            aria-disabled={a.disabled || undefined}
+            aria-describedby={a.disabled ? text : undefined}
             onClick={() => {
+              if (a.disabled) return;
               dismiss();
               a.onSelect();
             }}
@@ -83,8 +112,15 @@ function ToastView({ toast, dismiss }: { toast: Toast; dismiss: () => void }) {
             {a.label}
           </button>
         ))}
-        <button type="button" className="link" onClick={dismiss}>
-          Dismiss
+        <button
+          type="button"
+          className="link"
+          onClick={() => {
+            dismiss();
+            toast.onDismiss?.("player");
+          }}
+        >
+          {toast.dismissLabel ?? "Dismiss"}
         </button>
       </div>
     </div>

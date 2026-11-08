@@ -115,4 +115,12 @@ describe("fixture API (#74 bindings)", () => {
     expect(api.calls.map((c) => c.name)).toEqual(["openFolder", "openNewsLink"]);
     expect(JSON.stringify(api.calls)).not.toMatch(/[A-Z]:\\/);
   });
+
+  it("reports a plugins folder as created on its first open only", async () => {
+    const api = createFixtureApi("ready");
+    expect(await api.openFolder("pd2r", "saves")).toBe(false);
+    expect(await api.openFolder("pd2r", "product_plugins")).toBe(true);
+    expect(await api.openFolder("pd2r", "product_plugins")).toBe(false);
+    expect(await api.openFolder(null, "global_plugins")).toBe(true);
+  });
 });
