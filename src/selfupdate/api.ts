@@ -1,5 +1,5 @@
-// The launcher's own update (spec: Launcher self-update, variant C; ADR 0003). Slice 4 runs on the
-// fixtures below only. Slice 5 implements SelfUpdateApi with the signed Tauri updater.
+// The launcher's own update (spec: Launcher self-update, variant C; ADR 0003). The fixtures below
+// serve tests and dev; live.ts implements SelfUpdateApi with the signed Tauri updater (#88).
 import type { Unlisten } from "../api/types";
 
 /** Where the launcher's own update is. `current` is the running launcher's version. */

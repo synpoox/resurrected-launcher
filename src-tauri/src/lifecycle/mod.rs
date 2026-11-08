@@ -18,7 +18,9 @@ use tauri::{
     WindowEvent,
 };
 
-use crate::app::{CachedReleases, Launcher, SystemDesktop, TRAY_EVENT};
+use crate::app::{
+    CachedReleases, Launcher, SelfUpdater, SystemDesktop, SystemUpdateHost, TRAY_EVENT, UPDATE_DIR,
+};
 use crate::contract::{
     LauncherError, ProductId, TrayAction, TrayRequest, Versioned, UMBRELLA_DISPLAY_NAME,
 };
@@ -50,6 +52,12 @@ pub fn run() {
         );
         let launcher = Arc::new(launcher);
         app.manage(Arc::clone(&launcher));
+        // Downloads stay in app data, never under D2R. Checks start from the webview.
+        app.manage(Arc::new(SelfUpdater::new(
+            paths.app_local_data_dir()?.join(UPDATE_DIR),
+            app.package_info().version.to_string(),
+            Box::new(SystemUpdateHost),
+        )));
         let handle = app.handle().clone();
         std::thread::spawn(move || launcher.start_up(&handle));
         // Built hidden on autostart, so the frontend is listening when the tray
@@ -64,6 +72,9 @@ pub fn run() {
         tray::start(app.handle())?;
         Ok(())
     })
+    // Launcher self-update (#88): key and endpoint from tauri.conf.json only. Added
+    // here, after single instance, because it needs that config to start.
+    .plugin(tauri_plugin_updater::Builder::new().build())
     .run(tauri::generate_context!())
     .expect("launcher failed to start");
 }

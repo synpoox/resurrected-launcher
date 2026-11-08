@@ -101,17 +101,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # The key is passed only to this step. Until #88 sets
-      # bundle.createUpdaterArtifacts in tauri.conf.json, a temporary config
-      # file turns it on here.
+      # The key is passed only to this step. tauri.conf.json sets
+      # bundle.createUpdaterArtifacts, so the build writes the .sig.
       - name: Build the signed NSIS installer
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          $override = Join-Path $env:RUNNER_TEMP 'updater-artifacts.json'
-          '{"bundle":{"createUpdaterArtifacts":true}}' | Set-Content -Encoding utf8 $override
-          npx tauri build --ci --config $override
+        run: npx tauri build --ci
       - name: Write latest.json
         env:
           VERSION: ${{ steps.version.outputs.version }}
