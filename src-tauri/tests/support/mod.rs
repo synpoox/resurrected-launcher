@@ -12,7 +12,9 @@
 //! `<release_id>/payload/` is the file tree. `shipped_defaults` and `empty_dirs`
 //! in the JSON drive ownership and empty directories; sizes, hashes, `files` and
 //! `archive` are computed. Every archive is a real 7z built with the bundled
-//! pinned 7-Zip, and every manifest passes [`ReleaseManifest::parse`].
+//! pinned 7-Zip in the published layout (one top-level `install_root` folder, such
+//! as `PD2R/`, holding the tree), and every manifest passes
+//! [`ReleaseManifest::parse`].
 //!
 //! | [`release`] name | What it is |
 //! | --- | --- |
@@ -160,15 +162,21 @@ pub enum Malice {
     Unlisted,
     /// `jn`, a directory junction (reparse point) stored with `-snl`.
     Junction,
+    /// `evil.txt` at the archive top level, beside the top folder.
+    Stray,
+    /// The tree at the archive root, without the top folder.
+    Flat,
 }
 
 impl Malice {
-    pub const ALL: [Malice; 5] = [
+    pub const ALL: [Malice; 7] = [
         Self::Traversal,
         Self::Absolute,
         Self::CaseConflict,
         Self::Unlisted,
         Self::Junction,
+        Self::Stray,
+        Self::Flat,
     ];
 
     fn name(self) -> &'static str {
@@ -178,6 +186,8 @@ impl Malice {
             Self::CaseConflict => "case-conflict",
             Self::Unlisted => "unlisted",
             Self::Junction => "junction",
+            Self::Stray => "stray",
+            Self::Flat => "flat",
         }
     }
 }
@@ -269,39 +279,51 @@ fn junction(link: &Path, target: &Path) {
     assert!(status.success(), "mklink /J failed");
 }
 
-/// The 7z archive of `payload` plus `empty_dirs`, with `malice` applied.
+/// The 7z archive of `payload` plus `empty_dirs` in the published layout: one
+/// top-level `top` folder (the `install_root` folder) holding the tree, with
+/// `malice` applied.
 fn archive(
+    top: &str,
     payload: &BTreeMap<String, Vec<u8>>,
     empty_dirs: &[String],
     malice: Option<Malice>,
 ) -> Vec<u8> {
     let work = tempfile::tempdir().unwrap();
     let tree = work.path().join("tree");
-    write_tree(&tree, payload, empty_dirs);
+    let folder = tree.join(top);
+    write_tree(&folder, payload, empty_dirs);
     let mut add = vec!["a", "-t7z", "-bso0", "-bsp0"];
     match malice {
         Some(Malice::Junction) => {
-            junction(&tree.join("jn"), &tree.join("lootfilter"));
+            junction(&folder.join("jn"), &folder.join("lootfilter"));
             add.push("-snl");
         }
-        Some(_) => fs::write(tree.join("evil.txt"), b"evil").unwrap(),
+        Some(Malice::Stray) => fs::write(tree.join("evil.txt"), b"evil").unwrap(),
+        Some(Malice::Flat) => {}
+        Some(_) => fs::write(folder.join("evil.txt"), b"evil").unwrap(),
         None => {}
     }
+    // Flat: the pre-#67 layout, the tree at the archive root without its folder.
+    let packed = if malice == Some(Malice::Flat) {
+        folder
+    } else {
+        tree
+    };
     add.extend(["--", "../out.7z", "*"]);
-    run_7z(&tree, &add);
+    run_7z(&packed, &add);
+    let out = packed.parent().unwrap().join("out.7z");
+    let evil = format!("{top}\\evil.txt");
     let renamed = match malice {
-        Some(Malice::Traversal) => Some("..\\evil.txt"),
-        Some(Malice::Absolute) => Some("C:\\evil.txt"),
-        Some(Malice::CaseConflict) => Some("PD2R.MPQ\\MODINFO.JSON"),
+        Some(Malice::Traversal) => Some("..\\evil.txt".to_owned()),
+        Some(Malice::Absolute) => Some("C:\\evil.txt".to_owned()),
+        Some(Malice::CaseConflict) => Some(format!("{top}\\PD2R.MPQ\\MODINFO.JSON")),
         _ => None,
     };
     if let Some(to) = renamed {
-        run_7z(
-            work.path(),
-            &["rn", "-t7z", "-bso0", "out.7z", "evil.txt", to],
-        );
+        let dir = out.parent().unwrap();
+        run_7z(dir, &["rn", "-t7z", "-bso0", "out.7z", &evil, &to]);
     }
-    fs::read(work.path().join("out.7z")).unwrap()
+    fs::read(out).unwrap()
 }
 
 fn build(name: &str, malice: Option<Malice>) -> FixtureRelease {
@@ -317,7 +339,9 @@ fn build(name: &str, malice: Option<Malice>) -> FixtureRelease {
 
     let mut payload = BTreeMap::new();
     read_tree(&dir.join(name).join("payload"), "", &mut payload);
-    let archive = archive(&payload, &empty_dirs, malice);
+    let install_root = doc["install_root"].as_str().unwrap();
+    let top = install_root.strip_prefix("mods/").unwrap().to_owned();
+    let archive = archive(&top, &payload, &empty_dirs, malice);
 
     if let Some(m) = malice {
         doc["release_id"] = json!(format!("{name}-malicious-{}", m.name()));

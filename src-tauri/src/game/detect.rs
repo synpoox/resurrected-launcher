@@ -58,6 +58,15 @@ fn validate_with(
     };
     let root = std::path::absolute(path)
         .map_err(|e| not_found(format!("{} is not a usable folder: {e}", path.display())))?;
+    // A drive or share root, directly or through a link, would make every process
+    // on it count as running under the game (`process::running_under`).
+    let resolved = fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
+    if root.parent().is_none() || resolved.parent().is_none() {
+        return Err(not_found(format!(
+            "{} is a drive root, not a game folder",
+            root.display()
+        )));
+    }
     let exe = root.join(D2R_EXE);
     let meta = fs::symlink_metadata(&exe)
         .map_err(|e| not_found(format!("No readable {D2R_EXE} in {}: {e}", root.display())))?;

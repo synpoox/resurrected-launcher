@@ -26,7 +26,8 @@ pub use game::{
 };
 pub use guard::{WriteGuard, DISPOSABLE_SENTINEL};
 pub use inventory::{
-    ExpectedFile, ExpectedInventory, InventoryError, PathError, RelativePath, Sha256Digest,
+    ExpectedFile, ExpectedInventory, InventoryError, ListingMismatch, PathError, RelativePath,
+    Sha256Digest,
 };
 pub use recovery::{EntryOnDisk, PlannedCopy, PlannedRename, COPY_TEMP_SUFFIX};
 
