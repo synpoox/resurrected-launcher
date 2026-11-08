@@ -1,15 +1,23 @@
 //! Readiness assessment (#57): game build, loader and installed-release checks
 //! against a release manifest's `compatibility`. Writes nothing.
-#![allow(unused_variables, dead_code)] // shortcut: frozen stubs (#55); remove when #57 implements them.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
 use std::time::SystemTime;
 
+use super::detect::{is_link, D2R_EXE};
 use super::GameHost;
-use crate::catalog::ReleaseManifest;
-use crate::contract::{GameLocation, LauncherError, Readiness, RunningGame, Sha256Digest};
+use crate::catalog::{GameBuild, ReleaseManifest};
+use crate::contract::{
+    ErrorCode, GameLocation, LauncherError, Readiness, RunningGame, Sha256Digest,
+};
+use crate::install::download::hash_file;
+
+/// The loader files whose ProductVersion must be allowed, in check order.
+const LOADER_FILES: [&str; 2] = ["D2RLoader.exe", "D2RCore.dll"];
 
 /// Everything [`assess`] needs that it does not read from disk itself. The caller
 /// (#60) gathers these fresh for each assessment.
@@ -57,5 +65,112 @@ pub fn assess(
     cache: &BuildHashCache,
     host: &dyn GameHost,
 ) -> Result<Readiness, LauncherError> {
-    todo!("#57")
+    let Some(location) = facts.location else {
+        return Ok(Readiness::D2rMissing);
+    };
+    let root = &location.path;
+    let manifest = facts.installed.or(facts.recommended);
+    let builds = manifest.map_or(&[][..], |m| &m.compatibility.game_builds[..]);
+    let present = |rel: &str| regular_file(&root.join(rel)).is_some();
+    if !present(D2R_EXE)
+        || (!builds.is_empty() && !builds.iter().any(|b| present(b.executable.as_str())))
+    {
+        return Ok(Readiness::D2rMissing);
+    }
+    if let Some(since) = facts.running.iter().map(|g| g.since).min() {
+        return Ok(Readiness::Running { since });
+    }
+    if facts.recovery_pending {
+        return Ok(Readiness::RecoveryRequired);
+    }
+    let Some(manifest) = manifest else {
+        // Nothing to check the build and loader against, and nothing installed.
+        return Ok(Readiness::NotInstalled);
+    };
+    let mut supported = false;
+    for build in builds {
+        if cache.matches(root, build)? {
+            supported = true;
+            break;
+        }
+    }
+    if !supported {
+        return Ok(Readiness::BuildUnsupported {
+            found: location.build.clone(),
+        });
+    }
+    let mut versions = Vec::new();
+    for file in LOADER_FILES {
+        let path = root.join(file);
+        let version = regular_file(&path).and_then(|_| host.product_version(&path).ok().flatten());
+        match version {
+            Some(v) => versions.push(v),
+            None => return Ok(Readiness::LoaderMissing),
+        }
+    }
+    let allowed = &manifest.compatibility.loader_versions;
+    if let Some(found) = versions.into_iter().find(|v| !allowed.contains(v)) {
+        return Ok(Readiness::LoaderUnsupported {
+            found,
+            allowed: allowed.clone(),
+        });
+    }
+    Ok(match (facts.installed, facts.recommended) {
+        (None, _) => Readiness::NotInstalled,
+        (Some(i), Some(r)) if r.release_id != i.release_id => Readiness::UpdateAvailable,
+        _ => Readiness::Ready,
+    })
+}
+
+/// Metadata of `path` when it is a regular file, not a link or reparse point.
+fn regular_file(path: &Path) -> Option<fs::Metadata> {
+    fs::symlink_metadata(path)
+        .ok()
+        .filter(|m| m.is_file() && !is_link(m))
+}
+
+impl BuildHashCache {
+    /// Whether `<root>\<build.executable>` has exactly `build`'s size and SHA-256.
+    /// Hashes only on a size match, and once per (path, size, mtime).
+    fn matches(&self, root: &Path, build: &GameBuild) -> Result<bool, LauncherError> {
+        let path = root.join(build.executable.as_str());
+        let Some(meta) = regular_file(&path) else {
+            return Ok(false);
+        };
+        if meta.len() != build.size {
+            return Ok(false);
+        }
+        let mtime = meta
+            .modified()
+            .map_err(|e| hash_error(&path, ErrorCode::Internal, e.to_string()))?;
+        let key = (path, meta.len(), mtime);
+        let cached = self.lock().get(&key).copied();
+        let digest = match cached {
+            Some(d) => d,
+            None => {
+                let (n, bytes) = hash_file(&key.0, &AtomicBool::new(false))
+                    .map_err(|e| hash_error(&key.0, e.code, e.message))?;
+                let Some(d) = Sha256Digest::from_bytes(bytes).filter(|_| n == key.1) else {
+                    return Ok(false); // changed while hashing; not cached
+                };
+                self.lock().insert(key, d);
+                d
+            }
+        };
+        Ok(digest == build.sha256)
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<(PathBuf, u64, SystemTime), Sha256Digest>> {
+        // The map holds only finished digests, so a poisoned lock is still consistent.
+        self.entries.lock().unwrap_or_else(|p| p.into_inner())
+    }
+}
+
+/// Only [`ErrorCode::AccessDenied`] or [`ErrorCode::Internal`] leave [`assess`].
+fn hash_error(path: &Path, code: ErrorCode, detail: String) -> LauncherError {
+    let code = match code {
+        ErrorCode::AccessDenied => ErrorCode::AccessDenied,
+        _ => ErrorCode::Internal,
+    };
+    LauncherError::new(code, format!("hashing {}: {detail}", path.display()))
 }
