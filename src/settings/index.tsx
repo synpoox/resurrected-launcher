@@ -18,7 +18,7 @@ export const SETTINGS_TABS: readonly [SettingsTab, string][] = [
 
 export function Settings({ initialTab = "game" }: { initialTab?: SettingsTab }) {
   const api = useApi();
-  const { products } = useProducts(api);
+  const { products, refresh } = useProducts(api);
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const base = useId();
   // Only PD2R has a release; its D2R location is the launcher's D2R location.
@@ -26,7 +26,7 @@ export function Settings({ initialTab = "game" }: { initialTab?: SettingsTab }) 
   const state = products[product.id]?.state ?? null;
 
   return (
-    <div className="settings">
+    <div className="settings-page">
       <div className="subnav">
         <h1>Settings</h1>
         <div
@@ -53,7 +53,7 @@ export function Settings({ initialTab = "game" }: { initialTab?: SettingsTab }) 
         </div>
       </div>
       <div className="spanel" role="tabpanel" id={`${base}-${tab}`} aria-labelledby={`${base}-${tab}-tab`}>
-        {tab === "game" && <GamePanel product={product} state={state} stateFailed={Boolean(products[product.id]?.error)} />}
+        {tab === "game" && <GamePanel product={product} state={state} stateFailed={Boolean(products[product.id]?.error)} refresh={refresh} />}
         {tab === "launcher" && <LauncherPanel />}
         {tab === "folders" && <FoldersPanel product={product} state={state} />}
         {tab === "troubleshooting" && <TroubleshootingPanel product={product} />}

@@ -26,7 +26,9 @@ use crate::install::plan::product_root;
 use crate::state::{InstalledRelease, Preferences};
 
 /// Event (`Versioned<()>`) telling the UI to read `get_product_state` again:
-/// startup recovery finished, a catalog refresh ended, or the game exited.
+/// startup recovery finished, a catalog refresh ended, the game exited, or the
+/// D2R location changed (#123: every view of product state rereads it, not only
+/// the one that asked for the change).
 pub const STATE_EVENT: &str = "product-state-changed";
 
 /// How often the exit watcher looks for processes under the D2R root.
@@ -546,8 +548,10 @@ pub async fn detect_game_locations(
 /// `detect_game_locations` reply, validated again. `InvalidRequest` for an index
 /// out of range (or before any detection); otherwise the same refusals as
 /// `choose_game_location`, including `GameRunning` under either location.
+/// [`STATE_EVENT`] follows a remembered choice.
 #[tauri::command(rename_all = "snake_case")]
-pub async fn select_game_location(
+pub async fn select_game_location<R: Runtime>(
+    app: AppHandle<R>,
     launcher: State<'_, Arc<Launcher>>,
     index: usize,
 ) -> Result<Versioned<LocationView>, LauncherError> {
@@ -556,16 +560,24 @@ pub async fn select_game_location(
         .map(|l| l.path.clone())
         .ok_or_else(|| invalid(format!("no detected location {index}; detect again")))?;
     let location = launcher.set_location(&picked)?;
+    location_changed(&app);
     Ok(Versioned::new(launcher.view(location)))
+}
+
+/// A remembered location changed: tells every view to reread product state.
+fn location_changed<R: Runtime>(app: &AppHandle<R>) {
+    let _ = app.emit(STATE_EVENT, Versioned::new(()));
 }
 
 /// `choose_game_location`: opens the native folder picker and remembers the
 /// validated choice. `None` when the player cancels. Refused with
 /// `GameRunning` while a game runs under the current location and
 /// `OperationInProgress` while an operation runs; `D2rNotFound` for a folder
-/// without a valid `D2R.exe` or behind a link.
+/// without a valid `D2R.exe` or behind a link. [`STATE_EVENT`] follows a
+/// remembered choice.
 #[tauri::command(rename_all = "snake_case")]
-pub async fn choose_game_location(
+pub async fn choose_game_location<R: Runtime>(
+    app: AppHandle<R>,
     launcher: State<'_, Arc<Launcher>>,
 ) -> Result<Versioned<Option<LocationView>>, LauncherError> {
     launcher.refuse_location_change(&launcher.running())?;
@@ -573,12 +585,12 @@ pub async fn choose_game_location(
     let picked = tauri::async_runtime::spawn_blocking(move || picker.desktop.pick_folder())
         .await
         .map_err(internal)?;
-    match picked {
-        Some(path) => launcher
-            .set_location(&path)
-            .map(|l| Versioned::new(Some(launcher.view(l)))),
-        None => Ok(Versioned::new(None)),
-    }
+    let Some(path) = picked else {
+        return Ok(Versioned::new(None));
+    };
+    let location = launcher.set_location(&path)?;
+    location_changed(&app);
+    Ok(Versioned::new(Some(launcher.view(location))))
 }
 
 /// `refresh_catalog`: starts a background refresh of the feed and manifests and

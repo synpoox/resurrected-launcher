@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ApiContext } from "../api/context";
 import { createFixtureApi, sceneByKey, type FixtureApi } from "../api/fixtures";
-import type { LauncherError } from "../api/types";
+import type { GameLocation, LauncherError } from "../api/types";
 import { Shell } from "../shell/Shell";
 import { ToastProvider } from "../ui/Toast";
 
@@ -107,6 +107,41 @@ describe("Game", () => {
     expect(notice.textContent).toContain("PD2R alpha 0.4.2 was found there and is ready to play.");
     expect(names(api)).not.toContain("startOperation");
     expect(document.activeElement).toBe(change);
+  });
+
+  // Issue 123: the owner's d2r-game folder, chosen with Browse when nothing was detected.
+  const BROWSED: GameLocation = { path: "C:\\Users\\micah\\source\\repos\\d2r-game", build: "3.3.93847", store: "unknown", installed_products: [] };
+
+  async function browse(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: "Choose…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Choose your D2R installation" });
+    await user.click(within(dialog).getByRole("button", { name: "Browse for another folder…" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  }
+
+  it("Browse… for D2R shows the chosen folder in the location row, not only in the notice (issue 123)", async () => {
+    const { user } = await openSettings("d2r-missing", (a) => {
+      a.picked = structuredClone(BROWSED);
+      // The panel must reread state itself, not rely on another view's event.
+      a.onStateChanged = () => Promise.resolve(() => {});
+    });
+    await browse(user);
+    await screen.findByText(/Nothing was moved, copied or deleted/);
+    await waitFor(() => expect(within(panel()).queryByText(/wasn't found on this PC/)).toBeNull());
+    expect(within(panel()).getAllByText(BROWSED.path).length).toBeGreaterThan(0);
+    expect(within(panel()).getByText(/Store not recognised · build 3\.3\.93847/)).toBeTruthy();
+    expect(within(panel()).getByRole("button", { name: "Change…" })).toBeTruthy();
+  });
+
+  it("after a choice in Settings, the product page shows the new location too (issue 123)", async () => {
+    const { user } = await openSettings("d2r-missing", (a) => {
+      a.picked = structuredClone(BROWSED);
+    });
+    await browse(user);
+    await waitFor(() => expect(within(panel()).queryByText(/wasn't found on this PC/)).toBeNull());
+    await user.click(screen.getByRole("button", { name: "Project Diablo 2: Resurrected" }));
+    expect(screen.getByRole("main", { name: "Project Diablo 2: Resurrected" })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(/wasn't found on this PC/)).toBeNull());
   });
 
   it("browsing to a folder without D2R.exe shows an inline error", async () => {

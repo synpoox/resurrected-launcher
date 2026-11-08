@@ -303,6 +303,8 @@ export interface FixtureApi extends LauncherApi {
   emitOutcome(outcome: OperationOutcome): void;
   /** Sends a tray request to every subscriber (tests). */
   emitTrayRequest(request: TrayRequest): void;
+  /** The folder the next `chooseGameLocation` picker returns; null cancels (the default). */
+  picked: GameLocation | null;
 }
 
 export interface FixtureOptions {
@@ -467,7 +469,12 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
     },
     chooseGameLocation() {
       record("chooseGameLocation");
-      return Promise.resolve(null);
+      if (state.readiness.status === "running") return refuse("game_running", "Quit the game first.");
+      const chosen = api.picked;
+      if (!chosen) return Promise.resolve(null);
+      // Like the backend, a remembered choice is followed by product-state-changed.
+      set({ location: chosen, readiness: state.installed ? { status: "ready" } : { status: "not_installed" } });
+      return Promise.resolve(structuredClone(chosen));
     },
     openLoaderDownloadPage: () => done("openLoaderDownloadPage"),
 
@@ -529,6 +536,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
     },
     onOutcome: (h) => subscribe(outcomes, h),
     onTrayRequest: (h) => subscribe(trays, h),
+    picked: null,
   };
   return api;
 }
