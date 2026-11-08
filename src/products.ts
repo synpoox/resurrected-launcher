@@ -18,8 +18,9 @@ export interface Product {
   description: string;
   /** False for products without a release (Forever and 09 today): no tabs, no install. */
   hasRelease: boolean;
-  /** Shows "About <product>" (products without a release): the product has an entry in
-   *  `product-pages.json`. Forever and 09 have no public repository yet, so they have none. */
+  /** "About <product>" (products without a release) opens a public page: the product has an
+   *  entry in `product-pages.json`. Forever and 09 have no public page yet, so their About opens
+   *  "Follow for updates on Discord" instead (issue 135). */
   aboutPage: boolean;
 }
 

@@ -47,6 +47,8 @@ describe("news renders as text and opens by index", () => {
     const ipc = readFileSync("src/ipc.ts", "utf8");
     expect(ipc).toMatch(/invoke\("open_news_link", \{ product_id: productId, index \}\)/);
     expect(ipc).toMatch(/invoke\("open_product_page", \{ product_id: productId \}\)/);
+    // The Discord is bundled in Rust; the binding carries nothing (issue 135).
+    expect(ipc).toMatch(/invoke\("open_community_page"\);/);
   });
 });
 

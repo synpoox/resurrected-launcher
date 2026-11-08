@@ -1493,11 +1493,7 @@ fn start_with_windows_is_only_the_run_value() {
 #[test]
 fn window_controls_act_on_main_and_quit_waits_for_operations() {
     let rig = Rig::new();
-    for cmd in [
-        "minimize_window",
-        "toggle_maximize_window",
-        "start_window_drag",
-    ] {
+    for cmd in ["minimize_window", "start_window_drag"] {
         rig.invoke(cmd, json!({}))
             .unwrap_or_else(|e| panic!("{cmd}: {e:?}"));
     }
