@@ -109,7 +109,9 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 **Feedback surfaces**:
 - **Notice**: explains a state in words, as above.
 - **Dialog**: square, on `--panel`, with a 2px top rule (accent for destructive or risky actions) over a `#000000b3` backdrop.
-- **Toast**: bottom-right. Information is muted and auto-dismisses; errors are accent and stay until dismissed.
+- **Toast**: bottom-right, 380px wide, text 17px with 15px actions (#138). Information is muted and auto-dismisses; errors are accent and stay until dismissed.
+- **Busy actions** (#138): from the click until the result or dialog arrives, the chosen button shows a small square spinner beside its unchanged label (`aria-busy`), and every other action in its group is `aria-disabled` (still focusable). A second click sends nothing.
+- **Dialogs open on the click**: a consent dialog that needs an inspection (Clean install, Uninstall) opens at once with a spinner and "Checking…" line in place of its body; its confirm button waits until the inspection answers. Not now closes it meanwhile. Update inspects first (busy) because only the answer says whether it is save-breaking.
 
 ## Tray
 
