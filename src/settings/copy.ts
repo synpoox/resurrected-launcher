@@ -47,8 +47,6 @@ export function folderName(folder: Folder, product: Product | null): string {
   }
 }
 
-export const isPluginFolder = (folder: Folder) => folder === "product_plugins" || folder === "global_plugins";
-
 /** The red toast after openFolder fails. It never mentions administrator rights. */
 export function folderFailureText(error: LauncherError | null, name: string, product: Product | null): string {
   if (error?.code === "product_not_installed") {

@@ -215,10 +215,21 @@ describe("Folders and plugins", () => {
     await user.click(tab("Folders and plugins"));
     const open = () => within(within(panel()).getByRole("region", { name: "All products" })).getByRole("button");
     await user.click(open());
-    expect(await screen.findByText(/If it didn't exist yet, the launcher created it empty/)).toBeTruthy();
+    expect(await screen.findByText(/It didn't exist yet, so the launcher created it empty/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     await user.click(open());
     expect(screen.getByText("Opened the global plugins folder in File Explorer.")).toBeTruthy();
+    expect(screen.queryByText(/created it/)).toBeNull();
+  });
+
+  it("takes the created message from openFolder's result, not a guess", async () => {
+    const { user } = await openSettings("ready", (a) => {
+      a.openFolder = () => Promise.resolve(false);
+    });
+    await user.click(tab("Folders and plugins"));
+    const pd2r = within(panel()).getByRole("region", { name: "PD2R" });
+    await user.click(within(pd2r).getByRole("button", { name: "Open plugins folder" }));
+    expect(await screen.findByText("Opened the PD2R plugins folder in File Explorer.")).toBeTruthy();
     expect(screen.queryByText(/created it/)).toBeNull();
   });
 
