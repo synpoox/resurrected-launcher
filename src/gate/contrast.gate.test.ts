@@ -77,6 +77,7 @@ describe("Patch Notes contrast (WCAG 2.2 AA, on --bg)", () => {
     [".notes-body", rule(product, ".notes-body")],
     [".notes-offline", rule(product, ".notes-offline")],
     [".notes-empty", rule(product, ".notes-empty")],
+    [".notes-truncated", rule(product, ".notes-truncated")],
     [".tabs [role=\"tab\"] (unselected)", rule(product, '.tabs [role="tab"]')],
     [".link (Retry)", rule(ui, ".link")],
   ];
@@ -84,6 +85,27 @@ describe("Patch Notes contrast (WCAG 2.2 AA, on --bg)", () => {
     const fg = token(decl.color);
     const need = isLarge(decl) ? 3 : 4.5;
     expect(ratio(fg, BG)).toBeGreaterThanOrEqual(need);
+  });
+
+  // Section boxes are outlined only, so their text sits on --bg too (#128 design pass).
+  it("section boxes, the table of contents and quotes: every colour on --bg", () => {
+    expect(rule(product, ".notes-box").background).toBeUndefined();
+    const colour = (selector: string) => token(rule(product, selector).color);
+    for (const selector of [
+      ".notes-heading",
+      ".notes-sub",
+      ".notes-quote",
+      ".notes-box strong",
+      ".notes-toc-toggle",
+      ".notes-toc li button",
+      ".notes-toc li button:hover",
+    ]) {
+      expect(ratio(colour(selector), BG), selector).toBeGreaterThanOrEqual(4.5);
+    }
+    // Non-text marks: 3:1.
+    expect(ratio(colour(".notes-box li::marker"), BG)).toBeGreaterThanOrEqual(3);
+    expect(ratio(colour(".notes-toc-icon"), BG)).toBeGreaterThanOrEqual(3);
+    expect(ratio(colour(".notes-quote p::before"), BG)).toBeGreaterThanOrEqual(3);
   });
 
   it("release titles inherit --text and pass as large text", () => {

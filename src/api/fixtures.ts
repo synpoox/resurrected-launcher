@@ -46,26 +46,31 @@ const iso = (daysAgo: number) => new Date(NOW - daysAgo * DAY).toISOString().sli
 
 const NOTES_042 = `Loot filter fixes, corruption lines on items and a stash crash fix.
 
-Loot filter
+#### Loot filter
+
 - Rune names highlight again in the default filter.
 - Custom filters keep their colours after an update.
 
-Fixes
+#### Fixes
+
 - Fixed a crash when opening the stash with a full cube.
 - Fixed mercenary equipment resetting after a zone change.`;
 
 const NOTES_041 = `TCP/IP co-op join fixes and early Act 1 drop rates.
 
-Co-op
+#### Co-op
+
 - TCP/IP games now list correctly on the join screen.
 - Players joining mid-game keep their party.
 
-Balance
+#### Balance
+
 - Rebalanced early Act 1 drop rates.`;
 
 const NOTES_050 = `New save format for the ladder preview. Read the save-breaking warning before updating.
 
-Saves
+#### Saves
+
 - Characters use a new save format.`;
 
 const r = (version: string, daysAgo: number, notes: string | null): ReleaseNotes => ({

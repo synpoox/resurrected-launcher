@@ -297,13 +297,15 @@
   background: var(--accent);
 }
 
-/* Patch Notes: the whole main area, scrolling under a solid top fade. The scroller starts below
-   the title bar, so its scrollbar stays clear of the window controls (issue 135). */
+/* Patch Notes: the whole main area, scrolling under a solid top fade. Bundled banner art, then a
+   centred reading column (layout after the League client's patch notes; our tokens, no branding).
+   The scroller starts below the title bar, so its scrollbar stays clear of the window controls
+   (issue 135). */
 .notes {
   position: absolute;
   inset: var(--titlebar-height) 0 0;
   overflow-y: auto;
-  padding: calc(136px - var(--titlebar-height)) 44px 56px;
+  padding: calc(124px - var(--titlebar-height)) 44px 72px;
   scrollbar-color: var(--muted) transparent;
 }
 
@@ -311,63 +313,254 @@
   outline-offset: -3px;
 }
 
+/* Bundled art only (img-src 'self'); framed like the hero, never a remote image. */
+.notes-banner {
+  display: block;
+  width: 100%;
+  max-width: 880px;
+  height: 260px;
+  margin: 0 auto 56px;
+  object-fit: cover;
+  object-position: 55% center;
+  border: 1px solid var(--line);
+}
+
 .notes article {
-  max-width: 680px;
-  margin: 0 auto 64px;
+  max-width: 760px;
+  margin: 0 auto 112px;
 }
 
-.notes header {
+.notes-head {
   text-align: center;
-  padding-bottom: 18px;
-  border-bottom: 3px double var(--line);
-  margin-bottom: 8px;
 }
 
+/* Two lines: the product name, then "Patch 0.2.0 notes". */
 .notes-title {
-  font-size: 40px;
+  /* Two lines: sized so the longest product name fits the 760px column on one line. */
+  font-size: 32px;
   font-weight: 900;
-  letter-spacing: -1px;
-  line-height: 1.06;
+  letter-spacing: 0.5px;
+  line-height: 1.15;
   text-transform: uppercase;
 }
 
+.notes-title span {
+  display: block;
+}
+
 .notes-summary {
-  max-width: 560px;
-  margin: 12px auto 0;
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--hero-copy);
-}
-
-.notes-meta {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  padding-top: 14px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.notes-meta .k {
-  padding-right: 12px;
-  color: var(--detail);
-  border-right: 1px solid var(--line);
-}
-
-/* Plain text: line breaks kept, nothing parsed. */
-.notes-body {
-  padding: 22px 0;
-  white-space: pre-line;
-  font-size: 14px;
+  max-width: 620px;
+  margin: 18px auto 0;
+  font-size: 17px;
   line-height: 1.7;
   color: var(--hero-copy);
 }
 
+/* The divider, then tag · date. */
+.notes-meta {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  max-width: 690px;
+  margin: 26px auto 0;
+  padding-top: 22px;
+  border-top: 3px double var(--line);
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.notes-meta .k {
+  padding-right: 14px;
+  color: var(--detail);
+  border-right: 1px solid var(--line);
+}
+
+/* Release notes: a Markdown subset rendered as text only (notesMarkdown.ts). */
+.notes-body {
+  padding-top: 48px;
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--hero-copy);
+}
+
+/* Table of contents: a full-width row with +/−, then one ruled row per section. */
+.notes-toc {
+  margin-bottom: 64px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.notes-toc-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 24px 0;
+  font-size: 21px;
+  font-weight: 800;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--text);
+}
+
+.notes-toc-icon {
+  font-size: 30px;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--detail);
+}
+
+.notes-toc ol {
+  list-style: none;
+  padding: 0;
+}
+
+.notes-toc li {
+  border-top: 1px solid var(--line);
+}
+
+.notes-toc li button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 18px 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.notes-toc li button:hover {
+  color: var(--detail);
+}
+
+/* Each section: a large bold italic heading over its own bordered box. */
+.notes-section + .notes-section {
+  margin-top: 64px;
+}
+
+.notes-heading {
+  margin: 0 0 20px 32px;
+  font-size: 32px;
+  font-weight: 900;
+  font-style: italic;
+  line-height: 1.15;
+  text-transform: uppercase;
+  color: var(--text);
+  /* Clear the top fade when the table of contents scrolls here. */
+  scroll-margin-top: 140px;
+}
+
+.notes-box {
+  padding: 32px 36px 34px;
+  border: 1px solid var(--line);
+}
+
+.notes-box > :first-child {
+  margin-top: 0;
+}
+
+.notes-box > :last-child {
+  margin-bottom: 0;
+}
+
+.notes-box p,
+.notes-box pre {
+  margin: 14px 0;
+}
+
+/* A short description in quotation marks, as a designer's note. */
+.notes-quote {
+  max-width: 520px;
+  margin: 14px 0;
+  color: var(--text);
+}
+
+/* The marks sit inline with the text, so the closing one follows the last word. */
+.notes-quote p::before,
+.notes-quote p::after {
+  font-size: 24px;
+  line-height: 0;
+  vertical-align: -0.1em;
+  color: var(--muted);
+}
+
+.notes-quote p::before {
+  content: "“";
+  margin-right: 6px;
+}
+
+.notes-quote p::after {
+  content: "”";
+  margin-left: 6px;
+}
+
+.notes-quote p {
+  margin: 0;
+}
+
+.notes-rule {
+  margin: 28px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.notes-sub {
+  margin: 32px 0 14px;
+  font-size: 21px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.notes-box ul,
+.notes-box ol {
+  margin: 14px 0;
+  padding-left: 26px;
+}
+
+.notes-box ul {
+  list-style: disc;
+}
+
+.notes-box li ul {
+  list-style: circle;
+}
+
+.notes-box li ul,
+.notes-box li ol {
+  margin: 10px 0 0;
+}
+
+.notes-box li + li {
+  margin-top: 10px;
+}
+
+.notes-box li::marker {
+  color: var(--text);
+}
+
+.notes-box strong {
+  color: var(--text);
+}
+
+.notes-box code,
+.notes-box pre {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 15px;
+}
+
+.notes-box pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .notes-offline,
-.notes-empty {
+.notes-empty,
+.notes-truncated {
   padding: 22px 0;
   text-align: center;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--muted);
 }
 
