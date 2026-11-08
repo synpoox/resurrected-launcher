@@ -2,7 +2,6 @@
 //! guidance and Play. The frontend sends product IDs only: the location comes from
 //! the native folder picker, the download page from a fixed constant.
 
-use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,17 +12,14 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
 use super::operations::{locked, Launcher, Release, ReleaseSummary, Running};
-use crate::catalog::{
-    manifest_identity, refresh_with, Availability, Feed, FEED_IDENTITY, MAX_FEED_SIZE,
-};
+use crate::catalog::{self, Feed, FEED_IDENTITY};
 use crate::contract::{
     ErrorCode, GameLocation, LauncherError, LoaderGuidance, OperationKind, ProductId, Readiness,
-    RunningGame, Sha256Digest, Versioned, LOADER_DOWNLOAD_PAGE,
+    RunningGame, Versioned, LOADER_DOWNLOAD_PAGE,
 };
 use crate::game::process::wait_until_exited;
 use crate::game::readiness::{self, Facts};
 use crate::game::{detect, launch, loader_setup};
-use crate::install::download::Expect;
 use crate::install::journal::refuse_pending_journal;
 use crate::install::plan::product_root;
 use crate::state::{InstalledRelease, Preferences};
@@ -350,40 +346,20 @@ impl Launcher {
         });
     }
 
-    /// [`crate::catalog::refresh`], with every download done before State is
-    /// locked so `get_product_state` never waits on the network: the feed and its
-    /// manifests are fetched first, then the refresh replays them under the lock.
+    /// [`crate::catalog::refresh`] with its downloads ([`catalog::fetch`]) done
+    /// before State is locked, so `get_product_state` never waits on the network;
+    /// only [`catalog::apply`] runs under the lock.
     fn refresh_catalog(&self) -> Result<(), LauncherError> {
         let cancel = AtomicBool::new(false);
-        let fetch =
-            |url: &str, expect: Expect<'_>| self.downloader.fetch_bytes(url, expect, &cancel);
-        let mut fetched: HashMap<String, (Vec<u8>, Sha256Digest)> = HashMap::new();
-        let feed = fetch(&self.feed_url, Expect::AtMost(MAX_FEED_SIZE))?;
-        let parsed = Feed::parse(&feed.0)?;
-        for product in &parsed.products {
-            if let Availability::Available(p) = &product.availability {
-                // Already cached with the pointed-at bytes: the refresh keeps it
-                // without downloading, so neither does the prefetch.
-                let identity = manifest_identity(&product.product_id, &p.release_id);
-                let cached = locked(&self.state)?
-                    .cached(&identity)
-                    .is_some_and(|c| c.sha256 == p.manifest_sha256);
-                if cached {
-                    continue;
-                }
-                let expect = Expect::Exact {
-                    size: p.manifest_size,
-                    sha256: &p.manifest_sha256,
-                };
-                fetched.insert(p.manifest_url.clone(), fetch(&p.manifest_url, expect)?);
-            }
-        }
-        fetched.insert(self.feed_url.clone(), feed);
-        let mut state = locked(&self.state)?;
-        // Each replayed download was fetched with the Expect this same feed gives it.
-        refresh_with(&mut state, &self.feed_url, &mut |url, expect| {
-            fetched.remove(url).map_or_else(|| fetch(url, expect), Ok)
-        })?;
+        let fetched = catalog::fetch(
+            &self.feed_url,
+            &mut |url, expect| self.downloader.fetch_bytes(url, expect, &cancel),
+            &mut |identity| {
+                let mut state = locked(&self.state).ok()?;
+                state.cached(identity).map(|c| c.sha256)
+            },
+        )?;
+        catalog::apply(&mut *locked(&self.state)?, fetched)?;
         Ok(())
     }
 }
