@@ -39,10 +39,8 @@ describe("axe-core harness", () => {
     expect(INDEX_HTML).toMatch(/<html[^>]* lang="en"/);
   });
 
-  // GAP_TITLE: index.html has no <title> (axe `document-title`, WCAG 2.4.2). The native window title is
-  // "Project Resurrected", but the webview document has no name of its own. Filed as #114 (slice 4 gate
-  // finding); this expected failure turns red once index.html gets a title, so flip it to `it` then.
-  it.fails("index.html has a <title> (known gap)", () => {
+  // axe `document-title` (WCAG 2.4.2): the webview document carries the umbrella name too (#114).
+  it("index.html has a <title>", () => {
     expect(INDEX_HTML).toMatch(/<title>[^<]+<\/title>/);
   });
 });
