@@ -156,16 +156,3 @@
   overflow: hidden;
   container-type: inline-size;
 }
-
-.settings-placeholder {
-  padding: 72px 44px;
-  display: grid;
-  align-content: start;
-  gap: 12px;
-  color: var(--hero-copy);
-}
-
-.settings-placeholder h1 {
-  color: var(--text);
-  font-weight: 900;
-}
