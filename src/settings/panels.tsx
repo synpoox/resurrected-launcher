@@ -7,6 +7,7 @@ import { LocationDialog } from "../product/dialogs";
 import { PRODUCTS, type Product } from "../products";
 import { Notice } from "../ui/Notice";
 import { Switch } from "../ui/Switch";
+import { SelfUpdateRows } from "../selfupdate/SettingsRows";
 import { useToast } from "../ui/Toast";
 import {
   folderFailureText,
@@ -128,7 +129,7 @@ export function LauncherPanel() {
         >
           <Switch label="Start with Windows" checked={startup ?? false} onChange={(on) => void change(on)} />
         </Row>
-        {/* #78 adds the Launcher version and automatic-download rows here. */}
+        <SelfUpdateRows />
       </Section>
       <Section title="About and credits">
         <ul className="credits">
