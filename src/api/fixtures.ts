@@ -299,6 +299,10 @@ export interface FixtureApi extends LauncherApi {
   dispose(): void;
   /** Sends one progress event to every subscriber (tests). */
   emitProgress(event: ProgressEvent): void;
+  /** Sends an operation outcome to every subscriber (tests). */
+  emitOutcome(outcome: OperationOutcome): void;
+  /** Sends a tray request to every subscriber (tests). */
+  emitTrayRequest(request: TrayRequest): void;
 }
 
 export interface FixtureOptions {
@@ -349,6 +353,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
   };
   const productOnly = (id: string) =>
     id === state.product_id ? null : refuse("unknown_product", `No release for ${id}.`);
+  const openedPlugins = new Set<string>();
   const done = (name: keyof LauncherApi, ...args: unknown[]) => {
     record(name, ...args);
     return Promise.resolve();
@@ -381,6 +386,8 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
     scene: s,
     calls,
     emitProgress: (e) => progressed.forEach((h) => h(e)),
+    emitOutcome: emit,
+    emitTrayRequest: (r) => trays.forEach((h) => h(r)),
     dispose: () => {
       clearInterval(timer);
       timer = undefined;
@@ -423,7 +430,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
     },
     cancelOperation(id) {
       record("cancelOperation", id);
-      if (!state.running) return Promise.resolve();
+      if (!state.running) return refuse("invalid_request", `${id} has no operation running`);
       const kind = state.running;
       set({ cancelling: true });
       setTimeout(() => {
@@ -468,7 +475,14 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
       record("getReleaseNotes", id);
       return productOnly(id) ?? Promise.resolve(structuredClone(s.notes));
     },
-    openFolder: (id, folder) => done("openFolder", id, folder),
+    openFolder(id, folder) {
+      record("openFolder", id, folder);
+      // Like the backend: a plugins folder is created on its first open only.
+      const key = `${id}/${folder}`;
+      const created = folder.endsWith("plugins") && !openedPlugins.has(key);
+      openedPlugins.add(key);
+      return Promise.resolve(created);
+    },
     previewDiagnostics(includeLog) {
       record("previewDiagnostics", includeLog);
       return Promise.resolve({

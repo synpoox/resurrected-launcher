@@ -1,101 +1,49 @@
 // The one seam between the UI and native code: everything the UI calls is on `LauncherApi`.
-// `src/api/fixtures.ts` implements it now; #79 adds the live adapter over `src/ipc.ts`.
+// `src/api/live.ts` implements it over `src/ipc.ts`; `src/api/fixtures.ts` implements it for
+// tests, screenshots and `?fixture=` in dev.
 //
-// The #69 types are reused from `src/ipc.ts` unchanged (type-only imports, so nothing here loads
-// `@tauri-apps/api`). #74's frozen additions are declared below with the names and shapes copied
-// from #74; #79 replaces these copies with re-exports from `src/ipc.ts` once #74 merges.
+// Every native type has one definition, in `src/ipc.ts`; these are type-only re-exports, so
+// nothing here loads `@tauri-apps/api`.
 import type {
-  CatalogState,
-  ErrorCode,
-  GameLocation as GameLocationV1,
+  DiagnosticsPreview,
+  Folder,
+  GameLocation,
   Inspection,
-  InstalledRelease,
   LauncherError,
-  LoaderGuidance,
-  OperationKind,
+  OperationOutcome,
   OperationRequest,
-  Phase,
-  ProductState as ProductStateV1,
-  ProgressEvent as ProgressEventV1,
-  Readiness,
+  ProductState,
+  ProgressEvent,
   Recovery,
-  ReleaseSummary,
+  ReleaseNotes,
   RunningGame,
+  TrayRequest,
 } from "../ipc";
 
 export type {
   CatalogState,
+  DiagnosticsPreview,
   ErrorCode,
+  Folder,
+  GameLocation,
   Inspection,
   InstalledRelease,
   LauncherError,
   LoaderGuidance,
   OperationKind,
+  OperationOutcome,
   OperationRequest,
+  OutcomeReport,
   Phase,
+  ProductState,
+  ProgressEvent,
   Readiness,
   Recovery,
+  ReleaseNotes,
   ReleaseSummary,
   RunningGame,
-};
-
-// ---- #74 (frozen) ----
-
-export interface GameLocation extends GameLocationV1 {
-  /** Product ids whose install folder exists under this root. */
-  installed_products: string[];
-}
-
-export interface ProductState extends Omit<ProductStateV1, "location"> {
-  location: GameLocation | null;
-  /** A cancel was requested and the operation hasn't ended yet. */
-  cancelling: boolean;
-  /** The tracked game exited within 30 s of Play; the next Play clears it. */
-  startup_failed: { exit_code: number | null } | null;
-}
-
-export interface ProgressEvent extends ProgressEventV1 {
-  /** Filled while Repair verifies. */
-  files_done: number | null;
-  files_total: number | null;
-}
-
-export interface OutcomeReport {
-  /** Relative paths kept or carried forward. */
-  preserved: string[];
-  /** Uninstall: files left in the product root. */
-  remaining: string[];
-  /** Absolute paths, display only. */
-  clean_install_backups: string[];
-}
-
-export type OperationOutcome =
-  | { status: "succeeded"; product_id: string; kind: OperationKind; report: OutcomeReport }
-  | { status: "cancelled"; product_id: string; kind: OperationKind }
-  | { status: "failed"; product_id: string; kind: OperationKind; error: LauncherError };
-
-export interface ReleaseNotes {
-  release_id: string;
-  display_version: string;
-  /** YYYY-MM-DD */
-  release_date: string;
-  status: "alpha" | "beta" | "release";
-  /** null: a newer release whose manifest isn't cached (offline). */
-  notes: string | null;
-}
-
-export type Folder = "saves" | "settings" | "product_plugins" | "global_plugins";
-
-export interface DiagnosticsPreview {
-  text: string;
-  never_included: string[];
-}
-
-export interface TrayRequest {
-  action: "save_breaking" | "show_what_happened" | "quit_while_busy";
-  product_id: string;
-  error: LauncherError | null;
-}
+  TrayRequest,
+} from "../ipc";
 
 // ---- News view types (#80 produces them later) ----
 
@@ -130,7 +78,8 @@ export interface LauncherApi {
 
   // Patch Notes, folders, diagnostics, Start with Windows (#74)
   getReleaseNotes(productId: string): Promise<ReleaseNotes[]>;
-  openFolder(productId: string | null, folder: Folder): Promise<void>;
+  /** `true` when the call created the (plugins) folder. */
+  openFolder(productId: string | null, folder: Folder): Promise<boolean>;
   previewDiagnostics(includeLog: boolean): Promise<DiagnosticsPreview>;
   saveDiagnostics(includeLog: boolean): Promise<boolean>;
   showDiagnosticsInFolder(): Promise<void>;

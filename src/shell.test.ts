@@ -86,9 +86,9 @@ describe("fixture boundaries", () => {
     }
   });
 
-  it("src/api imports ipc.ts for types only", () => {
+  it("src/api imports ipc.ts for types only, except the live adapter", () => {
     for (const { name, text } of sources) {
-      if (!name.startsWith(join("src", "api"))) continue;
+      if (!name.startsWith(join("src", "api")) || name === join("src", "api", "live.ts")) continue;
       for (const [line] of text.matchAll(/^import[^;]*from "\.\.\/ipc";/gm)) {
         expect(line, name).toMatch(/^import type /);
       }

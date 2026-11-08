@@ -21,7 +21,7 @@
   color: var(--white);
 }
 
-.btn.primary:not([disabled]):hover {
+.btn.primary:not([disabled], [aria-disabled="true"]):hover {
   background: var(--button-hover);
   transform: translateY(-2px);
 }
@@ -31,7 +31,7 @@
   color: var(--text);
 }
 
-.btn.ghost:not([disabled]):hover {
+.btn.ghost:not([disabled], [aria-disabled="true"]):hover {
   background: var(--panel);
 }
 
@@ -48,7 +48,9 @@
   font-size: 20px;
 }
 
-.btn[disabled] {
+.btn[disabled],
+.btn[aria-disabled="true"],
+.link[aria-disabled="true"] {
   opacity: 0.45;
   cursor: default;
 }

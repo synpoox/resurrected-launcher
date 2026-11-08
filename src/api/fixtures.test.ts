@@ -41,7 +41,7 @@ describe("fixtures", () => {
 describe("selectApi", () => {
   it("selects ?fixture=<key> in dev builds", () => {
     const s = selectApi("?fixture=install", true);
-    expect(s.ok && s.key).toBe("install");
+    expect(s.ok && s.mode === "fixture" && s.key).toBe("install");
   });
 
   it("shows an error for an unknown key", () => {
@@ -52,7 +52,7 @@ describe("selectApi", () => {
 
   it("ignores ?fixture= outside dev builds", () => {
     const s = selectApi("?fixture=install", false);
-    expect(s.ok && s.key).toBe("ready");
+    expect(s.ok && s.mode === "fixture" && s.key).toBe("ready");
   });
 });
 
@@ -114,5 +114,13 @@ describe("fixture API (#74 bindings)", () => {
     await api.openNewsLink("pd2r", 1);
     expect(api.calls.map((c) => c.name)).toEqual(["openFolder", "openNewsLink"]);
     expect(JSON.stringify(api.calls)).not.toMatch(/[A-Z]:\\/);
+  });
+
+  it("reports a plugins folder as created on its first open only", async () => {
+    const api = createFixtureApi("ready");
+    expect(await api.openFolder("pd2r", "saves")).toBe(false);
+    expect(await api.openFolder("pd2r", "product_plugins")).toBe(true);
+    expect(await api.openFolder("pd2r", "product_plugins")).toBe(false);
+    expect(await api.openFolder(null, "global_plugins")).toBe(true);
   });
 });
