@@ -373,7 +373,7 @@ describe("journey states", () => {
     }
     expect(screen.getByText(/552 MB of 1\.2 GB · 12 MB\/s · about \d+ s left/)).toBeTruthy();
     await userEvent.setup().click(screen.getByRole("button", { name: "Cancel" }));
-    expect(names(api)).toContain("cancelOperation");
+    expect(names(api!)).toContain("cancelOperation");
   });
 
   it("repair shows files checked and to restore", async () => {
