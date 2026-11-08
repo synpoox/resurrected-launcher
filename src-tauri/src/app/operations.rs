@@ -209,18 +209,39 @@ impl Running {
     }
 
     /// [`ErrorCode::OperationInProgress`] while any operation or recovery runs,
-    /// or the launcher is quitting.
-    pub(super) fn refuse_any(&self) -> Result<(), LauncherError> {
+    /// or the launcher is quitting. The refusal names the busy product.
+    pub(super) fn refuse_any(&self) -> Result<(), Refusal> {
         if self.quitting {
-            return Err(quitting());
+            return Err(Refusal {
+                error: quitting(),
+                product: None,
+            });
         }
         match self.ops.keys().chain(&self.recovering).next() {
-            Some(p) => Err(LauncherError::new(
-                ErrorCode::OperationInProgress,
-                format!("{} has an operation or recovery running", p.0),
-            )),
+            Some(p) => Err(Refusal {
+                error: LauncherError::new(
+                    ErrorCode::OperationInProgress,
+                    format!("{} has an operation or recovery running", p.0),
+                ),
+                product: Some(p.clone()),
+            }),
             None => Ok(()),
         }
+    }
+}
+
+/// Why [`Running::refuse_any`] (and so [`Launcher::begin_quit`]) refused.
+#[derive(Debug)]
+pub struct Refusal {
+    pub error: LauncherError,
+    /// The product with an operation or recovery running; `None` when the
+    /// launcher is already quitting. Tray Quit asks about it (#75).
+    pub product: Option<ProductId>,
+}
+
+impl From<Refusal> for LauncherError {
+    fn from(r: Refusal) -> Self {
+        r.error
     }
 }
 
@@ -659,14 +680,12 @@ pub async fn start_operation<R: Runtime>(
     inspection_token: String,
 ) -> Result<(), LauncherError> {
     let req = request.into_current()?;
-    let resolved = launcher.resolve(&req)?;
     let cancel = Arc::new(AtomicBool::new(false));
+    // Reserved under the app operation lock before anything is read, so two
+    // starts cannot both pass and no Play or location change starts from here on.
     let reservation = {
         let mut running = launcher.running();
         running.refuse(&req.product_id)?;
-        // Under the app operation lock, so a Play cannot slip in between.
-        launcher.refuse_if_game_running(&resolved.d2r)?;
-        // Reserved first so two starts cannot both pass; inspected outside the lock.
         running
             .ops
             .insert(req.product_id.clone(), (cancel.clone(), req.kind));
@@ -675,6 +694,10 @@ pub async fn start_operation<R: Runtime>(
             product_id: req.product_id.clone(),
         }
     };
+    // While reserved the selected D2R root cannot change (#97), so the root
+    // resolved and checked here is the one the operation runs on.
+    let resolved = launcher.resolve(&req)?;
+    launcher.refuse_if_game_running(&resolved.d2r)?;
     match launcher.inspect(&resolved) {
         Ok((_, token)) if token == inspection_token => {}
         Ok(_) => {

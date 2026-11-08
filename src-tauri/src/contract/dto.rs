@@ -163,6 +163,9 @@ pub enum TrayAction {
 pub struct TrayRequest {
     pub action: TrayAction,
     pub product_id: ProductId,
+    /// Why a tray Play was refused (`show_what_happened`); `None` otherwise.
+    #[serde(default)]
+    pub error: Option<LauncherError>,
 }
 
 #[cfg(test)]

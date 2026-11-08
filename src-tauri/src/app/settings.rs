@@ -203,14 +203,16 @@ pub async fn get_release_notes(
 /// `open_folder`: opens one of the [`Folder`]s in Explorer. A missing plugins
 /// folder is created first; a missing saves or settings folder is
 /// `ProductNotInstalled`. `product_id` is `None` for global plugins only.
+/// `true` when this call created the folder.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn open_folder(
     launcher: State<'_, Arc<Launcher>>,
     product_id: Option<ProductId>,
     folder: Folder,
-) -> Result<(), LauncherError> {
+) -> Result<Versioned<bool>, LauncherError> {
     let (d2r, dir) = launcher.folder(product_id.as_ref(), folder)?;
-    if !dir.is_dir() {
+    let created = !dir.is_dir();
+    if created {
         match folder {
             Folder::ProductPlugins | Folder::GlobalPlugins => {
                 launcher.create_plugins(&d2r, &dir)?
@@ -226,7 +228,8 @@ pub async fn open_folder(
     launcher
         .desktop
         .open_folder(&dir)
-        .map_err(|e| access_denied(&format!("opening {}", dir.display()), e))
+        .map_err(|e| access_denied(&format!("opening {}", dir.display()), e))?;
+    Ok(Versioned::new(created))
 }
 
 /// `preview_diagnostics`: the redacted report for the review dialog.

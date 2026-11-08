@@ -283,7 +283,7 @@ impl Launcher {
     }
 
     /// Every product State knows: installed ones, then the cached feed's.
-    fn known_products(&self) -> Vec<ProductId> {
+    pub fn known_products(&self) -> Vec<ProductId> {
         let mut products: Vec<ProductId> = Vec::new();
         if let Ok(mut s) = locked(&self.state) {
             products.extend(s.installed_releases().iter().map(|r| r.product_id.clone()));

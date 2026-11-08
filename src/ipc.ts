@@ -320,10 +320,10 @@ export async function getReleaseNotes(productId: string): Promise<ReleaseNotes[]
 export type Folder = "saves" | "settings" | "product_plugins" | "global_plugins";
 
 /** Opens a folder in Explorer; pass `null` as the product for global plugins only.
- *  A missing plugins folder is created first. Rejects with `access_denied` or
- *  `product_not_installed`. */
-export async function openFolder(productId: string | null, folder: Folder): Promise<void> {
-  await invoke("open_folder", { product_id: productId, folder });
+ *  A missing plugins folder is created first; resolves `true` when this call
+ *  created it. Rejects with `access_denied` or `product_not_installed`. */
+export async function openFolder(productId: string | null, folder: Folder): Promise<boolean> {
+  return current(await invoke<Versioned<boolean>>("open_folder", { product_id: productId, folder }));
 }
 
 /** Mirrors `state::DiagnosticsReport`. */
@@ -380,6 +380,8 @@ export async function quitLauncher(): Promise<void> {
 export interface TrayRequest {
   action: "save_breaking" | "show_what_happened" | "quit_while_busy";
   product_id: string;
+  /** Why a tray Play was refused (show_what_happened); null otherwise. */
+  error: LauncherError | null;
 }
 
 /** Event "tray-request", Versioned like the others. */

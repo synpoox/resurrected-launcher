@@ -4,7 +4,8 @@
 //!
 //! | Module | Owns |
 //! | --- | --- |
-//! | [`app`] | Narrow typed Tauri commands, events, window/tray/single-instance lifecycle. |
+//! | [`app`] | Narrow typed Tauri commands and events. |
+//! | [`lifecycle`] | Window, tray, single instance, close-to-tray, Quit and `--autostart`. |
 //! | [`catalog`] | Product catalog, release feed and manifest reading/validation. |
 //! | [`install`] | Install, adopt, repair, update, uninstall, cancel and restart recovery. |
 //! | [`game`] | D2R detection, readiness, explicit product launch and process tracking. |
@@ -17,6 +18,7 @@ pub mod catalog;
 pub mod contract;
 pub mod game;
 pub mod install;
+pub mod lifecycle;
 pub mod state;
 
-pub use app::run;
+pub use lifecycle::run;

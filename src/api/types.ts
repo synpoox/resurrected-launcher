@@ -94,6 +94,7 @@ export interface DiagnosticsPreview {
 export interface TrayRequest {
   action: "save_breaking" | "show_what_happened" | "quit_while_busy";
   product_id: string;
+  error: LauncherError | null;
 }
 
 // ---- News view types (#80 produces them later) ----
@@ -129,7 +130,8 @@ export interface LauncherApi {
 
   // Patch Notes, folders, diagnostics, Start with Windows (#74)
   getReleaseNotes(productId: string): Promise<ReleaseNotes[]>;
-  openFolder(productId: string | null, folder: Folder): Promise<void>;
+  /** `true` when the call created the (plugins) folder. */
+  openFolder(productId: string | null, folder: Folder): Promise<boolean>;
   previewDiagnostics(includeLog: boolean): Promise<DiagnosticsPreview>;
   saveDiagnostics(includeLog: boolean): Promise<boolean>;
   showDiagnosticsInFolder(): Promise<void>;

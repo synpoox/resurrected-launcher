@@ -1059,6 +1059,70 @@ fn play_and_location_changes_wait_for_a_running_recovery() {
     rig.play().unwrap();
 }
 
+/// A start reserves before it reads the D2R root (#97): while it resolves, no
+/// location change or Play can start, and a game started outside the launcher
+/// in that window is still seen before the operation runs.
+#[test]
+fn a_game_started_while_an_operation_resolves_its_root_refuses_the_start() {
+    let rig = Rig::new();
+    let r1 = rig.publish(PD2R_1);
+    rig.game.product_root(&r1);
+    rig.start_up();
+    assert_eq!(rig.run("install", json!({}))["status"], "succeeded");
+    let repair = rig.inspect("repair", json!({})).unwrap();
+
+    let (entered_tx, entered) = channel();
+    let (release, release_rx) = channel();
+    *rig.releases.1.lock().unwrap() = Some((entered_tx, release_rx));
+    let webview = rig.webview.clone();
+    let token = repair.token.clone();
+    let start = std::thread::spawn(move || {
+        invoke(
+            &webview,
+            "start_operation",
+            json!({ "request": request("repair", json!({})), "inspection_token": token }),
+        )
+    });
+    // The start is inside `resolve`, past reading the D2R root.
+    entered.recv_timeout(Duration::from_secs(20)).unwrap();
+
+    // Refused at once, not queued behind the read: the root cannot change and
+    // no Play starts. Run on threads so a regression fails instead of hanging.
+    *rig.desktop.pick.lock().unwrap() = Some(rig.game.d2r().to_owned());
+    let attempt = |cmd: &'static str, body: Value| {
+        let (tx, rx) = channel();
+        let webview = rig.webview.clone();
+        std::thread::spawn(move || tx.send(invoke(&webview, cmd, body)).unwrap());
+        rx
+    };
+    let choose = attempt("choose_game_location", json!({}));
+    let play = attempt("play_product", json!({ "product_id": "pd2r" }));
+    for refused in [choose, play] {
+        let reply = refused
+            .recv_timeout(Duration::from_secs(5))
+            .expect("refused at once");
+        assert_eq!(code(reply.unwrap_err()), "operation_in_progress");
+    }
+    assert!(rig.host.spawned.lock().unwrap().is_empty());
+
+    // A game started outside the launcher between the read and the check.
+    rig.host
+        .spawn(&rig.game.d2r().join("D2R.exe"), &[], rig.game.d2r())
+        .unwrap();
+    release.send(()).unwrap();
+    assert_eq!(code(start.join().unwrap().unwrap_err()), "game_running");
+    // The refusal freed the reservation; no operation ran.
+    assert_eq!(rig.state().running, None);
+    assert!(rig.outcomes.try_recv().is_err());
+
+    rig.host.exit_all();
+    assert_eq!(
+        rig.start("repair", json!({}), &repair.token).unwrap(),
+        Value::Null
+    );
+    assert_eq!(rig.outcome()["status"], "succeeded");
+}
+
 /// An interrupted first install leaves a journal but no installed record; startup
 /// recovers it through the cached feed's product list.
 #[test]
@@ -1250,6 +1314,7 @@ fn open_folder_builds_each_path_natively_and_creates_missing_plugins_folders() {
             "open_folder",
             json!({ "product_id": product, "folder": folder }),
         )
+        .map(data::<bool>)
     };
     assert_eq!(
         code(open(json!("pd2r"), "settings").unwrap_err()),
@@ -1266,12 +1331,19 @@ fn open_folder_builds_each_path_natively_and_creates_missing_plugins_folders() {
         "never played: no saves folder yet"
     );
     fs::create_dir_all(&saves).unwrap();
-    open(json!("pd2r"), "saves").unwrap();
-    open(json!("pd2r"), "settings").unwrap();
+    assert!(!open(json!("pd2r"), "saves").unwrap());
+    assert!(!open(json!("pd2r"), "settings").unwrap());
     let plugins = root.join(r"d2rloader\plugins");
     let _ = fs::remove_dir_all(&plugins);
-    open(json!("pd2r"), "product_plugins").unwrap();
+    assert!(
+        open(json!("pd2r"), "product_plugins").unwrap(),
+        "reports that it created the folder"
+    );
     assert!(plugins.is_dir(), "created under the guarded product root");
+    assert!(
+        !open(json!("pd2r"), "product_plugins").unwrap(),
+        "already there"
+    );
 
     // The D2R root has no disposable sentinel, so the guard refuses to create it.
     let global = rig.game.d2r().join(r"d2rloader\plugins");
@@ -1287,12 +1359,12 @@ fn open_folder_builds_each_path_natively_and_creates_missing_plugins_folders() {
         b"",
     )
     .unwrap();
-    open(Value::Null, "global_plugins").unwrap();
+    assert!(open(Value::Null, "global_plugins").unwrap());
     assert!(global.is_dir());
 
     assert_eq!(
         *rig.desktop.folders.lock().unwrap(),
-        [saves, root.clone(), plugins, global]
+        [saves, root.clone(), plugins.clone(), plugins, global]
     );
     assert_eq!(
         code(open(json!("pd2r"), "global_plugins").unwrap_err()),
