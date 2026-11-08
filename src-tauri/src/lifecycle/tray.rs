@@ -28,7 +28,10 @@ use crate::contract::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
     /// `id` is `<action>:<product id>`.
-    Action { id: String, label: String },
+    Action {
+        id: String,
+        label: String,
+    },
     Disabled(String),
 }
 
@@ -377,8 +380,13 @@ impl Model {
         };
         let started = block_on(async {
             let plan = app::inspect_operation(app.state(), Versioned::new(req.clone())).await?;
-            app::start_operation(app.clone(), app.state(), Versioned::new(req), plan.data.token)
-                .await
+            app::start_operation(
+                app.clone(),
+                app.state(),
+                Versioned::new(req),
+                plan.data.token,
+            )
+            .await
         });
         // A refused start shows as an error; Show what happened opens the window.
         match started {
@@ -431,7 +439,9 @@ fn menu<R: Runtime>(app: &AppHandle<R>, views: &[ProductView]) -> tauri::Result<
             Item::Action { id, label } => {
                 menu.append(&MenuItem::with_id(app, id, label, true, None::<&str>)?)?
             }
-            Item::Disabled(label) => menu.append(&MenuItem::new(app, label, false, None::<&str>)?)?,
+            Item::Disabled(label) => {
+                menu.append(&MenuItem::new(app, label, false, None::<&str>)?)?
+            }
         }
     }
     if !items.is_empty() {
@@ -571,10 +581,7 @@ mod tests {
         assert_eq!(v.overlay, Overlay::Error);
         assert_eq!(
             labels(&v),
-            [
-                "Try again [retry:pd2r]",
-                "Show what happened [show:pd2r]"
-            ]
+            ["Try again [retry:pd2r]", "Show what happened [show:pd2r]"]
         );
     }
 

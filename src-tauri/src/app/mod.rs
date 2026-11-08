@@ -32,9 +32,9 @@ mod settings;
 mod winapi;
 mod window;
 
-use tauri::{ipc::Invoke, Runtime};
 #[cfg(test)]
 use tauri::WebviewWindowBuilder;
+use tauri::{ipc::Invoke, Runtime};
 
 use crate::contract::{PingResponse, Versioned, UMBRELLA_DISPLAY_NAME};
 

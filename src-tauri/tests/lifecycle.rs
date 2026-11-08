@@ -57,29 +57,36 @@ fn helper_instance() {
     let marker = PathBuf::from(marker);
     // mock_context's identifier is not the real launcher's, so a running launcher
     // on this machine is never involved.
-    let _app = lifecycle::builder(mock_builder(), move |_| {
+    lifecycle::builder(mock_builder(), move |_| {
         fs::write(&marker, "setup ran")?;
+        // Only the first instance gets here; a second one exits inside build().
+        println!("ready");
+        std::thread::spawn(|| {
+            std::io::stdin().read_line(&mut String::new()).unwrap();
+            std::process::exit(0);
+        });
+        // Setup runs on the thread owning the plugin's window: pump it so a second
+        // instance's message is delivered. Never returns.
+        let mut msg = [0usize; 8];
+        // SAFETY: plain Win32 message loop on this thread's queue.
+        while unsafe { GetMessageW(&mut msg, 0, 0, 0) } > 0 {
+            unsafe { DispatchMessageW(&msg) };
+        }
         Ok(())
     })
     .build(mock_context(noop_assets()))
-    .unwrap();
-    // Only the first instance gets here; a second one exits inside build().
-    println!("ready");
-    std::thread::spawn(|| {
-        std::io::stdin().read_line(&mut String::new()).unwrap();
-        std::process::exit(0);
-    });
-    // Pumps the plugin's window, so a second instance's message is delivered.
-    let mut msg = [0usize; 8];
-    // SAFETY: plain Win32 message loop on this thread's queue.
-    while unsafe { GetMessageW(&mut msg, 0, 0, 0) } > 0 {
-        unsafe { DispatchMessageW(&msg) };
-    }
+    .unwrap()
+    .run(|_, _| {});
 }
 
 fn instance(marker: &Path) -> std::process::Child {
     Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "helper_instance", "--nocapture", "--test-threads=1"])
+        .args([
+            "--exact",
+            "helper_instance",
+            "--nocapture",
+            "--test-threads=1",
+        ])
         .env(INSTANCE_MARKER, marker)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -94,7 +101,8 @@ fn second_instance_exits_before_constructing_the_launcher() {
     let mut first = instance(&first_marker);
     let mut out = BufReader::new(first.stdout.take().unwrap());
     let mut line = String::new();
-    while line.trim() != "ready" {
+    // libtest may print "test helper_instance ... " on the same line.
+    while !line.trim_end().ends_with("ready") {
         line.clear();
         assert_ne!(out.read_line(&mut line).unwrap(), 0, "first instance ended");
     }

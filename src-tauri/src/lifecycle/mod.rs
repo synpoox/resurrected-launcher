@@ -99,10 +99,14 @@ pub fn builder<R: Runtime>(
     builder: Builder<R>,
     setup: impl FnOnce(&mut App<R>) -> Result<(), Box<dyn Error>> + Send + 'static,
 ) -> Builder<R> {
-    plugins(builder.plugin(tauri_plugin_single_instance::init(|app, _, _| show_main(app))))
-        .invoke_handler(crate::app::invoke_handler())
-        .on_window_event(hide_on_close)
-        .setup(setup)
+    plugins(
+        builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            show_main(app)
+        })),
+    )
+    .invoke_handler(crate::app::invoke_handler())
+    .on_window_event(hide_on_close)
+    .setup(setup)
 }
 
 /// The Rust-side plugins besides single instance.
