@@ -242,17 +242,12 @@ mod tests {
         );
     }
 
-    /// The starter file the orchestrator uploads to the `catalog` release (#162).
+    /// news/news.json is what the publish-news workflow uploads to the `catalog`
+    /// release (#167). The workflow runs this test first, so it checks only that
+    /// the launcher accepts the file, not what it says.
     #[test]
-    fn starter_news_example_parses() {
-        let bytes = include_bytes!("../../../docs/release/news.example.json");
-        let parsed = news::News::parse(bytes).expect("docs/release/news.example.json is valid");
-        let items = parsed.for_product(&ProductId("pd2r".into()));
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].tag, "Announcement");
-        assert_eq!(
-            items[0].url,
-            "https://github.com/synpoox/pd2-resurrected/releases/tag/v0.2.0-alpha"
-        );
+    fn published_news_parses() {
+        let bytes = include_bytes!("../../../news/news.json");
+        news::News::parse(bytes).expect("news/news.json is valid");
     }
 }
