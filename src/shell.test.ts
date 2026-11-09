@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 
 const read = (path: string) => readFileSync(path, "utf8");
 
-// Every source file under src/, recursively, excluding tests.
+// Every text source file under src/, recursively, excluding tests and binary images.
 const sources = readdirSync("src", { recursive: true, withFileTypes: true })
-  .filter((e) => e.isFile() && !/\.test\.tsx?$/.test(e.name))
+  .filter((e) => e.isFile() && !/\.test\.tsx?$/.test(e.name) && !/\.(?:webp|png|jpe?g)$/i.test(e.name))
   .map((e) => {
     const path = join(e.parentPath, e.name);
     return { name: path, text: read(path) };
