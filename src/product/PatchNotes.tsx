@@ -12,7 +12,7 @@ function longDate(day: string): string {
   return new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
 
-function Text({ inlines }: { inlines: Inline[] }) {
+export function Text({ inlines }: { inlines: Inline[] }) {
   return inlines.map((n, i) =>
     n.kind === "strong" ? (
       <strong key={i}>{n.text}</strong>
@@ -91,7 +91,7 @@ function SectionBody({ blocks }: { blocks: Block[] }) {
 const sectionId = (releaseKey: string, i: number) => `${releaseKey}-s${i}`;
 
 /** Each section: a large italic heading over its own bordered box. */
-function NotesSections({ releaseKey, sections }: { releaseKey: string; sections: NotesSection[] }) {
+export function NotesSections({ releaseKey, sections }: { releaseKey: string; sections: NotesSection[] }) {
   return sections.map((section, i) => (
     <section
       key={i}

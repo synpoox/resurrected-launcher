@@ -352,6 +352,32 @@ describe("toasts", () => {
     expect(settingsItem().textContent).toBe("Settings");
   });
 
+  it("updated with release notes opens What's new once, instead of the Updated toast (#189)", async () => {
+    const { user, su } = mount("updated-notes");
+    const dialog = await screen.findByRole("dialog", { name: "What's new in launcher 1.3.0" });
+    expect(dialog.textContent).toContain("Faster patch checks and a clearer restart prompt.");
+    expect(within(dialog).getByRole("heading", { name: "Improvements" })).toBeTruthy();
+    expect(within(dialog).getByText("Restart to update").tagName).toBe("STRONG");
+    expect(within(notifications()).queryByText("Updated to launcher 1.3.0")).toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: "Release page" }));
+    expect(names(su)).toContain("openWhatsNew");
+    await user.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    // The next start of the same version doesn't open it again.
+    cleanup();
+    su.dispose();
+    mount("updated-notes");
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("updated without notes keeps the Updated toast and opens no dialog", async () => {
+    mount("updated");
+    await within(notifications()).findByText("Updated to launcher 1.3.0");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("installing on Quit shows Quit copy, not the restart promise, and no toast", async () => {
     mount("quitting");
     const screenEl = await within(screen.getByRole("main")).findByRole("status");
