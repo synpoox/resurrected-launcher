@@ -640,3 +640,70 @@ fn requests_that_do_not_fit_the_installed_record_are_refused() {
     }
     assert_eq!(tree(&root), before);
 }
+
+/// #137: a real `<D2R>\mods\<folder>` (passes the write guard as a mod folder) holds
+/// no disposable sentinel, like a tree installed by an older launcher or by hand.
+/// Clean install must not plan copying a sentinel that is not there.
+#[test]
+fn clean_install_over_a_real_mod_folder_without_sentinel_keeps_a_labelled_backup() {
+    let rig = Rig::new();
+    fs::write(rig.game.d2r().join("D2R.exe"), b"not really the game").unwrap();
+    let (r1, m1) = rig.served(PD2R_1);
+    let root = rig.game.installed(&r1);
+    fs::remove_file(root.join(DISPOSABLE_SENTINEL)).unwrap();
+    let armor = "PD2R.mpq/data/global/excel/armor.txt";
+    fs::create_dir_all(root.join(armor).parent().unwrap()).unwrap();
+    fs::write(root.join(armor), b"older release's armor").unwrap();
+    let before = tree(&root);
+
+    let mut clean = rig.request(CleanInstall, &r1, &m1, None);
+    clean.consent_clean_install = true;
+    let report = rig.run(&clean).unwrap();
+
+    let mut want = release_tree(&r1);
+    want.remove(DISPOSABLE_SENTINEL);
+    assert_eq!(
+        tree(&root),
+        want,
+        "no sentinel appears in a real mod folder"
+    );
+    let [backup] = &report.clean_install_backups[..] else {
+        panic!("one labelled backup: {:?}", report.clean_install_backups);
+    };
+    assert_eq!(tree(backup), before, "the old folder, byte for byte");
+    assert_eq!(rig.installed_release().as_deref(), Some(PD2R_1));
+    let scratch: Vec<_> = fs::read_dir(root.parent().unwrap())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .filter(|n| n.contains(".resurrected-") && !n.ends_with(".resurrected-lock"))
+        .collect();
+    assert!(scratch.is_empty(), "scratch left: {scratch:?}");
+}
+
+/// #137: with no sentinel, the root rename is entry 0. A crash right after it (the
+/// root is absent, only `K` holds the old folder) still recovers byte for byte.
+#[test]
+fn clean_install_crash_after_moving_a_real_mod_folder_aside_recovers_it() {
+    let rig = Rig::new();
+    fs::write(rig.game.d2r().join("D2R.exe"), b"not really the game").unwrap();
+    let (r1, m1) = rig.served(PD2R_1);
+    let root = rig.game.installed(&r1);
+    fs::remove_file(root.join(DISPOSABLE_SENTINEL)).unwrap();
+    add_unknown_plugin(&root);
+    let before = tree(&root);
+    let crash = FailAt {
+        boundary: Boundary::CleanInstallBackupMade,
+        point: FaultPoint::AfterEntry(0),
+    };
+    let mut clean = rig.request(CleanInstall, &r1, &m1, None);
+    clean.consent_clean_install = true;
+
+    assert!(ops::run(&rig.env(&crash), &clean).is_err());
+    assert!(!root.exists(), "the crash left the old folder moved aside");
+    let recovered = ops::recover(&rig.env(&NoFaults), rig.game.d2r(), &m1).unwrap();
+
+    assert_eq!(recovered, Recovery::RolledBack);
+    assert_eq!(tree(&root), before);
+    assert_eq!(rig.installed_release(), None);
+    assert_no_scratch(&root);
+}

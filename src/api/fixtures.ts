@@ -112,8 +112,18 @@ const NEWS: Record<string, NewsState> = {
   pd2r: {
     status: "ok",
     items: [
-      { tag: "Announcement", title: "TCP/IP co-op testing weekend", published: iso(7) },
-      { tag: "Guide", title: "Backing up your saves before an update", published: iso(14) },
+      {
+        tag: "Announcement",
+        title: "TCP/IP co-op testing weekend",
+        summary: "Two days of open direct co-op games on the alpha.",
+        published: iso(7),
+      },
+      {
+        tag: "Guide",
+        title: "Backing up your saves before an update",
+        summary: "Where D2R keeps characters and stash, and how to copy them somewhere safe first.",
+        published: iso(14),
+      },
       { tag: "Guide", title: "Setting up D2RLoader", published: iso(30) },
     ],
   },

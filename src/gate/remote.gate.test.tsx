@@ -18,15 +18,19 @@ afterEach(() => {
 const HOSTILE = `<img src="https://evil.example/x.png" onerror="alert(1)"><a href="https://evil.example">x</a>`;
 
 describe("news renders as text and opens by index", () => {
-  it("markup in a headline and tag is shown as text, never parsed", async () => {
+  it("markup in a headline, summary and tag is shown as text, never parsed", async () => {
     mount("ready", {
       prepare: (a) => {
-        a.scene.news.pd2r = { status: "ok", items: [{ tag: "<b>Guide</b>", title: HOSTILE, published: "2026-11-01" }] };
+        a.scene.news.pd2r = {
+          status: "ok",
+          items: [{ tag: "<b>Guide</b>", title: HOSTILE, summary: `summary ${HOSTILE}`, published: "2026-11-01" }],
+        };
       },
     });
     const feed = await screen.findByRole("region", { name: "News" });
     await within(feed).findByText((_, el) => el?.classList.contains("feed-title") === true);
     expect(feed.textContent).toContain(HOSTILE);
+    expect(feed.querySelector(".feed-summary")!.textContent).toBe(`summary ${HOSTILE}`);
     expect(feed.textContent).toContain("<b>Guide</b>");
     expect(feed.querySelector("img, a, b, script, iframe")).toBeNull();
     expect(document.querySelector("img[src^='http'], a[href^='http'], iframe")).toBeNull();
