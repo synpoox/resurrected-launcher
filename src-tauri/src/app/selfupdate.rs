@@ -643,15 +643,21 @@ pub fn begin_quit<R: Runtime>(app: &AppHandle<R>) -> Result<(), Refusal> {
     let launcher = app.state::<Arc<Launcher>>();
     launcher.begin_quit()?;
     if let Some(updater) = app.try_state::<Arc<SelfUpdater>>() {
-        let _ = updater.install_on_quit(app, &launcher);
+        if let Err(e) = updater.install_on_quit(app, &launcher) {
+            launcher.log(&format!("launcher update not installed on quit: {e}"));
+        }
     }
     Ok(())
 }
 
 fn spawn_download<R: Runtime>(app: AppHandle<R>, updater: Arc<SelfUpdater>) {
     tauri::async_runtime::spawn(async move {
-        // The outcome arrives as a phase event.
-        let _ = updater.download(&app).await;
+        // The outcome arrives as a phase event; a failure is also logged.
+        if let Err(e) = updater.download(&app).await {
+            if let Some(launcher) = app.try_state::<Arc<Launcher>>() {
+                launcher.log(&format!("launcher update download failed: {e}"));
+            }
+        }
     });
 }
 

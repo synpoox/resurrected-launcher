@@ -105,6 +105,7 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
   - There are no buttons for products that aren't installed. A note says the launcher doesn't list, enable or disable plugins.
 - **Troubleshooting**:
   - "Export diagnostics…" opens a review dialog: the full report text, a never-included list, the Windows user name replaced by `<you>`, and an optional launcher-log checkbox.
+  - The launcher log is `launcher.log` in app-local data (`%LOCALAPPDATA%\com.projectd2r.launcher`), written in release builds too: a line at every start, state file problems, and failures that have no other trace (startup recovery, catalog refresh, launcher update download or install, the first-close notice). It is rotated to `launcher.log.1` at 1 MiB. The report includes its last 64 KiB, redacted ([#125](https://github.com/synpoox/resurrected-launcher/issues/125)).
   - "Save as file…" shows a toast with "Show in folder". Nothing is sent.
   - A pointer says Repair is in the product's `⋯` menu.
 
