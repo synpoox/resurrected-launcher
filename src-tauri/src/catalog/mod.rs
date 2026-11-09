@@ -23,8 +23,8 @@ pub(crate) use check::https as public_https;
 pub use error::CatalogError;
 pub use feed::{Availability, Feed, FeedProduct, ReleasePointer, MAX_MANIFEST_SIZE};
 pub use manifest::{
-    Archive, ArchiveFormat, Compatibility, GameBuild, Ownership, Platform, ReleaseManifest,
-    ReleaseStatus, Saves, Setting,
+    Archive, ArchiveFormat, Compatibility, GameBuild, LoaderBuild, Ownership, Platform,
+    ReleaseManifest, ReleaseStatus, Saves, Setting,
 };
 pub use sync::{
     apply, fetch, manifest_identity, refresh, CachedSha, Fetch, Fetched, DEFAULT_FEED_URL,

@@ -193,6 +193,35 @@ fn manifest_rejections() -> Vec<(&'static str, CatalogError)> {
             },
         ),
         (
+            "loader-build-unknown-version",
+            invalid(
+                "compatibility.loader_builds[3].version",
+                "must be one of compatibility.loader_versions",
+            ),
+        ),
+        (
+            "loader-build-unpinned-version",
+            invalid(
+                "compatibility.loader_versions[0]",
+                "has no pinned build in compatibility.loader_builds",
+            ),
+        ),
+        (
+            "loader-build-zero-hash",
+            placeholder("compatibility.loader_builds[1].sha256"),
+        ),
+        (
+            "loader-build-missing-size",
+            placeholder("compatibility.loader_builds[1].size"),
+        ),
+        (
+            "loader-build-duplicate-file",
+            invalid(
+                "compatibility.loader_builds[3].file",
+                "duplicate file for this loader version",
+            ),
+        ),
+        (
             "save-breaking-without-notice",
             InvalidField {
                 field: field("saves.incompatibility_notice"),
@@ -268,6 +297,43 @@ fn valid_release_manifest_describes_the_release() {
     );
     assert_eq!(m.compatibility.required_settings[0].key, "default_mod");
     assert_eq!(m.saves.folder, path("PD2R"));
+}
+
+/// #121: the official D2RLoader 1.3.1-beta is pinned by version and bytes.
+#[test]
+fn release_manifest_pins_loader_builds_by_version_and_sha256() {
+    let m = valid_manifest();
+    let pinned: Vec<_> = m
+        .compatibility
+        .loader_builds
+        .iter()
+        .filter(|b| b.version == "1.3.1-beta")
+        .map(|b| (b.file.as_str(), b.size, b.sha256.to_string()))
+        .collect();
+    assert_eq!(
+        pinned,
+        [
+            (
+                "D2RLoader.exe",
+                23_331_160,
+                "93021dad48533bcfca8a95c69a0cc00cdb9008a3ce6ceba1d04c7aca71985a10".to_owned()
+            ),
+            (
+                "D2RCore.dll",
+                18_938_712,
+                "2a868d013d2e0830bd2d9e04b918b19e46a73cf726c833e70d089b948fdeb5a2".to_owned()
+            ),
+        ]
+    );
+}
+
+/// #121: `loader_builds` is additive; published manifests without it still parse.
+#[test]
+fn release_manifest_without_loader_builds_still_parses() {
+    let m =
+        ReleaseManifest::parse(&fixture("real/pd2r-0.1.0-alpha/release-manifest.json")).unwrap();
+    assert_eq!(m.compatibility.loader_versions, ["1.3.1-beta"]);
+    assert!(m.compatibility.loader_builds.is_empty());
 }
 
 #[test]
