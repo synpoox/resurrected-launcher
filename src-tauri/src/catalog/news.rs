@@ -26,6 +26,7 @@ pub const MAX_NEWS_ITEMS: usize = 50;
 pub const NEWS_SHOWN: usize = 3;
 
 const MAX_TITLE: usize = 120;
+const MAX_SUMMARY: usize = 200;
 const MAX_URL: usize = 512;
 const MAX_KIND: usize = 32;
 
@@ -56,6 +57,8 @@ pub struct NewsEntry {
     /// Display tag, from the kind ("Announcement", "Guide").
     pub tag: &'static str,
     pub title: String,
+    /// Optional short description under the title (#139), plain text.
+    pub summary: Option<String>,
     /// `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SSZ`.
     pub published: String,
     /// `https` on [`LINK_HOSTS`].
@@ -80,6 +83,8 @@ struct RawItem {
     product_id: String,
     kind: String,
     title: String,
+    #[serde(default)]
+    summary: Option<String>,
     published: String,
     url: String,
 }
@@ -106,6 +111,10 @@ impl News {
             let product_id = product_id(&at("product_id"), item.product_id)?;
             let kind = text(&at("kind"), item.kind, MAX_KIND)?;
             let title = text(&at("title"), item.title, MAX_TITLE)?;
+            let summary = item
+                .summary
+                .map(|s| text(&at("summary"), s, MAX_SUMMARY))
+                .transpose()?;
             let published = date(&at("published"), item.published)?;
             let url = link(&at("url"), item.url)?;
             if let Some(tag) = tag_of(&kind) {
@@ -113,6 +122,7 @@ impl News {
                     product_id,
                     tag,
                     title,
+                    summary,
                     published,
                     url,
                 });
@@ -400,6 +410,35 @@ mod tests {
         }
         let trimmed = one(item("pd2r", "guide", "  Hi  ", "2026-11-01", GH)).unwrap();
         assert_eq!(trimmed.items[0].title, "Hi");
+    }
+
+    #[test]
+    fn summaries_are_optional_bounded_plain_text() {
+        let none = one(item("pd2r", "guide", "T", "2026-11-01", GH)).unwrap();
+        assert_eq!(none.items[0].summary, None);
+        let mut v = item("pd2r", "guide", "T", "2026-11-01", GH);
+        v["summary"] = "  Back up before you patch.  ".into();
+        assert_eq!(
+            one(v).unwrap().items[0].summary.as_deref(),
+            Some("Back up before you patch.")
+        );
+        let mut max = item("pd2r", "guide", "T", "2026-11-01", GH);
+        max["summary"] = "x".repeat(MAX_SUMMARY).into();
+        assert!(one(max).is_ok());
+        for summary in [
+            "".to_owned(),
+            "   ".to_owned(),
+            "x".repeat(MAX_SUMMARY + 1),
+            "line\nbreak".to_owned(),
+            "rtl\u{202E}gnp.exe".to_owned(),
+        ] {
+            let mut v = item("pd2r", "guide", "T", "2026-11-01", GH);
+            v["summary"] = summary.clone().into();
+            assert!(one(v).is_err(), "{summary:?}");
+        }
+        let mut wrong = item("pd2r", "guide", "T", "2026-11-01", GH);
+        wrong["summary"] = 3.into();
+        assert!(one(wrong).is_err());
     }
 
     #[test]
