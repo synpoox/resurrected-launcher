@@ -73,7 +73,8 @@ export interface Products {
   products: ProductMap;
   /** Re-reads every product's state, after startup recovery and coalesced with event re-reads. */
   refresh: () => Promise<void>;
-  dismissBackups: (productId: string) => void;
+  /** Clears the product's backup notice; with `only`, just when it still shows those backups. */
+  dismissBackups: (productId: string, only?: string[]) => void;
 }
 
 /**
@@ -106,7 +107,10 @@ export function useProducts(api: LauncherApi): Products {
   }, [api]);
 
   const dismissBackups = useCallback(
-    (id: string) => setProducts((m) => (m[id] ? { ...m, [id]: { ...m[id], backups: [] } } : m)),
+    (id: string, only?: string[]) =>
+      setProducts((m) =>
+        m[id] && (only === undefined || m[id].backups === only) ? { ...m, [id]: { ...m[id], backups: [] } } : m,
+      ),
     [],
   );
 

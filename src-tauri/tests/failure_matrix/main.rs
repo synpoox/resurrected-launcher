@@ -280,6 +280,14 @@ impl Rig {
     /// The installed PD2R release ID, after checking the record also names that
     /// fixture's exact manifest and is marked verified.
     pub fn installed_release(&self) -> Option<String> {
+        let (id, verified) = self.installed_record()?;
+        assert!(verified, "{id}: record not verified");
+        Some(id)
+    }
+
+    /// The installed PD2R release ID and whether its record is verified, after
+    /// checking the record names that fixture's exact manifest.
+    pub fn installed_record(&self) -> Option<(String, bool)> {
         let state = self.state.lock().unwrap();
         let r = state
             .installed_releases()
@@ -292,8 +300,7 @@ impl Rig {
             "{}: manifest sha",
             r.release_id
         );
-        assert!(r.verified, "{}: record not verified", r.release_id);
-        Some(r.release_id.clone())
+        Some((r.release_id.clone(), r.verified))
     }
 
     pub fn recover(&self, injector: &dyn FaultInjector) -> Result<Recovery, LauncherError> {
@@ -484,11 +491,17 @@ impl Scenario {
             tree(&self.root).keys().collect::<Vec<_>>(),
             want.keys().collect::<Vec<_>>(),
         );
+        let found = self.rig.installed_record();
         assert_eq!(
-            self.rig.installed_release().as_deref(),
+            found.as_ref().map(|(id, _)| id.as_str()),
             record,
             "{case}: installed-release record"
         );
+        // A Repair that did not commit leaves the product flagged for Repair (#155).
+        let flagged = !new && self.op.kind == Repair;
+        if let Some((_, verified)) = found {
+            assert_eq!(verified, !flagged, "{case}: record verified");
+        }
         let backups = clean_install_backups(&self.root);
         if new && self.op.kind == CleanInstall {
             assert_eq!(backups.len(), 1, "{case}: one labelled backup");

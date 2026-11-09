@@ -182,7 +182,6 @@ fn phase_b(d2r: &Path, launcher: &dyn Fn() -> Rig) -> Findings {
     assert_eq!(rig.state().readiness, Readiness::RecoveryRequired);
     assert_eq!(code(rig.play().unwrap_err()), "recovery_required");
     rig.start_up();
-    assert_eq!(rig.state().readiness, Readiness::Ready);
     assert!(!journal.exists());
     // Complete, old or new: the new installation is the repaired one; the old
     // one is the installation before the repair, missing the deleted file.
@@ -190,6 +189,7 @@ fn phase_b(d2r: &Path, launcher: &dyn Fn() -> Rig) -> Findings {
     let mut recovery = changes(&s3, &s4);
     if recovery.is_empty() {
         is_complete();
+        assert_eq!(rig.state().readiness, Readiness::Ready);
         recovery.push("rolled forward: the repaired installation".into());
     } else {
         assert_eq!(
@@ -198,6 +198,8 @@ fn phase_b(d2r: &Path, launcher: &dyn Fn() -> Rig) -> Findings {
             "recovery left neither the old nor the new installation"
         );
         recovery.push("rolled back: the installation before the repair".into());
+        // Still flagged for Repair (#155) until it finishes.
+        assert_eq!(rig.state().readiness, Readiness::RepairNeeded);
         let outcome = rig.run("repair", json!({}));
         assert_eq!(outcome["status"], "succeeded", "repair: {outcome}");
         is_complete();

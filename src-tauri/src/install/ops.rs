@@ -213,7 +213,7 @@ impl Steps for OpSteps<'_> {
 }
 
 /// Labelled clean-install backups beside `root`, oldest first.
-fn clean_install_backups(root: &Path) -> Vec<PathBuf> {
+pub fn clean_install_backups(root: &Path) -> Vec<PathBuf> {
     let (Some(parent), Some(name)) = (root.parent(), root.file_name()) else {
         return Vec::new();
     };
@@ -268,6 +268,11 @@ pub fn run(env: &Env, req: &Request) -> Result<Report, LauncherError> {
         sink: &sink,
     };
     let tx_plan = insp.plan.clone();
+    if req.kind == Repair {
+        // Before the journal: ended at any point from here, the product stays
+        // flagged for Repair; the commit's fresh record clears it (#155).
+        lock(env.state)?.mark_unverified(&req.release.product_id)?;
+    }
     let mut steps = OpSteps {
         env,
         req,

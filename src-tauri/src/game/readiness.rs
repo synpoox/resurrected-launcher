@@ -35,6 +35,9 @@ pub struct Facts<'a> {
     pub recommended: Option<&'a ReleaseManifest>,
     /// An interrupted transaction journal exists for this product.
     pub recovery_pending: bool,
+    /// The installed-release record is not verified: a Repair started and did
+    /// not finish (#155). Ignored when nothing is installed.
+    pub unverified: bool,
     /// [`super::process::running_under`] the location's root.
     pub running: &'a [RunningGame],
 }
@@ -59,6 +62,7 @@ pub struct BuildHashCache {
 ///   SHA-256 match one of those pins, else `loader_modified`. Unpinned files (and
 ///   every file when `loader_builds` is empty) are checked by version only.
 /// - `not_installed` when `installed` is `None` (also when `recommended` is `None`).
+/// - `repair_needed` when installed but [`Facts::unverified`].
 /// - `update_available` when both are present with different `release_id`s.
 ///
 /// Errors only for unexpected I/O while hashing ([`crate::contract::ErrorCode::Internal`]
@@ -150,6 +154,7 @@ pub fn assess(
     }
     Ok(match (facts.installed, facts.recommended) {
         (None, _) => Readiness::NotInstalled,
+        (Some(_), _) if facts.unverified => Readiness::RepairNeeded,
         (Some(i), Some(r)) if r.release_id != i.release_id => Readiness::UpdateAvailable,
         _ => Readiness::Ready,
     })

@@ -112,7 +112,7 @@ export function Shell({ product, open, tab }: ShellProps) {
             tab={sceneOpen === open ? tab : undefined}
             trayFocus={trayFocus?.product_id === current.id ? trayFocus : undefined}
             onOpenSettings={() => select({ kind: "settings" })}
-            onDismissBackups={() => dismissBackups(current.id)}
+            onDismissBackups={dismissBackups}
           />
         ) : (
           <Settings />

@@ -120,6 +120,8 @@ export type Readiness =
   | { status: "loader_unsupported"; found: string; allowed: string[] }
   | { status: "loader_modified"; file: string; version: string }
   | { status: "not_installed" }
+  /** Playable, but a Repair didn't finish, so files may be missing or damaged (issue 155). */
+  | { status: "repair_needed" }
   | { status: "update_available" }
   | { status: "ready" };
 
@@ -327,7 +329,7 @@ export async function getReleaseNotes(productId: string): Promise<ReleaseNotes[]
 }
 
 /** Mirrors `app::Folder`. */
-export type Folder = "saves" | "settings" | "product_plugins" | "global_plugins";
+export type Folder = "saves" | "settings" | "product_plugins" | "global_plugins" | "clean_install_backup";
 
 /** Opens a folder in Explorer; pass `null` as the product for global plugins only.
  *  A missing plugins folder is created first; resolves `true` when this call

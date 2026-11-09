@@ -5,7 +5,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Notice } from "./Notice";
 import { Switch } from "./Switch";
-import { TOAST_MS, ToastProvider, useToast, type ToastInput } from "./Toast";
+import { TOAST_EXIT_MS, TOAST_MS, ToastProvider, useToast, type ToastInput } from "./Toast";
 
 afterEach(() => {
   cleanup();
@@ -83,6 +83,33 @@ describe("Toast", () => {
     expect(onGo).toHaveBeenCalled();
     expect(onDismiss).not.toHaveBeenCalled();
     expect(screen.queryByText("Pending")).toBeNull();
+  });
+
+  it("a closing toast plays its exit animation, inert, then leaves; reduced motion leaves at once", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const motion = (reduce: boolean) =>
+      vi.stubGlobal("matchMedia", (q: string) => ({ matches: reduce && q.includes("reduce"), media: q }));
+    motion(false);
+    render(
+      <ToastProvider>
+        <Shower toast={{ tone: "error", text: "Failed" }} />
+      </ToastProvider>,
+    );
+    await user.click(screen.getByText("show"));
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    const leaving = screen.getByText("Failed").closest(".toast")!;
+    expect(leaving.classList.contains("leaving")).toBe(true);
+    expect(leaving.hasAttribute("inert")).toBe(true);
+    expect(screen.queryByRole("alert")).toBeNull();
+    act(() => void vi.advanceTimersByTime(TOAST_EXIT_MS + 10));
+    expect(screen.queryByText("Failed")).toBeNull();
+
+    motion(true);
+    await user.click(screen.getByText("show"));
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText("Failed")).toBeNull();
+    vi.unstubAllGlobals();
   });
 
   it("a disabled action stays focusable, does nothing, and is described by the toast's text", async () => {

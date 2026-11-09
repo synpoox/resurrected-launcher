@@ -15,6 +15,7 @@ export type Journey =
   | "running"
   | "startup-failed"
   | "repair"
+  | "repair-needed"
   | "offline"
   | "offline-empty";
 
@@ -42,6 +43,8 @@ export function journeyOf(state: ProductState, progress: ProgressEvent | null): 
     case "recovery_required":
     case "build_unsupported":
       return "blocked";
+    case "repair_needed":
+      return "repair-needed";
     case "not_installed":
       return state.recommended ? "install" : "offline-empty";
     case "update_available":
@@ -68,6 +71,7 @@ export function badgeOf(journey: Journey, percent: number | null): Badge | null 
       return { kind: "running" };
     case "blocked":
     case "startup-failed":
+    case "repair-needed":
       return { kind: "error" };
     default:
       return null;
@@ -76,7 +80,7 @@ export function badgeOf(journey: Journey, percent: number | null): Badge | null 
 
 /** True when the state shows a notice on Overview (Patch Notes points to it with a red dot). */
 export function hasNotice(journey: Journey): boolean {
-  return ["d2r-missing", "loader-missing", "blocked", "startup-failed"].includes(journey);
+  return ["d2r-missing", "loader-missing", "blocked", "startup-failed", "repair-needed"].includes(journey);
 }
 
 /** What the install inspection found in the product folder while no release is installed (issue 126):
