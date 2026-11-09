@@ -228,7 +228,7 @@ describe("Launcher", () => {
     expect(sw.getAttribute("aria-checked")).toBe("false");
   });
 
-  it("About and credits lists each hero with its name and source, and says placeholders are placeholders", async () => {
+  it("About and credits credits each hero as official D2R promotional art, not mod gameplay", async () => {
     const { user } = await openSettings("ready");
     await user.click(tab("Launcher"));
     const credits = within(within(panel()).getByRole("region", { name: "About and credits" })).getAllByRole("listitem");
@@ -238,8 +238,9 @@ describe("Launcher", () => {
       "Diablo II: Resurrected 09",
     ]);
     for (const c of credits) {
-      expect(c.textContent).toContain("Placeholder hero · Original placeholder made for this launcher");
-      expect(c.textContent).toContain("Placeholder art, not game art.");
+      expect(c.textContent).toContain("Official D2R promotional artwork © Blizzard Entertainment");
+      expect(c.textContent).toContain("Promotional art, not mod gameplay.");
+      expect(c.textContent).not.toMatch(/placeholder/i);
     }
   });
 });

@@ -147,7 +147,7 @@ describe("product page", () => {
     await loaded();
     const title = screen.getByRole("heading", { level: 1 });
     expect(title.children).toHaveLength(2);
-    expect(screen.getByRole("img", { name: /Placeholder hero art for Project Diablo 2/ })).toBeTruthy();
+    expect(screen.getByRole("img", { name: /The Warlock seated on a throne in official Diablo II: Resurrected artwork/ })).toBeTruthy();
   });
 
   it("products without a release: no tabs, ribbon and description; without a page, Follow opens the Discord", async () => {
@@ -309,7 +309,7 @@ describe("product page", () => {
     const { user } = mount("ready");
     await user.click(within(await loaded()).getByRole("tab", { name: "Patch Notes" }));
     const banner = (await screen.findAllByRole("img")).find((i) => i.classList.contains("notes-banner"));
-    expect(banner?.getAttribute("alt")).toMatch(/Project Diablo 2: Resurrected/);
+    expect(banner?.getAttribute("alt")).toMatch(/The Warlock seated on a throne/);
     expect(banner?.getAttribute("src")).not.toMatch(/^(https?:)?\/\//);
   });
 

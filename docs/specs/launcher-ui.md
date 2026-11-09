@@ -221,13 +221,13 @@ Target **WCAG 2.2 AA**: 4.5:1 for text, 3:1 for large text (24px, or 18.66px bol
 
 ## Artwork
 
-Official D2R promotional art, © Blizzard Entertainment, **never presented as mod gameplay**. It is not copied into this repo.
+Official D2R promotional art, © Blizzard Entertainment, **never presented as mod gameplay**. The images match resurrected-web's hero set and are bundled in `src/art` as optimised WebP ([#165](https://github.com/synpoox/resurrected-launcher/issues/165)), credited in Settings → About and credits as "Official D2R promotional artwork © Blizzard Entertainment", the website's credit.
 
 | Product | Image | Framing |
 | --- | --- | --- |
 | PD2R | Reign of the Warlock key art | `55% center`, cover |
-| Forever | 30th Anniversary key art, textless, 1920×1080 ([research](https://github.com/synpoox/resurrected-launcher/blob/launcher-ui-prototype-v1/docs/research/d2r-forever-hero-image.md), [#22](https://github.com/synpoox/resurrected-launcher/issues/22)) | `20% 30%`, cover |
-| 09 | Sorceress class art (diablo2.blizzard.com), 2600×906 | `74% 22%`, `auto 135%` |
+| Forever | Necromancer promotional art, 2600×906 (the website's Forever hero; replaces the 30th Anniversary key art from [#22](https://github.com/synpoox/resurrected-launcher/issues/22); same composition as 09, so the same framing) | `74% 22%`, `auto 135%` |
+| 09 | Paladin promotional art, 2600×906 (the website's 09 hero) | `74% 22%`, `auto 135%` |
 
 Source URLs are in the prototype's `src/data.js`. The real app **bundles or caches** the art instead of hotlinking it, so heroes still show offline.
 

@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { HERO_ART, MARK_SRC } from "./index";
 
@@ -38,6 +38,19 @@ describe("bundled art", () => {
   it("no art source is a remote URL", () => {
     for (const src of [MARK_SRC, ...Object.values(HERO_ART).map((a) => a.src)]) {
       expect(src).not.toMatch(/^(?:[a-z][\w+.-]*:|\/\/)/i);
+    }
+  });
+
+  it("every hero is real, bundled, optimised art credited to Blizzard, framed per the spec", () => {
+    const framing = { pd2r: ["55% center", undefined], forever: ["74% 22%", "auto 135%"], "09": ["74% 22%", "auto 135%"] };
+    for (const [id, art] of Object.entries(HERO_ART)) {
+      expect(art.placeholder, id).toBe(false);
+      expect(art.source, id).toBe("Official D2R promotional artwork © Blizzard Entertainment");
+      expect([art.position, art.size], id).toEqual(framing[id as keyof typeof framing]);
+      expect(art.accessibleName, id).not.toMatch(/placeholder/i);
+    }
+    for (const file of readdirSync(dir).filter((f) => f.endsWith(".webp"))) {
+      expect(statSync(`${dir}/${file}`).size, file).toBeLessThan(250_000);
     }
   });
 
