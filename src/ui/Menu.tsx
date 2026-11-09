@@ -8,6 +8,11 @@ export interface MenuItem {
   tone?: "danger";
   /** Draws a divider above this item. */
   divider?: boolean;
+  /**
+   * Why the item is unavailable right now (issue 156): it shows `aria-disabled` (still focusable),
+   * this text under its label, and choosing it does nothing.
+   */
+  disabledReason?: string;
 }
 
 export interface MenuProps {
@@ -90,7 +95,7 @@ export function Menu({ label, items, defaultOpen = false, className = "", blocke
             else arrowKeys("[role=menuitem]", "vertical")(e);
           }}
         >
-          {items.map((item) => (
+          {items.map((item, i) => (
             <div key={item.label} role="none">
               {item.divider && <hr />}
               <button
@@ -98,12 +103,20 @@ export function Menu({ label, items, defaultOpen = false, className = "", blocke
                 role="menuitem"
                 tabIndex={-1}
                 className={item.tone ?? undefined}
+                aria-disabled={item.disabledReason ? true : undefined}
+                aria-describedby={item.disabledReason ? `${id}-why-${i}` : undefined}
                 onClick={() => {
+                  if (item.disabledReason) return;
                   close(true);
                   item.onSelect();
                 }}
               >
                 {item.label}
+                {item.disabledReason && (
+                  <span id={`${id}-why-${i}`} className="why">
+                    {item.disabledReason}
+                  </span>
+                )}
               </button>
             </div>
           ))}

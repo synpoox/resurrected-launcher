@@ -1316,6 +1316,27 @@ fn uninstall_command_reports_the_files_it_left() {
     assert_eq!(strings(&report["preserved"]), [LOOT_FILTER]);
     assert_eq!(report["clean_install_backups"], json!([]));
     assert!(rig.state().installed.is_none());
+
+    // #156: the result dialog's Open folder actions still work once uninstalled.
+    let saved = tempfile::tempdir().unwrap();
+    *rig.desktop.saved_games.lock().unwrap() = Some(saved.path().to_owned());
+    let saves = saved.path().join(r"Diablo II Resurrected\mods\PD2R");
+    fs::create_dir_all(&saves).unwrap();
+    let open = |folder: &str| {
+        rig.invoke(
+            "open_folder",
+            json!({ "product_id": "pd2r", "folder": folder }),
+        )
+        .map(data::<bool>)
+    };
+    assert!(!open("saves").unwrap());
+    assert!(!open("settings").unwrap(), "left files keep the folder");
+    assert_eq!(
+        code(open("product_plugins").unwrap_err()),
+        "product_not_installed",
+        "never creates plugins for a product that isn't there"
+    );
+    assert_eq!(*rig.desktop.folders.lock().unwrap(), [saves, root]);
 }
 
 #[test]
@@ -1650,6 +1671,25 @@ fn unmanaged_install_of_an_older_release_inspects_as_needing_a_clean_install() {
         1
     );
     assert_eq!(rig.state().installed.unwrap().release_id, PD2R_2);
+    // #156: Open backup opens the newest backup, never a path from the UI.
+    let opened = rig.invoke(
+        "open_folder",
+        json!({ "product_id": "pd2r", "folder": "clean_install_backup" }),
+    );
+    assert!(!data::<bool>(opened.unwrap()));
+    // The report's path may be verbatim (`\?\`); the opened one is the same folder.
+    let backup = outcome["report"]["clean_install_backups"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let folders = rig.desktop.folders.lock().unwrap().clone();
+    assert_eq!(folders.len(), 1);
+    // Compare by file name: CI temp dirs differ between 8.3 short and long forms.
+    assert_eq!(
+        std::path::Path::new(&backup).file_name(),
+        folders[0].file_name(),
+        "{backup} vs {folders:?}"
+    );
     // Managed files are 2's; a differing shipped default (the old loot filter)
     // is carried forward like a player edit, and its original stays in the backup.
     for (rel, bytes) in &r2.payload {

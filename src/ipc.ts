@@ -327,7 +327,7 @@ export async function getReleaseNotes(productId: string): Promise<ReleaseNotes[]
 }
 
 /** Mirrors `app::Folder`. */
-export type Folder = "saves" | "settings" | "product_plugins" | "global_plugins";
+export type Folder = "saves" | "settings" | "product_plugins" | "global_plugins" | "clean_install_backup";
 
 /** Opens a folder in Explorer; pass `null` as the product for global plugins only.
  *  A missing plugins folder is created first; resolves `true` when this call
