@@ -27,6 +27,8 @@ export interface ToastInput {
 
 interface Toast extends ToastInput {
   id: number;
+  /** Playing its exit animation (issue 156); no longer interactive. */
+  leaving?: boolean;
 }
 
 interface ToastApi {
@@ -42,6 +44,13 @@ interface ToastApi {
 const ToastContext = createContext<ToastApi | null>(null);
 
 export const TOAST_MS = 6000;
+/** The exit animation's length (`.toast.leaving` in ui.css). */
+export const TOAST_EXIT_MS = 200;
+
+/** Under reduced motion (or without matchMedia) a closing toast leaves at once. */
+function animatesExit(): boolean {
+  return typeof window.matchMedia === "function" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 export function useToast(): ToastApi {
   const api = useContext(ToastContext);
@@ -53,14 +62,22 @@ export function useToast(): ToastApi {
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const next = useRef(1);
-  const dismiss = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
+  const remove = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
+  const dismiss = useCallback(
+    (id: number) => {
+      if (!animatesExit()) return remove(id);
+      setToasts((t) => t.map((x) => (x.id === id ? { ...x, leaving: true } : x)));
+      setTimeout(() => remove(id), TOAST_EXIT_MS);
+    },
+    [remove],
+  );
   const show = useCallback((toast: ToastInput) => {
     const id = next.current++;
     setToasts((t) => [...t, { ...toast, id }]);
     return id;
   }, []);
   const update = useCallback(
-    (id: number, toast: ToastInput) => setToasts((t) => t.map((x) => (x.id === id ? { ...toast, id } : x))),
+    (id: number, toast: ToastInput) => setToasts((t) => t.map((x) => (x.id === id && !x.leaving ? { ...toast, id } : x))),
     [],
   );
   const api = useMemo(() => ({ show, update, dismiss }), [show, update, dismiss]);
@@ -84,15 +101,21 @@ function ToastView({ toast, dismiss }: { toast: Toast; dismiss: () => void }) {
     latest.current = { dismiss, onDismiss: toast.onDismiss };
   });
   useEffect(() => {
-    if (!auto) return;
+    if (!auto || toast.leaving) return;
     const t = setTimeout(() => {
       latest.current.dismiss();
       latest.current.onDismiss?.("timeout");
     }, TOAST_MS);
     return () => clearTimeout(t);
-  }, [auto]);
+  }, [auto, toast.leaving]);
   return (
-    <div className={`toast ${toast.tone}`} role={toast.tone === "error" ? "alert" : "status"}>
+    <div
+      className={`toast ${toast.tone}${toast.leaving ? " leaving" : ""}`}
+      role={toast.tone === "error" ? "alert" : "status"}
+      // Closing: out of the tab order and the accessibility tree while it fades.
+      inert={toast.leaving || undefined}
+      aria-hidden={toast.leaving || undefined}
+    >
       <p id={text}>{toast.text}</p>
       <div className="toast-actions">
         {toast.actions?.map((a, i) => (

@@ -14,6 +14,7 @@ use super::winapi;
 use crate::catalog::ReleaseStatus;
 use crate::contract::{ErrorCode, LauncherError, ProductId, Versioned, WriteGuard};
 use crate::game::detect;
+use crate::install::ops::clean_install_backups;
 use crate::install::plan::product_root;
 use crate::state::{DiagnosticsContext, DiagnosticsReport, Redactor, NEVER_INCLUDED};
 
@@ -77,6 +78,8 @@ pub enum Folder {
     ProductPlugins,
     /// `<D2R>\d2rloader\plugins`: loads with every product.
     GlobalPlugins,
+    /// The newest clean-install backup beside the product root (#156).
+    CleanInstallBackup,
 }
 
 fn not_installed(why: String) -> LauncherError {
@@ -98,13 +101,18 @@ impl Launcher {
                 return Err(invalid("global plugins belong to no product"))
             }
             (_, None) => return Err(invalid("this folder needs a product")),
-            (_, Some(p)) => {
-                let record = state
-                    .installed_release(p)
-                    .cloned()
-                    .ok_or_else(|| not_installed(format!("{} is not installed", p.0)))?;
-                Some(self.releases.installed(&mut state, &record)?)
-            }
+            (_, Some(p)) => match state.installed_release(p).cloned() {
+                Some(record) => Some(self.releases.installed(&mut state, &record)?),
+                // Uninstalled (#156): saves, files the launcher didn't install and
+                // backups stay where the offered release puts them. Plugins don't:
+                // opening them would create a folder for a product that isn't there.
+                None if folder != Folder::ProductPlugins => Some(
+                    self.releases
+                        .recommended(&mut state, p)
+                        .map_err(|_| not_installed(format!("{} is not installed", p.0)))?,
+                ),
+                None => return Err(not_installed(format!("{} is not installed", p.0))),
+            },
         };
         drop(state);
         let root = release.as_ref().map(|r| product_root(&d2r, &r.manifest));
@@ -118,6 +126,9 @@ impl Launcher {
                 .join(r.manifest.mod_folder()),
             (Folder::Settings, _, Some(root)) => root,
             (Folder::ProductPlugins, _, Some(root)) => root.join("d2rloader").join("plugins"),
+            (Folder::CleanInstallBackup, _, Some(root)) => clean_install_backups(&root)
+                .pop()
+                .ok_or_else(|| not_installed("there is no clean-install backup".into()))?,
             _ => d2r.join("d2rloader").join("plugins"),
         };
         Ok((d2r, dir))
@@ -217,7 +228,7 @@ pub async fn open_folder(
             Folder::ProductPlugins | Folder::GlobalPlugins => {
                 launcher.create_plugins(&d2r, &dir)?
             }
-            Folder::Saves | Folder::Settings => {
+            Folder::Saves | Folder::Settings | Folder::CleanInstallBackup => {
                 return Err(not_installed(format!(
                     "{} does not exist yet",
                     dir.display()

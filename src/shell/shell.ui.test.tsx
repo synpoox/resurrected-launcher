@@ -466,6 +466,24 @@ describe("menus and dialogs", () => {
     expect(focused()).toBe(trigger);
   });
 
+  it("⋯ menu stays while the game runs: Repair and Uninstall say why they're unavailable", async () => {
+    const { api, user } = mount("running");
+    await loaded();
+    await user.click(screen.getByRole("button", { name: "Manage PD2R" }));
+    const menu = screen.getByRole("menu");
+    for (const name of [/^Repair/, /^Uninstall…/]) {
+      const item = within(menu).getByRole("menuitem", { name });
+      expect(item.getAttribute("aria-disabled")).toBe("true");
+      expect(document.getElementById(item.getAttribute("aria-describedby")!)!.textContent).toBe("Quit PD2R first");
+    }
+    const before = api.calls.length;
+    await user.click(within(menu).getByRole("menuitem", { name: /^Repair/ }));
+    expect(api.calls.slice(before).map((c) => c.name)).not.toContain("inspectOperation");
+    expect(screen.getByRole("menu")).toBeTruthy();
+    await user.click(within(menu).getByRole("menuitem", { name: "Open saves folder" }));
+    expect(api.calls.at(-1)).toEqual({ name: "openFolder", args: ["pd2r", "saves"] });
+  });
+
   it("d2r-choose: radio list from detectGameLocations, chosen by index", async () => {
     const { api, user } = mount("d2r-missing");
     const locate = await screen.findByRole("button", { name: "Locate D2R" });
@@ -529,16 +547,22 @@ describe("menus and dialogs", () => {
     expect(names(api)).not.toContain("startOperation");
   });
 
-  it("uninstall: Kept and Not touched, then the outcome report", async () => {
-    const { user } = mount("uninstall");
+  it("uninstall: Kept and Not touched, then a short result with Open folder actions and no file lists", async () => {
+    const { api, user } = mount("uninstall");
     const dialog = await screen.findByRole("dialog", { name: "Uninstall Project Diablo 2: Resurrected?" });
     expect(within(dialog).getByText(/Kept:/)).toBeTruthy();
     expect(within(dialog).getByText(/Diablo II: Resurrected, D2RLoader and other products/)).toBeTruthy();
     expect(within(dialog).getByText("lootfilter/default.filter")).toBeTruthy();
     await user.click(within(dialog).getByRole("button", { name: "Uninstall" }));
     const done = await screen.findByRole("dialog", { name: "PD2R was uninstalled" });
-    expect(within(done).getByText("lootfilter/my-filter.filter")).toBeTruthy();
-    expect(within(done).getByText(/Not touched:/)).toBeTruthy();
+    expect(within(done).getByText("Your saves and settings were kept.")).toBeTruthy();
+    expect(within(done).queryByText("lootfilter/my-filter.filter")).toBeNull();
+    expect(within(done).queryByRole("list")).toBeNull();
+    await user.click(within(done).getByRole("button", { name: "Open saves folder" }));
+    expect(api.calls.at(-1)).toEqual({ name: "openFolder", args: ["pd2r", "saves"] });
+    // A file the launcher didn't install is still there, so its folder can be opened.
+    await user.click(within(done).getByRole("button", { name: "Open PD2R folder" }));
+    expect(api.calls.at(-1)).toEqual({ name: "openFolder", args: ["pd2r", "settings"] });
   });
 
   it("quit while busy: Cancel download and quit waits for the cancel, then quits", async () => {

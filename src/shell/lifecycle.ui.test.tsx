@@ -292,10 +292,10 @@ describe("outcome report", () => {
       }),
     );
     await user.click(screen.getByRole("button", { name: "Project Diablo 2: Resurrected" }));
-    expect(await screen.findByText(backup)).toBeTruthy();
+    expect(await screen.findByText(/Your previous files were backed up/)).toBeTruthy();
   });
 
-  it("shows clean-install backup locations", async () => {
+  it("says the previous files were backed up, with Open backup and no paths", async () => {
     const { api, user } = mount("ready");
     await loaded();
     const backup = String.raw`C:\Games\D2R\mods\pd2r.backup-1`;
@@ -307,9 +307,40 @@ describe("outcome report", () => {
         report: { preserved: [], remaining: [], clean_install_backups: [backup] },
       }),
     );
-    expect(await screen.findByText(backup)).toBeTruthy();
-    expect(screen.getByText(/Clean install finished/)).toBeTruthy();
+    expect(await screen.findByText(/Clean install finished/)).toBeTruthy();
+    expect(screen.getByText(/Your previous files were backed up\./)).toBeTruthy();
+    expect(document.body.textContent).not.toContain("backup-1");
+    await user.click(screen.getByRole("button", { name: "Open backup" }));
+    expect(api.calls.at(-1)).toEqual({ name: "openFolder", args: ["pd2r", "clean_install_backup"] });
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(screen.queryByText(backup)).toBeNull();
+    expect(screen.queryByText(/Clean install finished/)).toBeNull();
+  });
+
+  it("a newer operation clears the last one's notice and failure toasts", async () => {
+    const { api, user } = mount("ready");
+    await loaded();
+    await act(async () =>
+      api.emitOutcome({
+        status: "succeeded",
+        product_id: "pd2r",
+        kind: "clean_install",
+        report: { preserved: [], remaining: [], clean_install_backups: ["pd2r.backup-3"] },
+      }),
+    );
+    await act(async () =>
+      api.emitOutcome({
+        status: "failed",
+        product_id: "pd2r",
+        kind: "repair",
+        error: { code: "internal", message: "Repair broke." },
+      }),
+    );
+    expect(await screen.findByText(/Clean install finished/)).toBeTruthy();
+    expect(screen.getByText("Repair broke.")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Manage PD2R" }));
+    await user.click(screen.getByRole("menuitem", { name: "Repair" }));
+    await waitFor(() => expect(names(api)).toContain("startOperation"));
+    await waitFor(() => expect(screen.queryByText(/Clean install finished/)).toBeNull());
+    expect(screen.queryByText("Repair broke.")).toBeNull();
   });
 });
