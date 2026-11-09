@@ -323,6 +323,7 @@ describe("existingOf (issue 126)", () => {
     files_kept: 0,
     preserved: [],
     backup_only: [],
+    settings_reset: [],
     conflicts: [],
     save_breaking_notice: null,
     space_needed: 0,

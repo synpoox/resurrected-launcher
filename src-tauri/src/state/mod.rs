@@ -388,6 +388,15 @@ impl StateStore {
         Ok(digest)
     }
 
+    /// Identities of the cached metadata that start with `prefix`, in cache order.
+    pub fn cached_identities(&self, prefix: &str) -> Vec<String> {
+        self.cache
+            .iter()
+            .filter(|e| e.identity.starts_with(prefix))
+            .map(|e| e.identity.clone())
+            .collect()
+    }
+
     /// The cached bytes for `identity`, if present and still matching their
     /// SHA-256. A damaged blob is quarantined, a missing one forgotten, and both
     /// reported; a blob that cannot be read right now is reported and kept.

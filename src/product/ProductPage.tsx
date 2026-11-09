@@ -694,6 +694,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         <CleanInstallDialog
           product={product}
           inspection={dialog.inspection}
+          version={label(dialog.inspection.release.release_id, dialog.inspection.release.display_version)}
           onClose={closeDialog}
           onConfirm={() => {
             closeDialog();

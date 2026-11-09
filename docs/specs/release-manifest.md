@@ -59,7 +59,7 @@ One per release, published as a durable public asset next to the archive. See `f
 | --- | --- |
 | `install_root` | `mods/<folder>`, relative to the selected D2R installation, for example `mods/PD2Resurrected`. The folder may not start with `-`, so `-mod <folder>` cannot read as a loader switch. No absolute or publisher-chosen destinations. Launch selects the product only as `-mod <folder>`, so no `default_mod` loader setting is required. The schema-2 `launch.launch_arguments` are dropped on purpose: publisher-supplied arguments are not allowed. |
 | `archive` | `{url, format, size, sha256, file_count, total_size}`. One complete archive; repairs and updates download all of it, no deltas. `url` is HTTPS; `format` is `7z`; `size` and `sha256` are required and real. `file_count` and `total_size` must equal the count and size sum of `files`, and a sum that overflows 64 bits is inconsistent. |
-| `files` | Every file the archive unpacks into `install_root`: `{path, size, sha256, ownership}`. Must not be empty. |
+| `files` | Every file the archive unpacks into `install_root`: `{path, size, sha256, ownership}`, plus the optional `previous_default_sha256` described under Ownership. Must not be empty. |
 | `empty_dirs` | Directories that must exist although they hold no file. |
 
 Paths use `/`, are relative to `install_root`, and must pass the contract's `RelativePath` rules (no absolute, drive, `..`, `.`, stream, device name, trailing dot/space, forbidden character or 8.3 alias). The list must have no duplicates ignoring case and nothing may lie under a file or an empty dir (`ExpectedInventory`). Extraction later checks the unpacked tree against exactly this inventory.
@@ -74,6 +74,8 @@ A file `size` and `sha256` must always be present. `size: 0` is allowed only wit
 | --- | --- |
 | `managed` | Supplied by the release. Repair restores it; update replaces it. Required mod plugins and patches are managed and recognized by path and hash. |
 | `shipped_default` | Initial configuration, including the loot filter and loader configuration. Update replaces it only while it still has the previous release's published hash; once edited it is a player file. |
+
+**`previous_default_sha256`** ([#134](https://github.com/synpoox/resurrected-launcher/issues/134)): optional, only on a `shipped_default`. It lists the SHA-256 of this file in earlier releases (64 hex characters each; a zero or missing entry is a placeholder). Omitting it means none. A manifest that puts it on a `managed` file is `metadata_invalid`. The toolkit fills it from the earlier published manifests. Clean install uses it when there is no installed record: a shipped default whose bytes match one of these hashes is an older release's untouched default, not a player edit. So the new default goes live, and the old file stays only in the labelled backup. The launcher also counts as older-release bytes any file that matches a cached manifest of the same product (refresh never drops them). Any other differing shipped default is carried forward.
 
 Anything on disk that the manifest does not list is unknown (player files, optional plugins) and is never managed implicitly. `unknown` is not a valid value in the manifest.
 

@@ -251,17 +251,21 @@ export function UninstallDialog({ product, inspection, report, onConfirm, onClos
 export interface CleanInstallProps {
   product: Product;
   inspection: Inspection;
+  /** The release as the action row names it ("alpha 0.4.2"). */
+  version: string;
   onConfirm: () => void;
   onClose: () => void;
 }
 
 /** issue 126: the product folder holds files the offered release doesn't (an older version, or edited
  *  managed files), so Install would be refused. Clean install, with this consent, moves the folder
- *  aside as a labelled backup, installs the release and carries edited settings forward. */
-export function CleanInstallDialog({ product, inspection, onConfirm, onClose }: CleanInstallProps) {
-  const version = inspection.release.display_version;
+ *  aside as a labelled backup, installs the release and carries edited settings forward. Settings
+ *  the release can't run with are named (issue 134, #6 item 4); they are reset, not carried. */
+export function CleanInstallDialog({ product, inspection, version, onConfirm, onClose }: CleanInstallProps) {
   const kept = inspection.preserved;
-  const backupOnly = inspection.backup_only.length;
+  const resets = inspection.settings_reset.flatMap((c) => (c.type === "setting" ? [c] : []));
+  const resetFiles = new Set(resets.map((c) => c.file));
+  const backupOnly = inspection.backup_only.filter((p) => !resetFiles.has(p)).length;
   return (
     <Dialog
       title={`Replace the ${product.short} files in your game folder?`}
@@ -288,7 +292,10 @@ export function CleanInstallDialog({ product, inspection, onConfirm, onClose }: 
           never deletes it. Then it installs {version}.
         </li>
         <li>
-          <b>Carried forward:</b> {kept.length > 0 ? "your edited settings." : "nothing; no edited settings were found."}
+          <b>Carried forward:</b>{" "}
+          {kept.length > 0
+            ? "settings that match no published default, usually your edits."
+            : "nothing; no edited settings were found."}
           {kept.length > 0 && (
             <ul className="paths">
               {kept.map((p) => (
@@ -299,6 +306,20 @@ export function CleanInstallDialog({ product, inspection, onConfirm, onClose }: 
             </ul>
           )}
         </li>
+        {resets.length > 0 && (
+          <li>
+            <b>Reset to {version}'s default:</b> {version} can't run with{" "}
+            {resets.length === 1 ? "this setting" : "these settings"}. Your file stays in the backup.
+            <ul className="paths">
+              {resets.map((c) => (
+                <li key={`${c.file}:${c.key}`}>
+                  <code>{c.file}</code>: <code>{c.key}</code> must be <code>{c.required}</code>, yours is{" "}
+                  {c.found === null ? "not set" : <code>{c.found}</code>}
+                </li>
+              ))}
+            </ul>
+          </li>
+        )}
         {backupOnly > 0 && (
           <li>
             <b>Only in the backup:</b> {backupOnly} other {backupOnly === 1 ? "file stays" : "files stay"} only in the

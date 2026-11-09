@@ -223,8 +223,20 @@ export const SCENES: readonly Scene[] = [
       clean_install: {
         files_added: 2341,
         files_replaced_or_removed: 0,
-        preserved: ["d2rloader/config/d2rloader.toml"],
-        backup_only: Array.from({ length: 100 }, (_, i) => `PD2Resurrected.mpq/data/global/excel/old-${i}.txt`),
+        preserved: ["lootfilter/default.filter"],
+        backup_only: [
+          "d2rloader/config/d2rloader.toml",
+          ...Array.from({ length: 100 }, (_, i) => `PD2Resurrected.mpq/data/global/excel/old-${i}.txt`),
+        ],
+        settings_reset: [
+          {
+            type: "setting",
+            file: "d2rloader/config/d2rloader.toml",
+            key: "d2rcore.save_format.mode",
+            required: "pd2r",
+            found: "vanilla",
+          },
+        ],
       },
     },
     open: "clean-install",
@@ -411,6 +423,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
       files_kept: 0,
       preserved: request.kind === "uninstall" ? ["d2rloader/config.ini", "lootfilter/default.filter"] : [],
       backup_only: [],
+      settings_reset: [],
       conflicts: [],
       save_breaking_notice: release.save_breaking
         ? "alpha 0.5.0 changes the save format. Characters from 0.4.x may not load."

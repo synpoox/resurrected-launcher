@@ -621,8 +621,13 @@ describe("journey states", () => {
   it("an existing install that differs offers Clean install with consent, never a failing Install", async () => {
     const { api, user } = mount("clean-install");
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(/doesn't match 0\.4\.2/)).toBeTruthy();
+    expect(within(dialog).getByText(/doesn't match alpha 0\.4\.2/)).toBeTruthy();
+    expect(within(dialog).getByText("lootfilter/default.filter")).toBeTruthy();
+    // issue 134: a mandatory-setting conflict is named, not just counted.
+    expect(within(dialog).getByText(/Reset to alpha 0\.4\.2's default/)).toBeTruthy();
     expect(within(dialog).getByText("d2rloader/config/d2rloader.toml")).toBeTruthy();
+    expect(within(dialog).getByText("d2rcore.save_format.mode")).toBeTruthy();
+    expect(within(dialog).getByText("vanilla")).toBeTruthy();
     expect(within(dialog).getByText(/100 other files stay only in the backup/)).toBeTruthy();
     expect(names(api)).not.toContain("startOperation");
     await user.click(within(dialog).getByRole("button", { name: "Not now" }));
