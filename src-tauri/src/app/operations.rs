@@ -795,15 +795,22 @@ pub async fn start_operation<R: Runtime>(
             &resolved.request(),
         );
         finish.outcome = Some(match result {
-            Ok(r) => OperationOutcome::Succeeded {
-                product_id,
-                kind,
-                report: OutcomeReport {
-                    preserved: r.preserved,
-                    remaining: r.remaining,
-                    clean_install_backups: r.clean_install_backups,
-                },
-            },
+            Ok(r) => {
+                // A completed operation (e.g. Repair) is the way out of a startup
+                // failure (#171): cleared before the outcome, so the UI rereads Play.
+                if let Ok(mut startup) = locked(&launcher.startup) {
+                    startup.remove(&product_id);
+                }
+                OperationOutcome::Succeeded {
+                    product_id,
+                    kind,
+                    report: OutcomeReport {
+                        preserved: r.preserved,
+                        remaining: r.remaining,
+                        clean_install_backups: r.clean_install_backups,
+                    },
+                }
+            }
             Err(e) if e.code == ErrorCode::Cancelled => {
                 OperationOutcome::Cancelled { product_id, kind }
             }
