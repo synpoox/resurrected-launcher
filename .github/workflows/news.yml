@@ -19,18 +19,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Checks news/news.json against news/news.schema.json (which mirrors the
-  # launcher's News::parse) and the 64 KB size cap, in seconds rather than a
-  # Rust build. PR CI still runs the parser test on the same file.
+  # Checks news/news.json against news/news.schema.json (never looser than the
+  # launcher's News::parse) and the 64 KB size cap, in seconds rather than a Rust
+  # build. It also checks news/fixtures, which the Rust test news_fixtures runs
+  # through News::parse, so the schema and the parser stay in sync.
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: pip install --disable-pip-version-check jsonschema==4.23.0
-      - name: Validate news.json
-        run: |
-          test "$(stat -c %s news/news.json)" -le 65536
-          python -c "import json,jsonschema; jsonschema.validate(json.load(open('news/news.json',encoding='utf-8')), json.load(open('news/news.schema.json')), format_checker=jsonschema.FormatChecker())"
+      - run: python scripts/check-news.py
 
   publish:
     needs: validate
