@@ -112,3 +112,27 @@ describe("the sidebar with every stylesheet loaded (issue 123)", () => {
     expect(leaks).toEqual([]);
   });
 });
+
+describe("scrolling pages and the window controls (issue 135)", () => {
+  /** Rules that scroll a whole page, not a box inside a dialog. */
+  const pageScrollers = () =>
+    sheets
+      .flatMap((file) => rules(file).map((r) => ({ file, r })))
+      .filter(({ r }) => /auto|scroll/.test(r.style.overflowY || r.style.overflow) && !r.selectorText.includes(".dialog"));
+
+  it("the window controls are --titlebar-height tall", () => {
+    const own = rules("src/shell/shell.css");
+    for (const selector of [".titlebar", ".win"]) {
+      expect(own.find((r) => r.selectorText === selector)!.style.height, selector).toBe("var(--titlebar-height)");
+    }
+  });
+
+  it("every page scroller starts below the title bar, so its scrollbar is clear of the close button", () => {
+    const found = pageScrollers().map(({ r }) => r.selectorText);
+    expect(found).toEqual(expect.arrayContaining([".notes", ".spanel"]));
+    for (const { file, r } of pageScrollers()) {
+      const top = r.style.marginTop || r.style.top || r.style.inset;
+      expect([file, r.selectorText, top]).toEqual([file, r.selectorText, expect.stringMatching(/^var\(--titlebar-height\)/)]);
+    }
+  });
+});

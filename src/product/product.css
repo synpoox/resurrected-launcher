@@ -298,12 +298,14 @@
 }
 
 /* Patch Notes: the whole main area, scrolling under a solid top fade. Bundled banner art, then a
-   centred reading column (layout after the League client's patch notes; our tokens, no branding). */
+   centred reading column (layout after the League client's patch notes; our tokens, no branding).
+   The scroller starts below the title bar, so its scrollbar stays clear of the window controls
+   (issue 135). */
 .notes {
   position: absolute;
-  inset: 0;
+  inset: var(--titlebar-height) 0 0;
   overflow-y: auto;
-  padding: 124px 44px 72px;
+  padding: calc(124px - var(--titlebar-height)) 44px 72px;
   scrollbar-color: var(--muted) transparent;
 }
 

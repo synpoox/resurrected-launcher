@@ -24,7 +24,6 @@
     "allow-get-start-with-windows",
     "allow-set-start-with-windows",
     "allow-minimize-window",
-    "allow-toggle-maximize-window",
     "allow-close-window",
     "allow-start-window-drag",
     "allow-quit-launcher",
@@ -38,6 +37,7 @@
     "allow-get-news",
     "allow-open-news-link",
     "allow-open-product-page",
+    "allow-open-community-page",
     "core:event:allow-listen",
     "core:event:allow-unlisten"
   ]

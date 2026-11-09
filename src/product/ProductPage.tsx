@@ -91,12 +91,15 @@ function useNews(productId: string) {
   };
 }
 
-/** Forever and 09 today: ribbon, description and, when it has a page, "About <product>"; no tabs. */
+/** Forever and 09 today: ribbon, description and one outlined link; no tabs. "About <product>"
+ *  opens the product's public page when it has one; otherwise "Follow for updates on Discord"
+ *  opens the project Discord (issue 135). */
 function ComingSoon({ product }: { product: Product }) {
   const api = useApi();
   const toast = useToast();
-  const about = () =>
-    void api.openProductPage(product.id).catch((e: unknown) => toast.show({ tone: "error", text: asError(e).message }));
+  const fail = (e: unknown) => toast.show({ tone: "error", text: asError(e).message });
+  const about = () => void api.openProductPage(product.id).catch(fail);
+  const follow = () => void api.openCommunityPage().catch(fail);
   const feed = useNews(product.id);
   return (
     <div className="page overview">
@@ -104,13 +107,17 @@ function ComingSoon({ product }: { product: Product }) {
       <HeroCopy product={product} />
       <div className="bottom">
         <div className="action-col">
-          {product.aboutPage && (
-            <div className="act">
+          <div className="act">
+            {product.aboutPage ? (
               <button type="button" className="btn ghost" onClick={about}>
                 About {product.short}
               </button>
-            </div>
-          )}
+            ) : (
+              <button type="button" className="btn ghost" onClick={follow}>
+                Follow for updates on Discord <span aria-hidden="true">↗</span>
+              </button>
+            )}
+          </div>
         </div>
         <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} />
       </div>

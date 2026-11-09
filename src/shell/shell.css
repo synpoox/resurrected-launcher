@@ -1,5 +1,11 @@
 /* Window, seamless title bar and sidebar (spec: Window, Layout). */
 
+/* The window controls' height. Scrolling pages start below it, so their scrollbar never sits
+   under the controls (issue 135). */
+:root {
+  --titlebar-height: 32px;
+}
+
 .window {
   position: relative;
   /* Fills the client area exactly. The native window enforces the 1024x640
@@ -20,7 +26,7 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 32px;
+  height: var(--titlebar-height);
   display: flex;
   user-select: none;
 }
@@ -39,7 +45,7 @@
 
 .win {
   width: 46px;
-  height: 32px;
+  height: var(--titlebar-height);
   font-size: 14px;
   color: var(--muted);
 }
@@ -100,7 +106,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 11px 24px;
+  padding: 16px 24px;
   text-align: left;
   font-size: 14px;
   font-weight: 700;

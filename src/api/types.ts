@@ -80,7 +80,6 @@ export interface LauncherApi {
 
   // Window (#74)
   minimizeWindow(): Promise<void>;
-  toggleMaximizeWindow(): Promise<void>;
   closeWindow(): Promise<void>;
   startWindowDrag(): Promise<void>;
   quitLauncher(): Promise<void>;
@@ -91,6 +90,8 @@ export interface LauncherApi {
   openNewsLink(productId: string, index: number): Promise<void>;
   /** "About <product>". */
   openProductPage(productId: string): Promise<void>;
+  /** The project Discord (issue 135), from "Follow for updates on Discord" on products without a page. */
+  openCommunityPage(): Promise<void>;
 
   // Events
   onStateChanged(handler: () => void): Promise<Unlisten>;

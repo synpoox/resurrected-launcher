@@ -552,7 +552,6 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
     setStartWithWindows: (enabled) => done("setStartWithWindows", enabled),
 
     minimizeWindow: () => done("minimizeWindow"),
-    toggleMaximizeWindow: () => done("toggleMaximizeWindow"),
     closeWindow: () => done("closeWindow"),
     startWindowDrag: () => done("startWindowDrag"),
     quitLauncher() {
@@ -567,6 +566,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
     },
     openNewsLink: (id, index) => done("openNewsLink", id, index),
     openProductPage: (id) => done("openProductPage", id),
+    openCommunityPage: () => done("openCommunityPage"),
 
     onStateChanged: (h) => subscribe(changed, h),
     onProgress(h) {
