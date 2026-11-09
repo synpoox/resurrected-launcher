@@ -315,6 +315,11 @@ export const SCENES: readonly Scene[] = [
   }),
   scene({ key: "startup-failed", label: "Startup failure", state: base({ startup_failed: { exit_code: 1 } }) }),
   scene({ key: "repair", label: "Repair", state: base(), open: "repair" }),
+  scene({
+    key: "repair-needed",
+    label: "Repair didn't finish",
+    state: base({ installed: { ...installed("0.4.2"), verified: false }, readiness: { status: "repair_needed" } }),
+  }),
   scene({ key: "manage", label: "Manage menu", state: base(), open: "manage" }),
   scene({ key: "uninstall", label: "Uninstall", state: base(), open: "uninstall" }),
   scene({
