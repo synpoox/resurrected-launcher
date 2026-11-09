@@ -303,6 +303,32 @@ pub async fn show_diagnostics_in_folder(
         .map_err(|e| access_denied(&format!("showing {}", saved.display()), e))
 }
 
+/// `copy_launcher_log`: the end of the launcher log (capped at 64 KiB), redacted
+/// like Export diagnostics, for the frontend to put on the clipboard. Empty when
+/// there is no log yet.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn copy_launcher_log(
+    launcher: State<'_, Arc<Launcher>>,
+) -> Result<Versioned<String>, LauncherError> {
+    locked(&launcher.state)?
+        .launcher_log_excerpt(&Redactor::from_env())
+        .map(Versioned::new)
+        .map_err(|e| access_denied("reading the launcher log", e))
+}
+
+/// `open_logs_folder`: Explorer on the folder that holds `launcher.log`.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn open_logs_folder(launcher: State<'_, Arc<Launcher>>) -> Result<(), LauncherError> {
+    let log = locked(&launcher.state)?.log_path();
+    let dir = log.parent().unwrap_or(&log).to_path_buf();
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| access_denied(&format!("creating {}", dir.display()), e))?;
+    launcher
+        .desktop
+        .open_folder(&dir)
+        .map_err(|e| access_denied(&format!("opening {}", dir.display()), e))
+}
+
 /// `get_start_with_windows`: whether the per-user Run value starts this launcher.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn get_start_with_windows(
