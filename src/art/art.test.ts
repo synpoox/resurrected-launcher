@@ -42,7 +42,7 @@ describe("bundled art", () => {
   });
 
   it("every hero is real, bundled, optimised art credited to Blizzard, framed per the spec", () => {
-    const framing = { pd2r: ["55% center", undefined], forever: ["74% 22%", "auto 135%"], "09": ["74% 22%", "auto 135%"] };
+    const framing = { pd2r: ["55% center", undefined], forever: ["20% 30%", undefined], "09": ["74% 22%", "auto 135%"] };
     for (const [id, art] of Object.entries(HERO_ART)) {
       expect(art.placeholder, id).toBe(false);
       expect(art.source, id).toBe("Official D2R promotional artwork © Blizzard Entertainment");
