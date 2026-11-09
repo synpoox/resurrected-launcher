@@ -104,7 +104,8 @@ pub struct InstalledRelease {
     pub installed_at: u64,
     /// The installed files matched the release manifest's inventory when the record
     /// was written. [`StateStore::mark_installed`] only accepts `true` (the record is
-    /// written after `LiveVerified`); `false` is reserved for a later Repair check.
+    /// written after `LiveVerified`); [`StateStore::mark_unverified`] sets `false`
+    /// when a Repair starts, and that Repair's commit sets it back (#155).
     pub verified: bool,
 }
 
@@ -331,6 +332,19 @@ impl StateStore {
         let mut installed = self.installed_for_write()?;
         installed.retain(|r| r.product_id != record.product_id);
         installed.push(record);
+        self.save_installed(installed)
+    }
+
+    /// Marks the product's installed release unverified, before a Repair touches
+    /// anything: if the launcher is ended mid-repair, or the repair fails, the
+    /// record still says the files need Repair. Only a committed operation, which
+    /// writes a fresh verified record, clears it. Nothing installed: no change.
+    pub fn mark_unverified(&mut self, product: &ProductId) -> Result<(), LauncherError> {
+        let mut installed = self.installed_for_write()?;
+        match installed.iter_mut().find(|r| &r.product_id == product) {
+            Some(r) if r.verified => r.verified = false,
+            _ => return Ok(()),
+        }
         self.save_installed(installed)
     }
 

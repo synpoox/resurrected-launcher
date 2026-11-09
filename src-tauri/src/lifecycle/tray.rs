@@ -221,6 +221,14 @@ pub fn view(
                 ],
             )
         }
+        Readiness::RepairNeeded => shown(
+            Overlay::Error,
+            "Repair didn't finish".into(),
+            vec![
+                action("show", "Show what happened".into()),
+                action("play", format!("Play {installed}")),
+            ],
+        ),
         Readiness::NotInstalled => shown(Overlay::Idle, "Not installed".into(), vec![]),
         // Also every product until startup recovery finished.
         Readiness::RecoveryRequired => shown(Overlay::Idle, "Checking files…".into(), vec![]),

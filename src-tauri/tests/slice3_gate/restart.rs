@@ -102,12 +102,14 @@ fn restart_a_pending_journal_blocks_play_until_recovery() {
     let how = recovered["data"].as_str().unwrap().to_owned();
     assert!(how == "rolled_back" || how == "rolled_forward", "{how}");
     assert!(!journal(&rig).exists());
-    assert_eq!(rig.state().readiness, Readiness::Ready);
     if how == "rolled_forward" {
         complete(&rig, &r1);
+        assert_eq!(rig.state().readiness, Readiness::Ready);
     } else {
-        // The previous installation, missing the file the repair was restoring.
+        // The previous installation, missing the file the repair was restoring,
+        // so still flagged for Repair (#155), but playable.
         assert!(!rig.root().join(MANAGED).exists());
+        assert_eq!(rig.state().readiness, Readiness::RepairNeeded);
     }
     let game = rig.play().unwrap();
     FakeLoader::adopt(&game.image).stop();
@@ -216,4 +218,108 @@ fn restart_rediscovers_the_running_game() {
     game.stop();
     rig.state_event();
     assert_eq!(rig.state().readiness, Readiness::Ready);
+}
+
+const KILL_CHILD_ENV: &str = "SLICE3_GATE_KILL_CHILD";
+
+/// Not a gate test: the launcher process
+/// [`restart_a_launcher_killed_mid_repair_leaves_repair_needed`] ends. Starts a
+/// repair of the adopted product in the D2R folder and State named by
+/// `SLICE3_GATE_KILL_CHILD`, its archive held back by the fixture server so the
+/// repair stays downloading, then waits to be killed. Does nothing when run on
+/// its own.
+#[test]
+#[ignore = "run only as a child process by the restart tests"]
+fn child_launcher_repairs_until_killed() {
+    let Some(job) = std::env::var_os(KILL_CHILD_ENV) else {
+        return;
+    };
+    let job = fs::read_to_string(job).unwrap();
+    let [d2r, state, out] = [0, 1, 2].map(|i| PathBuf::from(job.lines().nth(i).unwrap()));
+    let rig = Rig::attach(&d2r, &state, Box::new(SystemHost));
+    let release = real_layout(REAL_1);
+    rig.publish(&release);
+    rig.server.route(
+        &release.archive_path(),
+        crate::support::Reply::Delayed(
+            std::time::Duration::from_secs(600),
+            Box::new(crate::support::Reply::Body(release.archive.clone())),
+        ),
+    );
+    rig.start_up();
+    let insp = rig.inspect("repair", json!({})).unwrap();
+    rig.start("repair", json!({}), &insp.token).unwrap();
+    wait_until("the archive request", || {
+        rig.server.hits().contains(&release.archive_path())
+    });
+    fs::write(out, "downloading\n").unwrap();
+    std::thread::sleep(std::time::Duration::from_secs(600));
+}
+
+/// #155: the player removes a managed file, starts Repair, and ends the launcher
+/// process (Task Manager) while the archive downloads. The journal is pending, so
+/// the next start rolls back to the installation as it was, still missing the
+/// file. The product must stay flagged for Repair, never report `ready`, and a
+/// second Repair restores the file.
+#[test]
+fn restart_a_launcher_killed_mid_repair_leaves_repair_needed() {
+    let rig = Rig::new();
+    let r1 = rig.adopted();
+    fs::remove_file(rig.root().join(MANAGED)).unwrap();
+
+    let work = tempfile::tempdir().unwrap();
+    let (job, out) = (work.path().join("job"), work.path().join("out"));
+    let text = [&rig.d2r, &rig.state_dir, &out.to_path_buf()]
+        .map(|p: &PathBuf| p.display().to_string())
+        .join("\n");
+    fs::write(&job, text).unwrap();
+    let log = work.path().join("log");
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "restart::child_launcher_repairs_until_killed",
+            "--exact",
+            "--ignored",
+            "--test-threads=1",
+        ])
+        .env(KILL_CHILD_ENV, &job)
+        .stdin(Stdio::null())
+        .stdout(fs::File::create(&log).unwrap())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_until("the child launcher to be downloading", || {
+        if let Some(status) = child.try_wait().unwrap() {
+            panic!(
+                "child launcher exited ({status}):\n{}",
+                fs::read_to_string(&log).unwrap_or_default()
+            );
+        }
+        out.exists()
+    });
+    // TerminateProcess, as Task Manager's End task does: no unwinding, no rollback.
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert!(journal(&rig).exists(), "the kill hit the downloading phase");
+    assert!(!rig.root().join(MANAGED).exists());
+
+    let rig = rig.restart();
+    rig.publish(&r1);
+    assert_eq!(rig.state().readiness, Readiness::RecoveryRequired);
+    rig.start_up();
+    assert!(!journal(&rig).exists());
+    assert!(!rig.root().join(MANAGED).exists());
+    let state = rig.state();
+    assert_eq!(state.readiness, Readiness::RepairNeeded);
+    assert!(!state.installed.unwrap().verified);
+    // Survives another restart: the flag is in State, not in memory.
+    let rig = rig.restart();
+    rig.publish(&r1);
+    rig.start_up();
+    assert_eq!(rig.state().readiness, Readiness::RepairNeeded);
+
+    assert_eq!(rig.run("repair", json!({}))["status"], "succeeded");
+    complete(&rig, &r1);
+    let state = rig.state();
+    assert_eq!(state.readiness, Readiness::Ready);
+    assert!(state.installed.unwrap().verified);
 }

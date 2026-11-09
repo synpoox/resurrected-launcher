@@ -120,6 +120,8 @@ export type Readiness =
   | { status: "loader_unsupported"; found: string; allowed: string[] }
   | { status: "loader_modified"; file: string; version: string }
   | { status: "not_installed" }
+  /** Playable, but a Repair didn't finish, so files may be missing or damaged (#155). */
+  | { status: "repair_needed" }
   | { status: "update_available" }
   | { status: "ready" };
 

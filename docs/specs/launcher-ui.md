@@ -183,6 +183,7 @@ Every state keeps the hero, ribbon, title and description. The state appears in 
 | Running | `running` | Disabled panel-coloured "Playing" with a pulsing dot, "Started 12 min ago · Repair and updates wait until you quit", and a `●` badge. |
 | Startup failure | `startup-failed` | "Try again", "Repair" and "Export diagnostics", with an error notice giving the exit code and next steps. |
 | Repair | `repair` | Progress with files checked and to restore, and "saves and edited filters are kept". |
+| Repair didn't finish | `repair-needed` | A Repair was ended (launcher killed, failure or cancel) before it committed, so readiness is `repair_needed` until one finishes ([#155](https://github.com/synpoox/resurrected-launcher/issues/155)): solid "Repair", ghost "Play <version>", `⋯`, and an error notice that files may be missing or damaged. `!` badge. |
 | Manage menu | `manage` | `⋯` open: Repair, Open saves folder, Open settings folder, then Uninstall…. |
 | Uninstall | `uninstall` | Accent-topped dialog: removes PD2R's files only. **Kept:** saves and settings with path and Open. **Not touched:** D2R, D2RLoader and other products. |
 | Offline | `offline` | Play still works: "Offline · alpha 0.4.1 verified · can't check for updates". The news feed reads "News needs a connection. Retry". |

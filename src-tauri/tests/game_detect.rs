@@ -100,6 +100,7 @@ fn facts<'a>(
         installed,
         recommended,
         recovery_pending: false,
+        unverified: false,
         running: &[],
     }
 }

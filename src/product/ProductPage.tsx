@@ -547,6 +547,14 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
               line("none", `Started ${startedAgo(state.readiness.since)} · Repair and updates wait until you quit`)}
           </>
         );
+      case "repair-needed":
+        return (
+          <>
+            {busy("primary", "Repair", "repair", () => operate("repair"))}
+            {!compact && installed && busy("ghost", `Play ${installed.display_version}`, "play", play)}
+            {!compact && manage}
+          </>
+        );
       case "startup-failed":
         return (
           <>
@@ -637,6 +645,13 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
               )}
             </Notice>
           </div>
+        );
+      case "repair-needed":
+        return (
+          <Notice tone="error">
+            <b>Repair didn't finish</b>, so some of {product.short}'s files may still be missing or damaged. Repair
+            restores them and keeps your saves and edited filters.
+          </Notice>
         );
       case "startup-failed": {
         const code = state.startup_failed?.exit_code;
