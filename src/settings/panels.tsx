@@ -6,6 +6,7 @@ import { HERO_ART } from "../art";
 import { LocationDialog } from "../product/dialogs";
 import { PRODUCTS, type Product } from "../products";
 import { Notice } from "../ui/Notice";
+import { BusyButton, usePending } from "../ui/pending";
 import { Switch } from "../ui/Switch";
 import { SelfUpdateRows } from "../selfupdate/SettingsRows";
 import { useToast } from "../ui/Toast";
@@ -170,6 +171,8 @@ export function FoldersPanel({ product, state }: PanelProps) {
   const toast = useToast();
   const installed = Boolean(state?.installed);
   const hasLocation = Boolean(state?.location);
+  // Issue 138: an open button is busy until File Explorer opens or the error arrives.
+  const pending = usePending();
 
   const open = async (productId: string | null, folder: Folder) => {
     const owner = productId ? product : null;
@@ -187,11 +190,19 @@ export function FoldersPanel({ product, state }: PanelProps) {
     }
   };
 
-  const openButton = (productId: string | null, folder: Folder, label: string) => (
-    <button type="button" className="btn ghost small" onClick={() => void open(productId, folder)}>
-      {label}
-    </button>
-  );
+  const openButton = (productId: string | null, folder: Folder, label: string) => {
+    const key = `${productId ?? "global"}:${folder}`;
+    return (
+      <BusyButton
+        className="ghost small"
+        busy={pending.key === key}
+        blocked={pending.key !== null}
+        onClick={() => void pending.run(key, () => open(productId, folder))}
+      >
+        {label}
+      </BusyButton>
+    );
+  };
 
   const missing = [...(installed ? [] : [product]), ...PRODUCTS.filter((p) => !p.hasRelease)].map((p) => p.short);
   return (

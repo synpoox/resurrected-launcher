@@ -17,11 +17,20 @@ export interface MenuProps {
   defaultOpen?: boolean;
   /** Extra class names for the trigger button. */
   className?: string;
+  /** Another action is running (issue 138): the trigger is `aria-disabled` and the menu won't open. */
+  blocked?: boolean;
 }
 
 /** The square `⋯` menu. Arrow keys move, Esc closes, focus returns to `⋯`. */
-export function Menu({ label, items, defaultOpen = false, className = "" }: MenuProps) {
-  const [open, setOpen] = useState(defaultOpen);
+export function Menu({ label, items, defaultOpen = false, className = "", blocked = false }: MenuProps) {
+  const [wantOpen, setOpen] = useState(defaultOpen);
+  // A menu open when an action starts closes; it doesn't reopen by itself afterwards.
+  const open = wantOpen && !blocked;
+  const [wasBlocked, setWasBlocked] = useState(blocked);
+  if (blocked !== wasBlocked) {
+    setWasBlocked(blocked);
+    if (blocked) setOpen(false);
+  }
   const trigger = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const id = useId();
@@ -55,11 +64,12 @@ export function Menu({ label, items, defaultOpen = false, className = "" }: Menu
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
-        onClick={() => setOpen((o) => !o)}
+        aria-disabled={blocked || undefined}
+        onClick={() => !blocked && setOpen((o) => !o)}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown" || e.key === "ArrowUp") {
             e.preventDefault();
-            setOpen(true);
+            if (!blocked) setOpen(true);
           }
         }}
       >
