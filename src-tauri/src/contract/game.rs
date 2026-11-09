@@ -37,7 +37,7 @@ pub struct GameLocation {
 ///
 /// 1. `d2r_missing` 2. `running` 3. `recovery_required` 4. `build_unsupported`
 /// 5. `loader_missing` 6. `loader_unsupported` 7. `loader_modified`
-/// 8. `not_installed` 9. `update_available` 10. `ready`.
+/// 8. `not_installed` 9. `repair_needed` 10. `update_available` 11. `ready`.
 ///
 /// Build and loader checks use the installed release's manifest, or the
 /// recommended one when the product is not installed. Never `ready` unless verified.
@@ -79,6 +79,11 @@ pub enum Readiness {
     },
     /// The product has no installed-release record.
     NotInstalled,
+    /// Playable, but the installed files are not verified: a Repair started and
+    /// did not finish (the launcher was ended mid-repair, or it failed or was
+    /// cancelled), so managed files may still be missing or damaged (#155). A
+    /// Repair that finishes clears it, as does any other operation that commits.
+    RepairNeeded,
     /// Playable; the feed recommends a newer release than the installed one.
     UpdateAvailable,
     /// Playable; the installed release is the recommended one, or the feed is
@@ -99,7 +104,7 @@ impl Readiness {
             | Readiness::LoaderUnsupported { .. }
             | Readiness::LoaderModified { .. } => Some(ErrorCode::LoaderNotReady),
             Readiness::NotInstalled => Some(ErrorCode::ProductNotInstalled),
-            Readiness::UpdateAvailable | Readiness::Ready => None,
+            Readiness::RepairNeeded | Readiness::UpdateAvailable | Readiness::Ready => None,
         }
     }
 }

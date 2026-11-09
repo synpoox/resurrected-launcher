@@ -11,7 +11,9 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
-use super::operations::{invalid, locked, Launcher, Release, ReleaseSummary, Running};
+use super::operations::{
+    invalid, locked, Launcher, RecoveryView, Release, ReleaseSummary, Running,
+};
 use super::winapi::{self, ProcessHandle};
 use crate::catalog::{self, Feed, FEED_IDENTITY};
 use crate::contract::{
@@ -268,6 +270,7 @@ impl Launcher {
             recommended: recommended.as_ref().map(|r| &r.manifest),
             // Until startup recovery finished, every product waits for it.
             recovery_pending: journal || !self.recovered.load(Ordering::SeqCst),
+            unverified: record.as_ref().is_some_and(|r| !r.verified),
             running: &running,
         };
         let readiness = match readiness::assess(&facts, &self.hashes, &*self.game) {
@@ -513,8 +516,13 @@ impl Launcher {
             // A failure leaves the journal; readiness then reports recovery_required.
             // Without a D2R location there is nothing to recover, so that refusal
             // is not logged on every start.
-            if let (Err(e), Some(_)) = (self.recover(product), &root) {
-                self.log(&format!("recovery of {} failed: {e}", product.0));
+            match (self.recover(product), &root) {
+                (Err(e), Some(_)) => self.log(&format!("recovery of {} failed: {e}", product.0)),
+                // Logged so a report shows how an interrupted operation ended (#155).
+                (Ok(how @ (RecoveryView::RolledBack | RecoveryView::RolledForward)), _) => {
+                    self.log(&format!("recovery of {}: {how:?}", product.0))
+                }
+                _ => {}
             }
         }
         self.recovered.store(true, Ordering::SeqCst);
