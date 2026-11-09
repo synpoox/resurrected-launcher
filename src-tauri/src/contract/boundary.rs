@@ -59,7 +59,7 @@
 //!
 //! * crash at `LiveMovedToBackup` `AfterEntry(k)`: entry `k` is in `B` but
 //!   unjournaled; `BackupRestoredToLive` still finds it `Done` and moves it back;
-//! * crash at `CleanInstallBackupMade` `AfterEntry(1)`: `L` is already `K`;
+//! * crash at `CleanInstallBackupMade` `AfterEntry(1)` (disposable root): `L` is already `K`;
 //!   the `L -> K` entry reads `Done`, so `BackupRestoredToLive` renames `K` back;
 //! * crash at `StagedMovedToLive` `AfterEntry(k)`: `NewEntriesRemovedFromLive`
 //!   finds entry `k` in `L` and returns it to `S`.
@@ -140,10 +140,12 @@ pub enum Boundary {
     /// Activation step 1: each live managed entry being replaced or removed has been
     /// renamed out of the live root into backup `B` (the recovery copy). Multi-entry.
     LiveMovedToBackup,
-    /// Clean install only, replacing step 1. Entry 0 copies the sentinel from `L`
-    /// into `S` (when `L` has one); entry 1 renames the whole of `L` to the labelled
-    /// clean-install backup `K`. So the sentinel is always in `L` or `K`, and in `S`
-    /// before `S` becomes `L`. `K` is never silently deleted. Multi-entry.
+    /// Clean install only, replacing step 1. When `L` holds the sentinel (a
+    /// disposable root), entry 0 copies it into `S`; the last entry renames the whole
+    /// of `L` to the labelled clean-install backup `K`. A real mod folder has no
+    /// sentinel, so its step is that rename alone (#137). So a sentinel is always in
+    /// `L` or `K`, and in `S` before `S` becomes `L`. `K` is never silently deleted.
+    /// Multi-entry.
     CleanInstallBackupMade,
     /// Activation step 2: each new entry has been renamed from staging into the live
     /// root (for clean install: `S` itself is renamed to `L`). Multi-entry.
