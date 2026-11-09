@@ -84,7 +84,7 @@ export const formatCount = (n: number) => n.toLocaleString("en-US");
  *  never a raw `\\?\` extended-length path prefix. */
 export function operationFailureText(error: LauncherError, short: string): string {
   if (error.code === "access_denied") {
-    return `Windows blocked moving the ${short} folder; close Explorer windows in it and try again.`;
+    return `Windows blocked a change to the ${short} folder; close Explorer windows in it and try again.`;
   }
   return error.message.replaceAll("\\\\?\\", "");
 }

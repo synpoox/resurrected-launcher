@@ -78,10 +78,10 @@ describe("format", () => {
 });
 
 describe("operationFailureText", () => {
-  it("says Windows blocked the move, with no path, on access denied", () => {
+  it("says Windows blocked the change, with no path, on access denied", () => {
     const message = String.raw`moving \\?\C:\Games\D2R\mods\PD2Resurrected: Access is denied. (os error 5)`;
     const text = operationFailureText({ code: "access_denied", message }, "PD2R");
-    expect(text).toBe("Windows blocked moving the PD2R folder; close Explorer windows in it and try again.");
+    expect(text).toBe("Windows blocked a change to the PD2R folder; close Explorer windows in it and try again.");
   });
   it("never shows the extended-length path prefix", () => {
     const text = operationFailureText({ code: "internal", message: String.raw`creating \\?\C:\x: boom` }, "PD2R");
