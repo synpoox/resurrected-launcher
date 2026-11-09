@@ -36,8 +36,8 @@ pub struct GameLocation {
 /// first reason, in this precedence order (declaration order):
 ///
 /// 1. `d2r_missing` 2. `running` 3. `recovery_required` 4. `build_unsupported`
-/// 5. `loader_missing` 6. `loader_unsupported` 7. `not_installed`
-/// 8. `update_available` 9. `ready`.
+/// 5. `loader_missing` 6. `loader_unsupported` 7. `loader_modified`
+/// 8. `not_installed` 9. `update_available` 10. `ready`.
 ///
 /// Build and loader checks use the installed release's manifest, or the
 /// recommended one when the product is not installed. Never `ready` unless verified.
@@ -67,6 +67,16 @@ pub enum Readiness {
         found: String,
         allowed: Vec<String>,
     },
+    /// A loader file's version is allowed, but `compatibility.loader_builds` pins
+    /// that (version, file) and the file's size or SHA-256 matches no pinned build:
+    /// the bytes are not the official download. Never reported for a file the
+    /// manifest does not pin (`loader_builds` is optional).
+    LoaderModified {
+        /// The mismatched file, e.g. `D2RLoader.exe`; `D2RLoader.exe` is checked first.
+        file: String,
+        /// Its ProductVersion, one of `compatibility.loader_versions`.
+        version: String,
+    },
     /// The product has no installed-release record.
     NotInstalled,
     /// Playable; the feed recommends a newer release than the installed one.
@@ -85,21 +95,22 @@ impl Readiness {
             Readiness::Running { .. } => Some(ErrorCode::GameRunning),
             Readiness::RecoveryRequired => Some(ErrorCode::RecoveryRequired),
             Readiness::BuildUnsupported { .. } => Some(ErrorCode::GameBuildUnsupported),
-            Readiness::LoaderMissing | Readiness::LoaderUnsupported { .. } => {
-                Some(ErrorCode::LoaderNotReady)
-            }
+            Readiness::LoaderMissing
+            | Readiness::LoaderUnsupported { .. }
+            | Readiness::LoaderModified { .. } => Some(ErrorCode::LoaderNotReady),
             Readiness::NotInstalled => Some(ErrorCode::ProductNotInstalled),
             Readiness::UpdateAvailable | Readiness::Ready => None,
         }
     }
 }
 
-/// Guidance shown when D2RLoader is missing or unsupported. The launcher never
+/// Guidance shown when D2RLoader is missing, unsupported or modified. The launcher never
 /// downloads or runs the loader installer: the player installs it from the
 /// official page, then uses "Check again", which reassesses readiness.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LoaderGuidance {
-    /// The disallowed ProductVersion found, `None` when the loader is missing.
+    /// The ProductVersion found: disallowed for `loader_unsupported`, allowed but with
+    /// unofficial bytes for `loader_modified`; `None` when the loader is missing.
     pub found: Option<String>,
     /// The loader versions the release allows (`compatibility.loader_versions`).
     pub allowed: Vec<String>,
@@ -180,6 +191,13 @@ mod tests {
                 json!({ "status": "loader_unsupported", "found": "1.2.0", "allowed": ["1.3.1-beta"] }),
             ),
             (
+                Readiness::LoaderModified {
+                    file: "D2RLoader.exe".into(),
+                    version: "1.3.1-beta".into(),
+                },
+                json!({ "status": "loader_modified", "file": "D2RLoader.exe", "version": "1.3.1-beta" }),
+            ),
+            (
                 Readiness::NotInstalled,
                 json!({ "status": "not_installed" }),
             ),
@@ -206,6 +224,14 @@ mod tests {
             Readiness::LoaderUnsupported {
                 found: String::new(),
                 allowed: vec![]
+            }
+            .play_refusal(),
+            Some(ErrorCode::LoaderNotReady)
+        );
+        assert_eq!(
+            Readiness::LoaderModified {
+                file: String::new(),
+                version: String::new()
             }
             .play_refusal(),
             Some(ErrorCode::LoaderNotReady)

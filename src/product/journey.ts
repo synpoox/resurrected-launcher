@@ -37,6 +37,7 @@ export function journeyOf(state: ProductState, progress: ProgressEvent | null): 
       return "running";
     case "loader_missing":
     case "loader_unsupported":
+    case "loader_modified":
       return "loader-missing";
     case "recovery_required":
     case "build_unsupported":

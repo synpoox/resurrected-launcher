@@ -10,7 +10,7 @@ use std::time::SystemTime;
 
 use super::detect::{is_link, D2R_EXE};
 use super::GameHost;
-use crate::catalog::{GameBuild, ReleaseManifest};
+use crate::catalog::ReleaseManifest;
 use crate::contract::{
     ErrorCode, GameLocation, LauncherError, Readiness, RunningGame, Sha256Digest,
 };
@@ -39,8 +39,9 @@ pub struct Facts<'a> {
     pub running: &'a [RunningGame],
 }
 
-/// SHA-256 of game executables keyed by (path, size, mtime), so an unchanged
-/// `D2R.exe` is hashed once per launcher run. Shared across assessments.
+/// SHA-256 of game executables and pinned loader files keyed by (path, size,
+/// mtime), so an unchanged `D2R.exe` or `D2RLoader.exe` is hashed once per
+/// launcher run. Shared across assessments.
 #[derive(Debug, Default)]
 pub struct BuildHashCache {
     entries: Mutex<HashMap<(PathBuf, u64, SystemTime), Sha256Digest>>,
@@ -53,7 +54,10 @@ pub struct BuildHashCache {
 ///   its size and SHA-256 (hashed through `cache`); else `build_unsupported` with
 ///   the location's build. A missing executable is `d2r_missing`.
 /// - Loader: [`GameHost::product_version`] of both `<root>\D2RLoader.exe` and
-///   `<root>\D2RCore.dll` is in `compatibility.loader_versions`.
+///   `<root>\D2RCore.dll` is in `compatibility.loader_versions`; then, for each
+///   file whose (version, file) `compatibility.loader_builds` pins, its size and
+///   SHA-256 match one of those pins, else `loader_modified`. Unpinned files (and
+///   every file when `loader_builds` is empty) are checked by version only.
 /// - `not_installed` when `installed` is `None` (also when `recommended` is `None`).
 /// - `update_available` when both are present with different `release_id`s.
 ///
@@ -89,7 +93,11 @@ pub fn assess(
     };
     let mut supported = false;
     for build in builds {
-        if cache.matches(root, build)? {
+        if cache.matches(
+            &root.join(build.executable.as_str()),
+            build.size,
+            &build.sha256,
+        )? {
             supported = true;
             break;
         }
@@ -104,16 +112,41 @@ pub fn assess(
         let path = root.join(file);
         let version = regular_file(&path).and_then(|_| host.product_version(&path).ok().flatten());
         match version {
-            Some(v) => versions.push(v),
+            Some(v) => versions.push((file, v)),
             None => return Ok(Readiness::LoaderMissing),
         }
     }
     let allowed = &manifest.compatibility.loader_versions;
-    if let Some(found) = versions.into_iter().find(|v| !allowed.contains(v)) {
+    if let Some((_, found)) = versions.iter().find(|(_, v)| !allowed.contains(v)) {
         return Ok(Readiness::LoaderUnsupported {
-            found,
+            found: found.clone(),
             allowed: allowed.clone(),
         });
+    }
+    for (file, version) in versions {
+        let pins: Vec<_> = manifest
+            .compatibility
+            .loader_builds
+            .iter()
+            .filter(|b| b.version == version && b.file.as_str().eq_ignore_ascii_case(file))
+            .collect();
+        if pins.is_empty() {
+            continue;
+        }
+        let path = root.join(file);
+        let mut official = false;
+        for pin in pins {
+            if cache.matches(&path, pin.size, &pin.sha256)? {
+                official = true;
+                break;
+            }
+        }
+        if !official {
+            return Ok(Readiness::LoaderModified {
+                file: file.to_string(),
+                version,
+            });
+        }
     }
     Ok(match (facts.installed, facts.recommended) {
         (None, _) => Readiness::NotInstalled,
@@ -130,20 +163,24 @@ fn regular_file(path: &Path) -> Option<fs::Metadata> {
 }
 
 impl BuildHashCache {
-    /// Whether `<root>\<build.executable>` has exactly `build`'s size and SHA-256.
+    /// Whether `path` is a regular file of exactly `size` bytes and SHA-256 `sha256`.
     /// Hashes only on a size match, and once per (path, size, mtime).
-    fn matches(&self, root: &Path, build: &GameBuild) -> Result<bool, LauncherError> {
-        let path = root.join(build.executable.as_str());
-        let Some(meta) = regular_file(&path) else {
+    fn matches(
+        &self,
+        path: &Path,
+        size: u64,
+        sha256: &Sha256Digest,
+    ) -> Result<bool, LauncherError> {
+        let Some(meta) = regular_file(path) else {
             return Ok(false);
         };
-        if meta.len() != build.size {
+        if meta.len() != size {
             return Ok(false);
         }
         let mtime = meta
             .modified()
-            .map_err(|e| hash_error(&path, ErrorCode::Internal, e.to_string()))?;
-        let key = (path, meta.len(), mtime);
+            .map_err(|e| hash_error(path, ErrorCode::Internal, e.to_string()))?;
+        let key = (path.to_path_buf(), meta.len(), mtime);
         let cached = self.lock().get(&key).copied();
         let digest = match cached {
             Some(d) => d,
@@ -157,7 +194,7 @@ impl BuildHashCache {
                 d
             }
         };
-        Ok(digest == build.sha256)
+        Ok(digest == *sha256)
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<(PathBuf, u64, SystemTime), Sha256Digest>> {
