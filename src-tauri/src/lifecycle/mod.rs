@@ -66,6 +66,8 @@ pub fn run() {
             .title(UMBRELLA_DISPLAY_NAME)
             .decorations(false)
             .inner_size(1280.0, 720.0)
+            // Opens centred on the primary monitor (#174); nothing saves or restores position.
+            .center()
             .min_inner_size(1024.0, 640.0)
             // A fixed maximum, like the Riot Client, and no maximise (#135): the
             // layout is designed between these two sizes.
