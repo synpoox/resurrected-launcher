@@ -454,6 +454,8 @@ export interface NewsItem {
   /** "Announcement" or "Guide". */
   tag: string;
   title: string;
+  /** Optional short description under the title (issue 139); absent when news.json has none. */
+  summary?: string;
   /** YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ */
   published: string;
 }

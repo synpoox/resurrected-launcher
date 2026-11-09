@@ -2,6 +2,7 @@
 import { useId, useState } from "react";
 import type { SelfUpdateStatus } from "./api";
 import { Row } from "../settings/Row";
+import { BusyButton } from "../ui/pending";
 import { Switch } from "../ui/Switch";
 import { AUTO_DOWNLOAD_OFF_HINT, AUTO_DOWNLOAD_ON_HINT, holdText, versionStatus } from "./copy";
 import { useSelfUpdate, type SelfUpdate } from "./SelfUpdate";
@@ -47,9 +48,9 @@ function VersionRow({ su }: { su: SelfUpdate }) {
     switch (s.phase) {
       case "available":
         return (
-          <button type="button" className="btn ghost small" onClick={su.download}>
+          <BusyButton className="ghost small" busy={su.requesting === "download"} blocked={su.requesting !== null} onClick={su.download}>
             Download
-          </button>
+          </BusyButton>
         );
       case "ready":
       case "restarting":
@@ -58,15 +59,15 @@ function VersionRow({ su }: { su: SelfUpdate }) {
         const off = s.phase !== "ready" || why !== null;
         return (
           <>
-            <button
-              type="button"
-              className="btn primary small"
-              aria-disabled={off || undefined}
+            <BusyButton
+              className="primary small"
+              busy={su.requesting === "restart"}
+              blocked={off || su.requesting !== null}
               aria-describedby={why ? whyId : undefined}
-              onClick={() => !off && su.restart()}
+              onClick={su.restart}
             >
               Restart to update
-            </button>
+            </BusyButton>
             {why && (
               <span id={whyId} className="why">
                 {why}
@@ -78,9 +79,9 @@ function VersionRow({ su }: { su: SelfUpdate }) {
       case "download_failed":
       case "signature_rejected":
         return (
-          <button type="button" className="btn ghost small" onClick={su.download}>
+          <BusyButton className="ghost small" busy={su.requesting === "download"} blocked={su.requesting !== null} onClick={su.download}>
             Try again
-          </button>
+          </BusyButton>
         );
       case "up_to_date":
       case "updated":

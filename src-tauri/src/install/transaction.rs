@@ -429,10 +429,25 @@ fn stuck(h: Halt) -> LauncherError {
     }
 }
 
+/// The error of a forward step whose rollback finished. A conflict found on disk is
+/// [`ErrorCode::RecoveryRequired`] while the journal is open, but once rollback
+/// verified the previous installation and closed the journal nothing needs
+/// recovery: it is reported as [`ErrorCode::InventoryMismatch`] (#143).
+fn rolled_back(e: LauncherError) -> LauncherError {
+    if e.code != ErrorCode::RecoveryRequired {
+        return e;
+    }
+    LauncherError::new(
+        ErrorCode::InventoryMismatch,
+        format!("{}; the previous installation was restored", e.message),
+    )
+}
+
 /// Runs `plan` as one journaled transaction on `guard`'s root, which `lock` must
 /// hold. Preflight runs first and again before the first live mutation; a refusal
 /// there leaves the installation unchanged. On a failure before `LiveVerified` the
-/// previous installation is restored and the failure returned; if that restore
+/// previous installation is restored and the failure returned (never as
+/// [`ErrorCode::RecoveryRequired`], see [`rolled_back`]); if that restore
 /// cannot finish, or a failure comes after `LiveVerified`, the result is
 /// [`ErrorCode::RecoveryRequired`] and [`recover`] resolves it. An injected fault
 /// returns at once, as if the process died.
@@ -505,7 +520,7 @@ pub fn run(
         Err(Halt::Fault(f)) => Err(f.into()),
         Err(Halt::Error(e)) if tx.rolls_forward() => Err(recovery_required(e)),
         Err(Halt::Error(e)) => match tx.rollback(&e.message) {
-            Ok(()) => Err(e),
+            Ok(()) => Err(rolled_back(e)),
             Err(h) => Err(stuck(h)),
         },
     }

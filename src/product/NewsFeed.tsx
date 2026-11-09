@@ -9,7 +9,8 @@ export interface NewsFeedProps {
   onRetry: () => void;
 }
 
-/** Bottom-right, text only: announcements and guides. Links open by index, never by URL. */
+/** Bottom-right, text only: announcements and guides as cards stacked vertically (issue 139).
+ *  Links open by index, never by URL. */
 export function NewsFeed({ news, onOpen, onRetry }: NewsFeedProps) {
   let body;
   if (news === null) body = null;
@@ -34,12 +35,14 @@ export function NewsFeed({ news, onOpen, onRetry }: NewsFeedProps) {
           <li key={index}>
             <button type="button" className="feed-item" onClick={() => onOpen(index)}>
               <span className="feed-meta">
-                {item.tag} · {relativeDate(item.published)}
+                <span className="feed-tag">{item.tag}</span>
+                <span aria-hidden="true">·</span> {relativeDate(item.published)}
               </span>
               <span className="feed-title">
                 {item.title} <span aria-hidden="true">↗</span>
                 <span className="sr-only"> (opens in your browser)</span>
               </span>
+              {item.summary && <span className="feed-summary">{item.summary}</span>}
             </button>
           </li>
         ))}

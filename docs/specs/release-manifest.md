@@ -85,6 +85,7 @@ Anything on disk that the manifest does not list is unknown (player files, optio
 | --- | --- |
 | `compatibility.game_builds` | Non-empty. Each `{build, platform, executable, size, sha256}`: `platform` is `windows_x64`; `executable` is relative to the D2R installation; size and hash are real fingerprints of that file. A marketing label alone is not enough. |
 | `compatibility.loader_versions` | Non-empty list of allowed loader versions: `MAJOR.MINOR.PATCH` with an optional `-prerelease` (`1.3.1-beta`), compared as exact strings. |
+| `compatibility.loader_builds` | Optional ([#121](https://github.com/synpoox/resurrected-launcher/issues/121)); absent means `[]`, so schema-3 manifests published before it still parse. Each `{version, file, size, sha256}` pins one official D2RLoader file by version and bytes: `version` is one of `loader_versions`; `file` is relative to the D2R installation (`D2RLoader.exe`, `D2RCore.dll`); `size` and `sha256` are real fingerprints of the official download, with the same placeholder rules as `game_builds`. A `(version, file)` pair appears once, `file` compared ignoring case. When the list is non-empty, every `loader_versions` entry has at least one build. The packager always emits it. |
 | `compatibility.required_settings` | `{file, key, value}` settings the product needs. `file` must be a `shipped_default` of this release, compared ignoring case as Windows does. A plain `key` is read INI-style (the first `key=value` line in any section, value as written). A dotted `key` such as `d2rcore.save_format.mode` is read as TOML: the enclosing `[table]` plus the line's key must spell it, and a quoted string value is compared unquoted. An edited conflicting value pauses the update instead of being overwritten. |
 
 Unknown game/loader combinations block Play.
@@ -101,6 +102,8 @@ Unknown game/loader combinations block Play.
 ### Loader
 
 There is no loader installer pin: the launcher never downloads or runs the D2RLoader installer ([#59](https://github.com/synpoox/resurrected-launcher/issues/59)). It reads the installed loader's version, checks it against `compatibility.loader_versions`, and when it is missing or unsupported links the player to the official download page. A manifest that still carries the earlier `loader` block is rejected as an unknown field.
+
+`compatibility.loader_builds` records the publisher's SHA-256 of each official loader file, so a loader the player downloaded can be checked against the verified copy. PD2R pins D2RLoader 1.3.1-beta as `D2RLoader.exe`, 23,331,160 B, sha256 `93021dad48533bcfca8a95c69a0cc00cdb9008a3ce6ceba1d04c7aca71985a10`. Readiness does not compare installed loader bytes yet; until it does, the version check alone gates Play.
 
 ## Immutability
 

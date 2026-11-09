@@ -2,6 +2,7 @@
 // In dev builds, `?fixture=<key>` selects a fixture scene even under Tauri.
 import { createFixtureApi, DEFAULT_SCENE, SCENES, sceneByKey } from "./fixtures";
 import { createLiveApi } from "./live";
+import { withDelay } from "./slow";
 import type { LauncherApi } from "./types";
 
 export interface SelectedApi extends LauncherApi {
@@ -24,7 +25,10 @@ export function selectApi(search: string, dev: boolean, live = false): Selection
   if (!sceneByKey(key)) {
     return { ok: false, error: `Unknown fixture "${key}". Known fixtures: ${FIXTURE_KEYS.join(", ")}.` };
   }
-  return { ok: true, mode: "fixture", api: createFixtureApi(key), key };
+  // `&slow=<ms>` delays click-driven calls, to preview busy states (issue 138).
+  const slow = dev ? Number(new URLSearchParams(search).get("slow")) : 0;
+  const api = createFixtureApi(key);
+  return { ok: true, mode: "fixture", api: slow > 0 ? withDelay(api, slow) : api, key };
 }
 
 export type { LauncherApi } from "./types";

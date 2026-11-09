@@ -69,7 +69,7 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 - Hero copy sits left at about 44% height: ribbon tag, a **title that is always exactly two lines** (scaling between 30px and 50px instead of wrapping), and one line of description.
 - The bottom-left holds the action row. Play is solid red, at least 260px × 60px, with a plain uppercase label. Next to it is the square `⋯` **Manage** menu (Repair, Open saves folder, Open settings folder, divider, Uninstall… in `--detail`) and one readiness line ("● Ready · alpha 0.4.2 (latest)"). When a secondary button shares the row, the primary narrows to 200px.
 - **Notices** sit directly above the action row: a panel with a 2px left rule, muted for information and accent for errors.
-- The bottom-right holds a 250px text-only news feed: tag · relative date, headline, and an ↗ link out. It has no images and no in-launcher article view. **The feed shows announcements and guides only; release notes live in Patch Notes.** An empty feed reads "Nothing yet." Source, format and link rules: `docs/specs/news-feed.md`.
+- The bottom-right holds a text-only news feed of cards stacked vertically ([#139](https://github.com/synpoox/resurrected-launcher/issues/139)), `clamp(300px, 32vw, 440px)` wide (about 330px at 1024, 410px at 1280). Each card is one link on a `--scrim` panel with a 1px `--line` border and 18px × 20px padding: tag · relative date, an 18px headline with ↗, and the item's optional 14px summary in up to two lines. The hero copy narrows so it stays left of the feed. It has no images and no in-launcher article view. **The feed shows announcements and guides only; release notes live in Patch Notes.** An empty feed reads "Nothing yet." Source, format and link rules: `docs/specs/news-feed.md`.
 
 **Product page, Patch Notes tab** (approved in #20):
 - Fills the whole main area except the sidebar, with no hero art. It scrolls with a dark scrollbar, and content passes under a solid top fade.
@@ -105,13 +105,16 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
   - There are no buttons for products that aren't installed. A note says the launcher doesn't list, enable or disable plugins.
 - **Troubleshooting**:
   - "Export diagnostics…" opens a review dialog: the full report text, a never-included list, the Windows user name replaced by `<you>`, and an optional launcher-log checkbox.
+  - The launcher log is `launcher.log` in app-local data (`%LOCALAPPDATA%\com.projectd2r.launcher`), written in release builds too: a line at every start, state file problems, and failures that have no other trace (startup recovery, catalog refresh, launcher update download or install, the first-close notice). It is rotated to `launcher.log.1` at 1 MiB. The report includes its last 64 KiB, redacted ([#125](https://github.com/synpoox/resurrected-launcher/issues/125)).
   - "Save as file…" shows a toast with "Show in folder". Nothing is sent.
   - A pointer says Repair is in the product's `⋯` menu.
 
 **Feedback surfaces**:
 - **Notice**: explains a state in words, as above.
 - **Dialog**: square, on `--panel`, with a 2px top rule (accent for destructive or risky actions) over a `#000000b3` backdrop.
-- **Toast**: bottom-right. Information is muted and auto-dismisses; errors are accent and stay until dismissed.
+- **Toast**: bottom-right, 380px wide, text 17px with 15px actions (#138). Information is muted and auto-dismisses; errors are accent and stay until dismissed.
+- **Busy actions** (#138): from the click until the result or dialog arrives, the chosen button keeps the disabled look and shows a small square spinner beside its unchanged label (`aria-busy`). Every other action in its group is `aria-disabled` (still focusable). A second click sends nothing. A request counts as answered only when its effect shows: the product state shows the operation running, the uninstall outcome report arrives (the Uninstall confirm stays busy until then), or the launcher reports its next self-update phase. An outcome that arrives before the start answers ends the wait at once. As a safety net, busy never lasts more than 2 minutes without an answer. The product's pending action is kept per product, so leaving the page and coming back mid-request keeps it busy. This covers the product actions and the `⋯` Manage menu, Settings folder buttons, the location dialog, and the launcher self-update Download, Try again and Restart to update.
+- **Dialogs open on the click**: a consent dialog that needs an inspection (Clean install, Uninstall) opens at once with a spinner and "Checking…" line in place of its body; its confirm button waits until the inspection answers. Not now closes it meanwhile, and the page's actions are free again at once. Update inspects first (busy) because only the answer says whether it is save-breaking.
 
 ## Tray
 
@@ -192,6 +195,7 @@ Subtle only, with no video and no hero rotation: the hero changes only when the 
 - Hero art fades in over 450ms ease-out. Hero copy lifts 8px and fades over 450ms.
 - Button background and transform transition over 150ms. Primary hover lifts 2px.
 - Progress width transitions over 300ms. The running dot pulses on a 1.6s cycle.
+- A busy button's spinner (a 14px square, three sides drawn) turns once every 800ms (#138). Under reduced motion it stays still.
 - Switching tabs and scrolling Patch Notes is instant, with no smooth scrolling.
 - **Under `prefers-reduced-motion: reduce`, every animation and transition is off.** The running pulse becomes a static dot, and progress bars jump to their value.
 
