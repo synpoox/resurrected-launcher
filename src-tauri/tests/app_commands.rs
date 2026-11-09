@@ -1684,8 +1684,10 @@ fn unmanaged_install_of_an_older_release_inspects_as_needing_a_clean_install() {
         .to_owned();
     let folders = rig.desktop.folders.lock().unwrap().clone();
     assert_eq!(folders.len(), 1);
-    assert!(
-        backup.ends_with(&*folders[0].to_string_lossy()),
+    // Compare by file name: CI temp dirs differ between 8.3 short and long forms.
+    assert_eq!(
+        std::path::Path::new(&backup).file_name(),
+        folders[0].file_name(),
         "{backup} vs {folders:?}"
     );
     // Managed files are 2's; a differing shipped default (the old loot filter)
