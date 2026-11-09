@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useApi } from "../api/context";
 import { useProducts } from "../product/store";
 import { DiagnosticsDialog } from "../settings/DiagnosticsDialog";
+import { BUSY_SAFETY_MS } from "../ui/pending";
 import { useToast, type ToastInput } from "../ui/Toast";
 import type { SelfUpdateApi, SelfUpdateStatus } from "./api";
 import { availableText, downloadFailedText, readyText, rejectedText, updatedText } from "./copy";
@@ -111,6 +112,8 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
       requestingRef.current = what;
       setRequesting(what);
       const seq = statusSeq.current;
+      // Safety: a request answered by no phase event still frees after a while.
+      setTimeout(() => statusSeq.current === seq && requestingRef.current === what && settle(), BUSY_SAFETY_MS);
       send().then(
         () => statusSeq.current !== seq && requestingRef.current === what && settle(),
         () => {

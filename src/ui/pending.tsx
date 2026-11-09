@@ -15,15 +15,25 @@ export interface Pending {
   run: (key: string, fn: () => Promise<unknown> | void) => Promise<void>;
 }
 
+/** Busy never outlasts this: a request that never answers frees its buttons (issue 138). */
+export const BUSY_SAFETY_MS = 120_000;
+
 /** A pending slot that components subscribe to. */
 class Slot {
   key: string | null = null;
+  /** Which run holds the slot, so a run freed by the safety timeout can't free a later one. */
+  holder = 0;
   private listeners = new Set<() => void>();
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => void this.listeners.delete(listener);
   };
   get = () => this.key;
+  /** Takes the slot for a new run; returns its holder number. */
+  take(key: string) {
+    this.set(key);
+    return ++this.holder;
+  }
   set(key: string | null) {
     this.key = key;
     this.listeners.forEach((l) => l());
@@ -53,11 +63,14 @@ export function usePending(shared?: { owner: object; scope: string }): Pending {
   const run = useCallback(
     async (k: string, fn: () => Promise<unknown> | void) => {
       if (slot.get() !== null) return;
-      slot.set(k);
+      const holder = slot.take(k);
+      const free = () => holder === slot.holder && slot.get() !== null && slot.set(null);
+      const timer = setTimeout(free, BUSY_SAFETY_MS);
       try {
         await fn();
       } finally {
-        slot.set(null);
+        clearTimeout(timer);
+        free();
       }
     },
     [slot],

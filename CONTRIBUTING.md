@@ -34,7 +34,7 @@ npm ci
 npm run tauri dev
 ```
 
-`npm run tauri dev` runs the UI against the native commands, so it uses your real launcher state and detects your real D2R. To work on the UI with fixture data instead, run `npm run dev` and open <http://localhost:1420> in a browser. In dev builds, `?fixture=<key>` picks a journey state (even under Tauri), and ← / → cycle through them. Add `&slow=<ms>` to delay the calls a click waits on (inspect, start, cancel, play, catalog, open folder), so busy states stay visible (#138).
+`npm run tauri dev` runs the UI against the native commands, so it uses your real launcher state and detects your real D2R. To work on the UI with fixture data instead, run `npm run dev` and open <http://localhost:1420> in a browser. In dev builds, `?fixture=<key>` picks a journey state (even under Tauri), and ← / → cycle through them. Add `&slow=<ms>` to delay the calls a click waits on (inspect, start, cancel, play, catalog, open folder, open the D2RLoader download page; not startup recovery), so busy states stay visible (#138).
 
 To make a release build, run:
 

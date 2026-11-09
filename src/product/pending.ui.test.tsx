@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 // Issue 138: action buttons are busy from the click until the result or dialog arrives, never
 // submit twice, and consent dialogs open at once with a loading state while inspection runs.
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiContext } from "../api/context";
 import { createFixtureApi, sceneByKey, type FixtureApi } from "../api/fixtures";
 import type { Inspection } from "../api/types";
 import { Shell } from "../shell/Shell";
+import { BUSY_SAFETY_MS, usePending } from "../ui/pending";
 import { ToastProvider } from "../ui/Toast";
 import { SelfUpdateProvider } from "../selfupdate/SelfUpdate";
 import { createSelfUpdateFixture } from "../selfupdate/api";
@@ -249,6 +250,31 @@ describe("Uninstall confirm (issue 138)", () => {
     expect(await screen.findByRole("dialog", { name: "PD2R was uninstalled" })).toBeTruthy();
   });
 
+  it("an outcome that arrives before the start answers isn't overwritten by it", async () => {
+    const { api, user } = mount("ready");
+    const dialog = await openUninstall(user);
+    // The native side spawns the worker before it replies, so a fast failure can arrive first.
+    const reply = deferred<void>();
+    let starts = 0;
+    api.startOperation = () => {
+      starts++;
+      return reply.promise;
+    };
+    const confirm = within(dialog).getByRole("button", { name: "Uninstall" });
+    await user.click(confirm);
+    expect(busy(confirm)).toBe(true);
+    act(() =>
+      api.emitOutcome({ status: "failed", product_id: "pd2r", kind: "uninstall", error: { code: "internal", message: "File locked" } }),
+    );
+    await act(async () => reply.resolve());
+    await waitFor(() => expect(busy(confirm)).toBe(false));
+    expect(blocked(confirm)).toBe(false);
+    expect(screen.getByText("File locked")).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(busy(confirm)).toBe(false);
+    expect(starts).toBe(1);
+  });
+
   it("a failed uninstall frees the confirm again", async () => {
     const { api, user } = mount("ready");
     const starts = deferOutcome(api);
@@ -403,6 +429,26 @@ describe("pending across pages and the Manage menu (issue 138)", () => {
     expect(screen.queryByRole("menu")).toBeNull();
     play.release();
     await screen.findByRole("button", { name: "Playing" });
+  });
+});
+
+describe("busy safety timeout (issue 138)", () => {
+  it("a request that never answers frees its slot after BUSY_SAFETY_MS", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => usePending());
+      act(() => void result.current.run("stuck", () => new Promise(() => {})));
+      expect(result.current.key).toBe("stuck");
+      await act(() => vi.advanceTimersByTimeAsync(BUSY_SAFETY_MS - 1));
+      expect(result.current.key).toBe("stuck");
+      await act(() => vi.advanceTimersByTimeAsync(1));
+      expect(result.current.key).toBeNull();
+      // A later run isn't freed by the stuck one's timer.
+      act(() => void result.current.run("next", () => new Promise(() => {})));
+      expect(result.current.key).toBe("next");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

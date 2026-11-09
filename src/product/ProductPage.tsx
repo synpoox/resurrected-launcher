@@ -16,7 +16,7 @@ import type { Product } from "../products";
 import { arrowKeys } from "../ui/focus";
 import { Menu, type MenuItem } from "../ui/Menu";
 import { Notice } from "../ui/Notice";
-import { BusyButton, usePending } from "../ui/pending";
+import { BUSY_SAFETY_MS, BusyButton, usePending } from "../ui/pending";
 import { useToast } from "../ui/Toast";
 import { CleanInstallDialog, LocationDialog, SaveBreakingDialog, UninstallDialog } from "./dialogs";
 import { formatBytes, formatCount, formatTimeLeft, releaseLabel, startedAgo } from "./format";
@@ -174,6 +174,9 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   // Issue 138: one action at a time, busy from the click until its result or dialog arrives.
   // Shared per API and product, so leaving the page mid-request and coming back keeps it busy.
   const pending = usePending({ owner: api, scope: product.id });
+  /** Uninstall attempts: bumped by each confirm and by each uninstall outcome, so an outcome that
+   *  arrives before startOperation answers isn't overwritten by that attempt's late `started`. */
+  const uninstallAttempt = useRef(0);
   const opened = useRef(false);
   const focused = useRef(0);
   const ids = { overview: useId(), notes: useId(), notice: useId(), line: useId(), why: useId() };
@@ -218,6 +221,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         if (o.product_id !== product.id) return;
         if (o.status === "failed") fail(o.error);
         if (o.kind === "uninstall") {
+          uninstallAttempt.current++;
           // The report fills the dialog; a failed or cancelled uninstall frees its confirm again.
           const report = o.status === "succeeded" ? o.report : null;
           setDialog((d) => (d?.kind === "uninstall" ? { ...d, report, started: false } : d));
@@ -337,8 +341,11 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
 
   const manageItems: MenuItem[] = [
     { label: "Repair", onSelect: () => void runAction("repair") },
-    { label: "Open saves folder", onSelect: () => void api.openFolder(product.id, "saves").catch(fail) },
-    { label: "Open settings folder", onSelect: () => void api.openFolder(product.id, "settings").catch(fail) },
+    { label: "Open saves folder", onSelect: () => void pending.run("saves", () => api.openFolder(product.id, "saves").catch(fail)) },
+    {
+      label: "Open settings folder",
+      onSelect: () => void pending.run("settings", () => api.openFolder(product.id, "settings").catch(fail)),
+    },
     { label: "Uninstall…", tone: "danger", divider: true, onSelect: () => void runAction("uninstall") },
   ];
   const manage = (
@@ -733,9 +740,15 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           onClose={closeDialog}
           onConfirm={(inspection) =>
             void pending.run("uninstall-confirm", async () => {
+              const attempt = ++uninstallAttempt.current;
               if (!(await start("uninstall", inspection))) return;
-              // Busy until the outcome: its report (or a failure) arrives after start answers.
-              setDialog((d) => (d?.kind === "uninstall" && d.inspection === inspection && !d.report ? { ...d, started: true } : d));
+              // The outcome already arrived (a fast failure): nothing is left to wait for.
+              if (attempt !== uninstallAttempt.current) return;
+              // Busy until the outcome: its report (or a failure) usually arrives after start answers.
+              const mark = (started: boolean) =>
+                setDialog((d) => (d?.kind === "uninstall" && d.inspection === inspection && !d.report ? { ...d, started } : d));
+              mark(true);
+              setTimeout(() => attempt === uninstallAttempt.current && mark(false), BUSY_SAFETY_MS);
             })
           }
         />

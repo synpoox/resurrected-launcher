@@ -23,9 +23,9 @@ export interface MenuProps {
 
 /** The square `⋯` menu. Arrow keys move, Esc closes, focus returns to `⋯`. */
 export function Menu({ label, items, defaultOpen = false, className = "", blocked = false }: MenuProps) {
-  const [requested, setOpen] = useState(defaultOpen);
+  const [wantOpen, setOpen] = useState(defaultOpen);
   // A menu open when an action starts closes; it doesn't reopen by itself afterwards.
-  const open = requested && !blocked;
+  const open = wantOpen && !blocked;
   const [wasBlocked, setWasBlocked] = useState(blocked);
   if (blocked !== wasBlocked) {
     setWasBlocked(blocked);
