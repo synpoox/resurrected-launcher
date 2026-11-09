@@ -18,6 +18,8 @@ It never creates, drafts or publishes a GitHub release, and it never writes a ta
 
 `latest.json` points at `https://github.com/<repo>/releases/download/launcher-v<version>/<installer>`. That URL only works after someone publishes those assets by hand. The updater endpoint the app trusts is `plugins.updater.endpoints` in `tauri.conf.json` (`https://github.com/synpoox/resurrected-launcher/releases/latest/download/latest.json`, decided on #86, set by #88), so it only answers once a release is published.
 
+The bundle is named after `productName` (`Project Resurrected`, #151), so Tauri writes `Project Resurrected_<version>_x64-setup.exe`. The workflow renames it and its `.sig` to `Project-Resurrected_<version>_x64-setup.exe` before writing `latest.json`, because GitHub would otherwise rename a spaced asset on upload and the URL would break. Publish the renamed files as they are.
+
 ## Secrets
 
 Both secrets live in the GitHub **environment** `launcher-release`, not in repository secrets. Only the `build` step that runs `tauri build` receives them.
