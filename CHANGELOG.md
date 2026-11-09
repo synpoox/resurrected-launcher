@@ -19,5 +19,5 @@ The first public build of the Project Resurrected launcher for Diablo II: Resurr
 
 - Windows 10 (22H2) or Windows 11, 64-bit. The installer is per user and needs no administrator rights.
 - The installer is not Authenticode-signed, so Windows SmartScreen may warn you. Choose **More info → Run anyway**.
-- This build does not update itself. Get later launcher versions from the [Releases page](https://github.com/synpoox/resurrected-launcher/releases).
+- The launcher updates itself. It checks for a new version, verifies its signature and installs it when you restart or quit, never while a game is running.
 - Uninstalling the launcher leaves your saves and Diablo II: Resurrected untouched.
