@@ -4,7 +4,7 @@ import type { GameLocation, Inspection, OutcomeReport } from "../api/types";
 import { isLauncherError } from "../api/types";
 import type { Product } from "../products";
 import { Dialog } from "../ui/Dialog";
-import { Spinner } from "../ui/pending";
+import { BusyButton, Spinner } from "../ui/pending";
 
 const STORE: Record<GameLocation["store"], string> = { battle_net: "Battle.net", unknown: "Store not recognised" };
 
@@ -14,7 +14,10 @@ export function LocationDialog({ product, onClose }: { product: Product; onClose
   const [locations, setLocations] = useState<GameLocation[] | null>(null);
   const [picked, setPicked] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  // Issue 138: Use and Browse are busy separately; either blocks both.
+  const [using, setUsing] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
+  const busy = using || browsing;
   const firstRadio = useRef<HTMLInputElement>(null);
   const hasLocations = Boolean(locations?.length);
 
@@ -35,20 +38,20 @@ export function LocationDialog({ product, onClose }: { product: Product; onClose
   }, [api]);
 
   const use = async () => {
-    setBusy(true);
+    setUsing(true);
     setError(null);
     try {
       await api.selectGameLocation(picked);
       onClose(true);
     } catch (e) {
       setError(isLauncherError(e) && e.code === "game_running" ? "Quit the game to change this." : "That installation can't be used any more. Pick another, or browse for one.");
-      setBusy(false);
+      setUsing(false);
     }
   };
 
   const browse = async () => {
     if (busy) return;
-    setBusy(true);
+    setBrowsing(true);
     setError(null);
     try {
       if (await api.chooseGameLocation()) return onClose(true);
@@ -59,7 +62,7 @@ export function LocationDialog({ product, onClose }: { product: Product; onClose
           : "That folder can't be used.",
       );
     }
-    setBusy(false);
+    setBrowsing(false);
   };
 
   const count = locations?.length ?? 0;
@@ -69,16 +72,15 @@ export function LocationDialog({ product, onClose }: { product: Product; onClose
       onClose={() => onClose(false)}
       actions={
         <>
-          <button
-            type="button"
-            className="btn primary"
-            disabled={count === 0}
-            aria-busy={busy || undefined}
-            aria-disabled={busy || undefined}
-            onClick={() => void (busy || use())}
-          >
-            Use this installation
-          </button>
+          {count === 0 ? (
+            <button type="button" className="btn primary" disabled>
+              Use this installation
+            </button>
+          ) : (
+            <BusyButton className="primary" busy={using} blocked={busy} onClick={() => void use()}>
+              Use this installation
+            </BusyButton>
+          )}
           <button type="button" className="btn ghost" onClick={() => onClose(false)}>
             Cancel
           </button>
@@ -114,7 +116,14 @@ export function LocationDialog({ product, onClose }: { product: Product; onClose
           ))}
         </div>
       )}
-      <button type="button" className="link browse" aria-disabled={busy || undefined} onClick={() => void browse()}>
+      <button
+        type="button"
+        className="link browse"
+        aria-busy={browsing || undefined}
+        aria-disabled={busy || undefined}
+        onClick={() => void browse()}
+      >
+        {browsing && <Spinner />}
         Browse for another folder…
       </button>
       {error && (
@@ -223,16 +232,9 @@ export function UninstallDialog({ product, inspection, report, busy, onConfirm, 
           </button>
         ) : (
           <>
-            <button
-              type="button"
-              className="btn primary"
-              aria-busy={busy || undefined}
-              aria-disabled={waiting || undefined}
-              onClick={() => !waiting && inspection && onConfirm(inspection)}
-            >
-              {busy && <Spinner />}
+            <BusyButton className="primary" busy={busy} blocked={waiting} onClick={() => inspection && onConfirm(inspection)}>
               Uninstall
-            </button>
+            </BusyButton>
             <button type="button" className="btn ghost" onClick={onClose} data-autofocus="">
               Cancel
             </button>
@@ -295,14 +297,9 @@ export interface CleanInstallProps {
 export function CleanInstallDialog({ product, inspection, onConfirm, onClose }: CleanInstallProps) {
   const actions = (
     <>
-      <button
-        type="button"
-        className="btn primary"
-        aria-disabled={!inspection || undefined}
-        onClick={() => inspection && onConfirm(inspection)}
-      >
+      <BusyButton className="primary" blocked={!inspection} onClick={() => inspection && onConfirm(inspection)}>
         Clean install
-      </button>
+      </BusyButton>
       <button type="button" className="btn ghost" onClick={onClose} data-autofocus="">
         Not now
       </button>

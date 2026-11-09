@@ -6,7 +6,7 @@ import { HERO_ART } from "../art";
 import { LocationDialog } from "../product/dialogs";
 import { PRODUCTS, type Product } from "../products";
 import { Notice } from "../ui/Notice";
-import { pendingProps, Spinner, usePending } from "../ui/pending";
+import { BusyButton, usePending } from "../ui/pending";
 import { Switch } from "../ui/Switch";
 import { SelfUpdateRows } from "../selfupdate/SettingsRows";
 import { useToast } from "../ui/Toast";
@@ -193,15 +193,14 @@ export function FoldersPanel({ product, state }: PanelProps) {
   const openButton = (productId: string | null, folder: Folder, label: string) => {
     const key = `${productId ?? "global"}:${folder}`;
     return (
-      <button
-        type="button"
-        className="btn ghost small"
-        {...pendingProps(pending.key, key)}
+      <BusyButton
+        className="ghost small"
+        busy={pending.key === key}
+        blocked={pending.key !== null}
         onClick={() => void pending.run(key, () => open(productId, folder))}
       >
-        {pending.key === key && <Spinner />}
         {label}
-      </button>
+      </BusyButton>
     );
   };
 

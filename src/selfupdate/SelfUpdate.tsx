@@ -21,6 +21,8 @@ export interface SelfUpdate {
   clearDot(): void;
   check(): Promise<void>;
   download(): void;
+  /** A download request was sent and hasn't answered yet (issue 138: no second request). */
+  starting: boolean;
   restart(): void;
   whatsNew(): void;
   setAutoDownload(enabled: boolean): void;
@@ -87,13 +89,24 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
     () => toast.show({ tone: "error", text: "Couldn't start the launcher update. Try again from Settings → Launcher." }),
     [toast],
   );
+  const [starting, setStarting] = useState(false);
+  const startingRef = useRef(false);
   const download = useCallback(() => {
+    if (startingRef.current) return;
+    startingRef.current = true;
+    setStarting(true);
     // A new attempt: close the old failure toast, and if this one fails too, its toast shows again,
     // even when the failure arrives with no downloading event in between.
     if (openToast.current) toast.dismiss(openToast.current.id);
     openToast.current = null;
     lastShownKey.current = null;
-    void api.download().catch(failed);
+    void api
+      .download()
+      .catch(failed)
+      .finally(() => {
+        startingRef.current = false;
+        setStarting(false);
+      });
   }, [api, toast, failed]);
   const restart = useCallback(() => void api.restartToUpdate().catch(failed), [api, failed]);
   const whatsNew = useCallback(() => void api.openWhatsNew().catch(() => {}), [api]);
@@ -158,8 +171,8 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
   const clearDot = useCallback(() => setDot(false), []);
 
   const value = useMemo<SelfUpdate>(
-    () => ({ status, hold, autoDownload, dot, clearDot, check, download, restart, whatsNew, setAutoDownload }),
-    [status, hold, autoDownload, dot, clearDot, check, download, restart, whatsNew, setAutoDownload],
+    () => ({ status, hold, autoDownload, dot, clearDot, check, download, starting, restart, whatsNew, setAutoDownload }),
+    [status, hold, autoDownload, dot, clearDot, check, download, starting, restart, whatsNew, setAutoDownload],
   );
   return (
     <SelfUpdateContext.Provider value={value}>

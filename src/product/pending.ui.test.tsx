@@ -10,6 +10,8 @@ import { createFixtureApi, sceneByKey, type FixtureApi } from "../api/fixtures";
 import type { Inspection } from "../api/types";
 import { Shell } from "../shell/Shell";
 import { ToastProvider } from "../ui/Toast";
+import { SelfUpdateProvider } from "../selfupdate/SelfUpdate";
+import { createSelfUpdateFixture } from "../selfupdate/api";
 
 let api: FixtureApi | null = null;
 
@@ -34,7 +36,8 @@ function deferred<T>() {
 }
 
 /** Replaces one API method with a held answer, counting calls; `release` lets the real one answer. */
-function hold<K extends "inspectOperation" | "startOperation" | "playProduct" | "cancelOperation" | "openFolder">(a: FixtureApi, name: K) {
+type Held = "inspectOperation" | "startOperation" | "playProduct" | "cancelOperation" | "openFolder" | "selectGameLocation" | "chooseGameLocation";
+function hold<K extends Held>(a: FixtureApi, name: K) {
   const real = a[name].bind(a) as (...args: unknown[]) => Promise<unknown>;
   const gate = deferred<void>();
   const calls: unknown[][] = [];
@@ -148,8 +151,13 @@ describe("consent dialogs open on the click (issue 138)", () => {
     const inspect = hold(api, "inspectOperation");
     await user.click(screen.getByRole("button", { name: "Clean install…" }));
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Not now" }));
+    // The page's actions are free at once, before the inspection answers.
+    const again = screen.getByRole("button", { name: "Clean install…" });
+    expect(busy(again)).toBe(false);
+    expect(blocked(again)).toBe(false);
     inspect.release();
-    await waitFor(() => expect(busy(screen.getByRole("button", { name: "Clean install…" }))).toBe(false));
+    await waitFor(() => expect(inspect.calls).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 0));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -163,6 +171,9 @@ describe("consent dialogs open on the click (issue 138)", () => {
     expect(within(dialog).getByRole("status").textContent).toMatch(/Checking PD2R's files/);
     const confirm = within(dialog).getByRole("button", { name: "Uninstall" });
     expect(blocked(confirm)).toBe(true);
+    // Waiting for the inspection isn't the confirm's own action: no spinner before it is chosen.
+    expect(busy(confirm)).toBe(false);
+    expect(confirm.querySelector(".spinner")).toBeNull();
     inspect.release();
     await within(dialog).findByText("lootfilter/default.filter");
     const start = hold(api, "startOperation");
@@ -196,11 +207,95 @@ describe("Settings folder buttons (issue 138)", () => {
   });
 });
 
+describe("location dialog (issue 138)", () => {
+  it("Use this installation is busy, with a spinner, until the choice answers", async () => {
+    const { api, user } = mount("d2r-choose");
+    const dialog = await screen.findByRole("dialog");
+    // Detection has answered once the installations are listed.
+    await within(dialog).findAllByRole("radio");
+    const use = within(dialog).getByRole("button", { name: "Use this installation" });
+    const select = hold(api, "selectGameLocation");
+    await user.click(use);
+    await user.click(use);
+    expect(select.calls).toHaveLength(1);
+    expect(busy(use)).toBe(true);
+    expect(blocked(use)).toBe(true);
+    expect(use.querySelector(".spinner")).not.toBeNull();
+    expect(blocked(within(dialog).getByRole("button", { name: /Browse for another folder/ }))).toBe(true);
+    select.release();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("Browse is busy on its own: Use waits, but doesn't spin", async () => {
+    const { api, user } = mount("d2r-choose");
+    const dialog = await screen.findByRole("dialog");
+    // Detection has answered once the installations are listed.
+    await within(dialog).findAllByRole("radio");
+    const use = within(dialog).getByRole("button", { name: "Use this installation" });
+    const choose = hold(api, "chooseGameLocation");
+    const browse = within(dialog).getByRole("button", { name: /Browse for another folder/ });
+    await user.click(browse);
+    await user.click(browse);
+    expect(choose.calls).toHaveLength(1);
+    expect(busy(browse)).toBe(true);
+    expect(busy(use)).toBe(false);
+    expect(blocked(use)).toBe(true);
+    await user.click(use);
+    expect(api.calls.some((c) => c.name === "selectGameLocation")).toBe(false);
+    choose.release();
+    await waitFor(() => expect(busy(browse)).toBe(false));
+    expect(blocked(use)).toBe(false);
+  });
+});
+
+describe("self-update Download (issue 138)", () => {
+  it("Download is busy until the request answers, and sends one request", async () => {
+    api = createFixtureApi("ready", { tick: 60_000 });
+    const su = createSelfUpdateFixture("available", { tick: 60_000 });
+    const real = su.download.bind(su);
+    const gate = deferred<void>();
+    let sent = 0;
+    su.download = () => {
+      sent++;
+      return gate.promise.then(real);
+    };
+    const user = userEvent.setup();
+    render(
+      <ApiContext.Provider value={api}>
+        <ToastProvider>
+          <SelfUpdateProvider api={su}>
+            <Shell product={sceneByKey("ready")!.product} />
+          </SelfUpdateProvider>
+        </ToastProvider>
+      </ApiContext.Provider>,
+    );
+    await user.click(screen.getByRole("button", { name: /^Settings/ }));
+    await user.click(screen.getByRole("tab", { name: "Launcher" }));
+    const download = await within(screen.getByRole("tabpanel")).findByRole("button", { name: "Download" });
+    await user.click(download);
+    await user.click(download);
+    expect(sent).toBe(1);
+    expect(busy(download)).toBe(true);
+    expect(download.querySelector(".spinner")).not.toBeNull();
+    gate.resolve();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Download" })?.getAttribute("aria-busy") ?? null).toBeNull());
+    su.dispose();
+  });
+});
+
 describe("toast text (issue 138)", () => {
   it("toast text is large: 17px body, 15px actions", () => {
     const css = readFileSync("src/ui/ui.css", "utf8");
     const rule = (sel: string) => css.match(new RegExp(`\\n${sel.replace(/[.]/g, "\\.")} \\{([^}]*)\\}`))![1];
     expect(rule(".toast")).toMatch(/font-size: 17px;/);
     expect(rule(".toast-actions")).toMatch(/font-size: 15px;/);
+  });
+
+  it("a busy button keeps the disabled look: the aria-busy rule sets no opacity", () => {
+    const css = readFileSync("src/ui/ui.css", "utf8");
+    for (const [, sel, body] of css.matchAll(/([^{}]*)\{([^}]*)\}/g)) {
+      if (sel.includes("aria-busy")) expect(body, sel).not.toMatch(/opacity/);
+    }
+    expect(css).toMatch(/\.btn\[aria-disabled="true"\][^{]*\{[^}]*opacity: 0\.45/);
   });
 });

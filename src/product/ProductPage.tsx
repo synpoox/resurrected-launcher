@@ -16,7 +16,7 @@ import type { Product } from "../products";
 import { arrowKeys } from "../ui/focus";
 import { Menu, type MenuItem } from "../ui/Menu";
 import { Notice } from "../ui/Notice";
-import { pendingProps, Spinner, usePending } from "../ui/pending";
+import { BusyButton, usePending } from "../ui/pending";
 import { useToast } from "../ui/Toast";
 import { CleanInstallDialog, LocationDialog, SaveBreakingDialog, UninstallDialog } from "./dialogs";
 import { formatBytes, formatCount, formatTimeLeft, releaseLabel, startedAgo } from "./format";
@@ -235,27 +235,35 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
     [api, product.id, refresh, fail],
   );
 
-  /** Inspects, then opens the operation's dialog or starts it. Callers hold the pending slot. */
-  const runOp = useCallback(
+  /** Opens a consent dialog at once, then fills it when its inspection answers (issue 138). It
+   *  doesn't hold the pending slot: the modal dialog blocks the page, and Not now frees it at once.
+   *  The answer fills only this dialog object, so a late one never fills a closed or newer dialog. */
+  const openConsent = useCallback(
+    (kind: "uninstall" | "clean_install") => {
+      const opened: DialogState =
+        kind === "uninstall" ? { kind: "uninstall", inspection: null, report: null } : { kind: "clean-install", inspection: null };
+      setDialog(opened);
+      api.inspectOperation({ product_id: product.id, kind }).then(
+        (inspection) => setDialog((d) => (d === opened ? { ...opened, inspection } : d)),
+        (e: unknown) => {
+          setDialog((d) => (d === opened ? null : d));
+          fail(e);
+        },
+      );
+    },
+    [api, product.id, fail],
+  );
+
+  /** Inspects, then starts the operation or opens its dialog. Doesn't take the pending slot: the
+   *  caller holds it (a `busy` button, or `runAction`). */
+  const operate = useCallback(
     async (kind: OperationKind) => {
-      // Consent dialogs show at once, with a loading state inside, while the inspection runs.
-      if (kind === "uninstall") setDialog({ kind: "uninstall", inspection: null, report: null });
-      if (kind === "clean_install") setDialog({ kind: "clean-install", inspection: null });
+      if (kind === "uninstall" || kind === "clean_install") return openConsent(kind);
       let inspection: Inspection;
       try {
         inspection = await api.inspectOperation({ product_id: product.id, kind });
       } catch (e) {
-        if (kind === "uninstall" || kind === "clean_install") setDialog(null);
         fail(e);
-        return;
-      }
-      // Fill the dialog only if it is still open (Not now may have closed it meanwhile).
-      if (kind === "uninstall") {
-        setDialog((d) => (d?.kind === "uninstall" ? { ...d, inspection } : d));
-        return;
-      }
-      if (kind === "clean_install") {
-        setDialog((d) => (d?.kind === "clean-install" ? { ...d, inspection } : d));
         return;
       }
       if (kind === "update" && inspection.release.save_breaking) {
@@ -265,9 +273,10 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
       if (kind === "repair") setRepairInspection(inspection);
       await start(kind, inspection);
     },
-    [api, product.id, start, fail],
+    [api, product.id, start, fail, openConsent],
   );
-  const run = useCallback((kind: OperationKind) => pending.run(kind, () => runOp(kind)), [pending, runOp]);
+  /** `operate` in the pending slot: for the menu, tray and fixture paths, which have no busy button. */
+  const runAction = useCallback((kind: OperationKind) => pending.run(kind, () => operate(kind)), [pending, operate]);
 
   const play = async () => {
     try {
@@ -300,8 +309,8 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
     };
     const kind = kinds[open];
     // The same path the button takes; it only sets state after the API answers.
-    if (kind) void Promise.resolve(kind).then(run);
-  }, [open, run]);
+    if (kind) void Promise.resolve(kind).then(runAction);
+  }, [open, runAction]);
 
   // Tray requests: the save-breaking dialog (through the Update path), or the Overview's notice.
   useEffect(() => {
@@ -310,9 +319,9 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
     const action = trayFocus.action;
     void Promise.resolve().then(() => {
       setTab("overview");
-      if (action === "save_breaking") return run("update");
+      if (action === "save_breaking") return runAction("update");
     });
-  }, [trayFocus, run]);
+  }, [trayFocus, runAction]);
 
   const label = (releaseId: string, version: string) => releaseLabel(releaseId, version, releases ?? []);
   const installed = state.installed;
@@ -320,10 +329,10 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   const offered = recommended ? label(recommended.release_id, recommended.display_version) : null;
 
   const manageItems: MenuItem[] = [
-    { label: "Repair", onSelect: () => void run("repair") },
+    { label: "Repair", onSelect: () => void runAction("repair") },
     { label: "Open saves folder", onSelect: () => void api.openFolder(product.id, "saves").catch(fail) },
     { label: "Open settings folder", onSelect: () => void api.openFolder(product.id, "settings").catch(fail) },
-    { label: "Uninstall…", tone: "danger", divider: true, onSelect: () => void run("uninstall") },
+    { label: "Uninstall…", tone: "danger", divider: true, onSelect: () => void runAction("uninstall") },
   ];
   const manage = <Menu label={`Manage ${product.short}`} items={manageItems} defaultOpen={open === "manage"} />;
   const line = (dot: string, text: ReactNode) => (
@@ -350,15 +359,14 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   );
   /** An action button in the pending group: a spinner while it runs, and no second submit. */
   const busy = (tone: "primary" | "ghost", text: string, key: string, fn: () => Promise<unknown>) => (
-    <button
-      type="button"
-      className={`btn ${tone}`}
-      {...pendingProps(pending.key, key)}
+    <BusyButton
+      className={tone}
+      busy={pending.key === key}
+      blocked={pending.key !== null}
       onClick={() => void pending.run(key, fn)}
     >
-      {pending.key === key && <Spinner />}
       {text}
-    </button>
+    </BusyButton>
   );
   const cancelProps = { busy: pending.key === "cancel", onCancel: () => void pending.run("cancel", cancel) };
 
@@ -397,7 +405,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         if (existing === "adoptable") {
           return (
             <>
-              {busy("primary", "Adopt", "adopt", () => runOp("adopt"))}
+              {busy("primary", "Adopt", "adopt", () => operate("adopt"))}
               {!compact && line("ok", `${offered} is already in your game folder · Adopt uses it without downloading`)}
             </>
           );
@@ -405,7 +413,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         if (existing === "different") {
           return (
             <>
-              {busy("primary", "Clean install…", "clean_install", () => runOp("clean_install"))}
+              {busy("primary", "Clean install…", "clean_install", () => operate("clean_install"))}
               {!compact &&
                 line("warn", `The ${product.short} in your game folder isn't ${offered} · older or changed files`)}
             </>
@@ -414,7 +422,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         const missing = existing === "incomplete" && installInspection ? installInspection.files_added : 0;
         return (
           <>
-            {busy("primary", "Install", "install", () => runOp("install"))}
+            {busy("primary", "Install", "install", () => operate("install"))}
             {!compact &&
               line(
                 "idle",
@@ -492,7 +500,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
       case "update":
         return (
           <>
-            {busy("primary", "Update", "update", () => runOp("update"))}
+            {busy("primary", "Update", "update", () => operate("update"))}
             {!compact && installed && busy("ghost", `Play ${installed.display_version}`, "play", play)}
             {!compact && manage}
             {!compact && offered && line("new", `${offered} available`)}
@@ -527,7 +535,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         return (
           <>
             {busy("primary", "Try again", "play", play)}
-            {!compact && busy("ghost", "Repair", "repair", () => runOp("repair"))}
+            {!compact && busy("ghost", "Repair", "repair", () => operate("repair"))}
             {!compact && ghost("Export diagnostics", onOpenSettings)}
           </>
         );
@@ -712,9 +720,9 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           product={product}
           inspection={dialog.inspection}
           report={dialog.report}
-          busy={pending.key === "uninstall"}
+          busy={pending.key === "uninstall-confirm"}
           onClose={closeDialog}
-          onConfirm={(inspection) => void pending.run("uninstall", () => start("uninstall", inspection))}
+          onConfirm={(inspection) => void pending.run("uninstall-confirm", () => start("uninstall", inspection))}
         />
       )}
       {dialog?.kind === "clean-install" && (

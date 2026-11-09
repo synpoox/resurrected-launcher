@@ -112,8 +112,8 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 - **Notice**: explains a state in words, as above.
 - **Dialog**: square, on `--panel`, with a 2px top rule (accent for destructive or risky actions) over a `#000000b3` backdrop.
 - **Toast**: bottom-right, 380px wide, text 17px with 15px actions (#138). Information is muted and auto-dismisses; errors are accent and stay until dismissed.
-- **Busy actions** (#138): from the click until the result or dialog arrives, the chosen button shows a small square spinner beside its unchanged label (`aria-busy`), and every other action in its group is `aria-disabled` (still focusable). A second click sends nothing.
-- **Dialogs open on the click**: a consent dialog that needs an inspection (Clean install, Uninstall) opens at once with a spinner and "Checking…" line in place of its body; its confirm button waits until the inspection answers. Not now closes it meanwhile. Update inspects first (busy) because only the answer says whether it is save-breaking.
+- **Busy actions** (#138): from the click until the result or dialog arrives, the chosen button keeps the disabled look and shows a small square spinner beside its unchanged label (`aria-busy`). Every other action in its group is `aria-disabled` (still focusable). A second click sends nothing. This covers the product actions, Settings folder buttons, the location dialog and the launcher self-update Download / Try again.
+- **Dialogs open on the click**: a consent dialog that needs an inspection (Clean install, Uninstall) opens at once with a spinner and "Checking…" line in place of its body; its confirm button waits until the inspection answers. Not now closes it meanwhile, and the page's actions are free again at once. Update inspects first (busy) because only the answer says whether it is save-breaking.
 
 ## Tray
 
@@ -194,6 +194,7 @@ Subtle only, with no video and no hero rotation: the hero changes only when the 
 - Hero art fades in over 450ms ease-out. Hero copy lifts 8px and fades over 450ms.
 - Button background and transform transition over 150ms. Primary hover lifts 2px.
 - Progress width transitions over 300ms. The running dot pulses on a 1.6s cycle.
+- A busy button's spinner (a 14px square, three sides drawn) turns once every 800ms (#138). Under reduced motion it stays still.
 - Switching tabs and scrolling Patch Notes is instant, with no smooth scrolling.
 - **Under `prefers-reduced-motion: reduce`, every animation and transition is off.** The running pulse becomes a static dot, and progress bars jump to their value.
 

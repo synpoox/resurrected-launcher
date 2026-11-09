@@ -55,11 +55,17 @@
   cursor: default;
 }
 
-/* Busy (issue 138): the action in progress keeps full strength and shows a spinner; the others
+/* Busy (issue 138): the action in progress keeps the disabled look and adds a spinner; the others
    in its group are aria-disabled. */
-.btn[aria-busy="true"] {
-  opacity: 1;
+.btn[aria-busy="true"],
+.link[aria-busy="true"] {
   cursor: progress;
+}
+
+.link.browse {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .spinner {

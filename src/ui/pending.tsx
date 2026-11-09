@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 
 /** A small square spinner for a busy button or a loading dialog body. Static under reduced motion. */
 export function Spinner() {
@@ -33,13 +33,35 @@ export function usePending(): Pending {
   return { key, run };
 }
 
+export interface BusyButtonProps {
+  /** Extra classes after `btn`, e.g. "primary" or "ghost small". */
+  className: string;
+  /** This button's action is running: a spinner and `aria-busy`. */
+  busy?: boolean;
+  /** Another action (or this one) is running, or it can't run yet: `aria-disabled`. */
+  blocked?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  "aria-describedby"?: string;
+}
+
 /**
- * Props for a button that takes part in a pending group: busy (`aria-busy`) when it is the action
- * in progress, and `aria-disabled` (still focusable, so focus isn't lost) while any action is.
+ * Issue 138: a button that is busy from its click until its result. Busy and blocked use
+ * `aria-disabled`, not `disabled`, so focus stays on the button; clicks are ignored meanwhile.
  */
-export function pendingProps(pending: string | null, key: string) {
-  return {
-    "aria-busy": pending === key || undefined,
-    "aria-disabled": pending !== null || undefined,
-  } as const;
+export function BusyButton({ className, busy = false, blocked = false, onClick, children, ...rest }: BusyButtonProps) {
+  const off = busy || blocked;
+  return (
+    <button
+      type="button"
+      className={`btn ${className}`}
+      aria-busy={busy || undefined}
+      aria-disabled={off || undefined}
+      aria-describedby={rest["aria-describedby"]}
+      onClick={() => !off && onClick()}
+    >
+      {busy && <Spinner />}
+      {children}
+    </button>
+  );
 }
