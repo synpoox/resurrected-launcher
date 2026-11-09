@@ -13,7 +13,6 @@
 //! The "shown" marker is written only after Windows accepted the toast. A failure
 //! is logged to `launcher.log` and the next close tries again.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -30,9 +29,6 @@ pub const TEXT: &str = "Still running in the tray. Downloads and update checks c
 /// The icon the toast shows, written next to the marker for the registry's `IconUri`.
 const ICON_FILE: &str = "notice-icon.png";
 const ICON: &[u8] = include_bytes!("../../icons/128x128.png");
-
-/// Log file in app-local data, the one the diagnostics report reads.
-const LOG_FILE: &str = "launcher.log";
 
 /// What one attempt did.
 #[derive(Debug, PartialEq, Eq)]
@@ -149,20 +145,9 @@ fn write_icon(dir: &Path) -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
-/// Appends one line to `launcher.log` and stderr.
+/// Appends one line to `launcher.log` in the notice's directory.
 fn log(dir: &Path, line: &str) {
-    eprintln!("{line}");
-    let _ = std::fs::create_dir_all(dir);
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(dir.join(LOG_FILE))
-    {
-        let secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
-        let _ = writeln!(f, "[{secs}] {line}");
-    }
+    crate::state::log::append(dir, line);
 }
 
 #[cfg(test)]
@@ -211,7 +196,7 @@ mod tests {
     fn failures_are_logged_to_launcher_log() {
         let dir = tempfile::tempdir().unwrap();
         log(dir.path(), "first-close notice not shown: x");
-        let text = std::fs::read_to_string(dir.path().join(LOG_FILE)).unwrap();
+        let text = std::fs::read_to_string(dir.path().join(crate::state::log::LOG_FILE)).unwrap();
         assert!(
             text.ends_with("first-close notice not shown: x\n"),
             "{text}"

@@ -1470,6 +1470,40 @@ fn saved_diagnostics_are_exactly_the_previewed_text() {
     assert_eq!(*rig.desktop.shown.lock().unwrap(), [file]);
 }
 
+/// #125: a release build has no console, so startup and its failures must reach
+/// `launcher.log` in the state dir, where the diagnostics report reads it.
+#[test]
+fn start_up_writes_the_launcher_log_that_diagnostics_includes() {
+    let rig = Rig::new();
+    let log = rig._state_dir.path().join("launcher.log");
+    assert!(!log.exists());
+    rig.start_up();
+    let text = fs::read_to_string(&log).unwrap();
+    assert!(
+        text.contains(&format!(
+            "] launcher {} started
+",
+            env!("CARGO_PKG_VERSION")
+        )),
+        "{text}"
+    );
+    // The offline startup refresh fails, and says so.
+    assert!(text.contains("] catalog refresh failed: "), "{text}");
+
+    let reply = rig
+        .invoke("preview_diagnostics", json!({ "include_log": true }))
+        .unwrap();
+    let report = reply["data"]["text"].as_str().unwrap();
+    let section = report
+        .split(
+            "[Launcher log]
+",
+        )
+        .nth(1)
+        .unwrap();
+    assert!(section.contains("started"), "{report}");
+}
+
 #[test]
 fn start_with_windows_is_only_the_run_value() {
     let rig = Rig::new();
