@@ -267,7 +267,7 @@ impl Entry {
                 if let Some(parent) = r.to.parent() {
                     fs::create_dir_all(parent).map_err(|e| io_error("creating", parent, e))?;
                 }
-                durable_rename(&r.from, &r.to, false).map_err(|e| io_error("moving", &r.from, e))
+                rename_retrying_transient(r).map_err(|e| io_error("moving", &r.from, e))
             }
             Entry::Copy(c) => {
                 let copy = || -> io::Result<()> {
@@ -419,6 +419,78 @@ fn flush(f: &File) -> io::Result<()> {
     Ok(())
 }
 
+/// Pauses between attempts of a planned rename that Windows refused for a moment
+/// (#170): five attempts over about 2 s.
+const RENAME_BACKOFF_MS: [u64; 4] = [100, 250, 500, 1000];
+
+/// Access denied or a sharing/lock violation: often a short-lived handle (Defender,
+/// the search indexer, an Explorer window) on the folder being moved.
+fn transient(e: &io::Error) -> bool {
+    e.kind() == io::ErrorKind::PermissionDenied || matches!(e.raw_os_error(), Some(5 | 32 | 33))
+}
+
+/// Performs one planned rename, re-attempting the same `from` -> `to` after a
+/// transient refusal. Each retry first checks that disk still says `NotDone`, so a
+/// retry never acts on a state the journal did not plan; otherwise (and once the
+/// attempts run out) the last error is returned unchanged.
+fn rename_retrying_transient(r: &PlannedRename) -> io::Result<()> {
+    let mut pauses = RENAME_BACKOFF_MS.iter();
+    loop {
+        let e = match durable_rename(&r.from, &r.to, false) {
+            Ok(()) => return Ok(()),
+            Err(e) => e,
+        };
+        let Some(&ms) = pauses.next().filter(|_| transient(&e)) else {
+            return Err(e);
+        };
+        pause(std::time::Duration::from_millis(ms));
+        if r.on_disk() != EntryOnDisk::NotDone {
+            return Err(e);
+        }
+    }
+}
+
+#[cfg(not(test))]
+fn pause(d: std::time::Duration) {
+    std::thread::sleep(d);
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Test-only: transient refusals [`durable_rename`] injects on this thread before
+    /// renaming for real, and the backoff pauses taken (not slept).
+    static RENAME_FAULTS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    static PAUSES: std::cell::RefCell<Vec<std::time::Duration>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+fn pause(d: std::time::Duration) {
+    PAUSES.with(|p| p.borrow_mut().push(d));
+}
+
+/// Injects `n` access-denied refusals into this thread's next renames.
+#[cfg(test)]
+fn inject_access_denied(n: u32) {
+    RENAME_FAULTS.with(|f| f.set(n));
+    PAUSES.with(|p| p.borrow_mut().clear());
+}
+
+fn injected_fault() -> Option<io::Error> {
+    #[cfg(test)]
+    {
+        let left = RENAME_FAULTS.with(|f| f.get());
+        if left > 0 {
+            RENAME_FAULTS.with(|f| f.set(left - 1));
+            return Some(io::Error::from_raw_os_error(if cfg!(windows) {
+                5
+            } else {
+                13
+            }));
+        }
+    }
+    None
+}
+
 /// Write `bytes` to a temp beside `path`, flush it to disk, then atomically
 /// replace `path` with a write-through rename.
 pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -438,6 +510,9 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
 /// destination is an error, so a planned rename never clobbers anything.
 #[cfg(windows)]
 pub(crate) fn durable_rename(from: &Path, to: &Path, replace: bool) -> io::Result<()> {
+    if let Some(e) = injected_fault() {
+        return Err(e);
+    }
     use std::os::windows::ffi::OsStrExt;
     #[link(name = "kernel32")]
     extern "system" {
@@ -466,6 +541,9 @@ pub(crate) fn durable_rename(from: &Path, to: &Path, replace: bool) -> io::Resul
 
 #[cfg(not(windows))]
 pub(crate) fn durable_rename(from: &Path, to: &Path, replace: bool) -> io::Result<()> {
+    if let Some(e) = injected_fault() {
+        return Err(e);
+    }
     // shortcut: check-then-rename races; the product targets Windows only.
     if !replace && present(to) {
         return Err(io::Error::from(io::ErrorKind::AlreadyExists));
@@ -480,6 +558,76 @@ pub(crate) fn durable_rename(from: &Path, to: &Path, replace: bool) -> io::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn planned_dir_move(dir: &Path) -> (Entry, Paths) {
+        let from = dir.join("mods").join("PD2R");
+        fs::create_dir_all(&from).unwrap();
+        fs::write(from.join("a.txt"), b"x").unwrap();
+        let to = dir.join("PD2R.resurrected-backup");
+        let paths = Paths::for_root(&from);
+        (Entry::Rename(PlannedRename { from, to }), paths)
+    }
+
+    #[test]
+    fn a_transient_access_denied_retries_the_same_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let (entry, paths) = planned_dir_move(dir.path());
+        inject_access_denied(2);
+        entry.apply(&paths).unwrap();
+        assert_eq!(entry.on_disk(), EntryOnDisk::Done);
+        let Entry::Rename(r) = &entry else {
+            unreachable!()
+        };
+        assert_eq!(fs::read(r.to.join("a.txt")).unwrap(), b"x");
+        assert_eq!(PAUSES.with(|p| p.borrow().len()), 2);
+    }
+
+    #[test]
+    fn a_persistent_access_denied_fails_after_five_tries_with_nothing_moved() {
+        let dir = tempfile::tempdir().unwrap();
+        let (entry, paths) = planned_dir_move(dir.path());
+        inject_access_denied(5);
+        let err = entry.apply(&paths).unwrap_err();
+        assert_eq!(err.code, ErrorCode::AccessDenied);
+        assert_eq!(entry.on_disk(), EntryOnDisk::NotDone);
+        let total: u128 = PAUSES.with(|p| p.borrow().iter().map(|d| d.as_millis()).sum());
+        assert_eq!(PAUSES.with(|p| p.borrow().len()), 4);
+        assert!((1500..=2500).contains(&total), "{total} ms");
+        // The fifth refusal was the last attempt: the next rename is real.
+        inject_access_denied(0);
+        entry.apply(&paths).unwrap();
+        assert_eq!(entry.on_disk(), EntryOnDisk::Done);
+    }
+
+    #[test]
+    fn a_retry_never_acts_once_disk_no_longer_matches_the_plan() {
+        let dir = tempfile::tempdir().unwrap();
+        let (entry, paths) = planned_dir_move(dir.path());
+        let Entry::Rename(r) = &entry else {
+            unreachable!()
+        };
+        // Something else created the destination while the rename was refused.
+        fs::create_dir(&r.to).unwrap();
+        inject_access_denied(1);
+        let err = entry.apply(&paths).unwrap_err();
+        assert_eq!(err.code, ErrorCode::AccessDenied);
+        assert_eq!(PAUSES.with(|p| p.borrow().len()), 1);
+        assert!(r.from.join("a.txt").exists());
+        assert_eq!(fs::read_dir(&r.to).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn a_non_transient_failure_is_not_retried() {
+        let dir = tempfile::tempdir().unwrap();
+        let (entry, paths) = planned_dir_move(dir.path());
+        let Entry::Rename(r) = &entry else {
+            unreachable!()
+        };
+        fs::remove_dir_all(&r.from).unwrap();
+        inject_access_denied(0);
+        assert!(entry.apply(&paths).is_err());
+        assert!(PAUSES.with(|p| p.borrow().is_empty()));
+    }
 
     #[test]
     fn journal_check_fails_closed_when_it_cannot_look() {
