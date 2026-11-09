@@ -6,9 +6,9 @@
   inset: 0;
 }
 
-/* News feed column width (issue 139): 280px at the 1024 minimum, up to 360px at 1280. */
+/* News feed column width (issue 139): about 330px at the 1024 minimum, up to 440px on wide windows. */
 .page {
-  --feed-width: clamp(280px, 28vw, 360px);
+  --feed-width: clamp(300px, 32vw, 440px);
 }
 
 /* Hero */
@@ -56,14 +56,15 @@
   background: var(--line);
 }
 
-/* Always exactly two lines: the size follows the main area's width instead of wrapping. */
+/* Always exactly two lines: the size follows the main area's width (less the news column
+   beyond its 287px original) instead of wrapping, so it stays left of the feed. */
 .title {
   margin: 14px 0 10px;
   font-weight: 900;
   letter-spacing: -1.5px;
   line-height: 1.06;
   white-space: nowrap;
-  font-size: clamp(30px, calc((100cqi - 370px) / 11.5), 50px);
+  font-size: clamp(30px, calc((100cqi - 83px - var(--feed-width)) / 12), 50px);
 }
 
 .title span {
@@ -164,7 +165,7 @@
 .progress {
   width: min(560px, 100%);
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .progress-top {
@@ -234,8 +235,8 @@
 .feed-item {
   width: 100%;
   display: grid;
-  gap: 6px;
-  padding: 14px 16px;
+  gap: 8px;
+  padding: 18px 20px;
   text-align: left;
   background: var(--scrim);
   border: 1px solid var(--line);
@@ -254,7 +255,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 1px;
   text-transform: uppercase;
   color: var(--muted);
@@ -266,7 +267,7 @@
 }
 
 .feed-title {
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
   line-height: 1.3;
 }
@@ -277,14 +278,14 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--hero-copy);
 }
 
 .feed-empty {
-  padding: 14px 16px;
-  font-size: 13px;
+  padding: 18px 20px;
+  font-size: 14px;
   color: var(--muted);
   background: var(--scrim);
   border: 1px solid var(--line);
