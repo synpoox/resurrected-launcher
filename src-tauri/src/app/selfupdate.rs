@@ -643,6 +643,8 @@ impl Launcher {
 pub fn begin_quit<R: Runtime>(app: &AppHandle<R>) -> Result<(), Refusal> {
     let launcher = app.state::<Arc<Launcher>>();
     launcher.begin_quit()?;
+    // Quitting with the window open keeps its spot too (#188).
+    crate::lifecycle::position::save(app);
     if let Some(updater) = app.try_state::<Arc<SelfUpdater>>() {
         if let Err(e) = updater.install_on_quit(app, &launcher) {
             launcher.log(&format!("launcher update not installed on quit: {e}"));

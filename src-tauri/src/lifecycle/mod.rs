@@ -7,6 +7,7 @@
 
 mod icon;
 pub mod notice;
+pub mod position;
 pub mod tray;
 
 use std::error::Error;
@@ -62,19 +63,25 @@ pub fn run() {
         std::thread::spawn(move || launcher.start_up(&handle));
         // Built hidden on autostart, so the frontend is listening when the tray
         // first opens it (tray requests are emitted right after showing).
-        WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+        let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
             .title(UMBRELLA_DISPLAY_NAME)
             .decorations(false)
             .inner_size(1280.0, 720.0)
-            // Opens centred on the primary monitor (#174); nothing saves or restores position.
+            // Centred on the primary monitor (#174) unless the last spot is still
+            // on a connected monitor (#188, [`position`]).
             .center()
             .min_inner_size(1024.0, 640.0)
             // A fixed maximum, like the Riot Client, and no maximise (#135): the
             // layout is designed between these two sizes.
             .max_inner_size(1600.0, 900.0)
             .maximizable(false)
-            .visible(!autostart)
+            // Built hidden and shown after the move, so it never flashes centred.
+            .visible(false)
             .build()?;
+        position::restore(&window);
+        if !autostart {
+            window.show()?;
+        }
         tray::start(app.handle())?;
         Ok(())
     })
@@ -142,6 +149,7 @@ fn hide_on_close<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
     if let WindowEvent::CloseRequested { api, .. } = event {
         if window.label() == "main" {
             api.prevent_close();
+            position::save(window.app_handle());
             let _ = window.hide();
             notice::on_close(window.app_handle());
         }
