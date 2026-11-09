@@ -26,13 +26,16 @@ use crate::install::plan::product_root;
 use crate::state::{InstalledRelease, Preferences};
 
 /// Event (`Versioned<()>`) telling the UI to read `get_product_state` again:
-/// startup recovery finished, a catalog refresh ended, the game exited, or the
-/// D2R location changed (#123: every view of product state rereads it, not only
+/// startup recovery finished, a catalog refresh ended, a game started outside Play
+/// or exited, or the D2R location changed (#123: every view of product state rereads it, not only
 /// the one that asked for the change).
 pub const STATE_EVENT: &str = "product-state-changed";
 
 /// How often the exit watcher looks for processes under the D2R root.
 const EXIT_POLL: Duration = Duration::from_secs(1);
+
+/// How often the game watcher looks for a game started outside Play (#153).
+const START_POLL: Duration = Duration::from_secs(2);
 
 /// A game that exits this soon after Play failed to start.
 /// shortcut: a fixed threshold; make it configurable only if real crashes show otherwise.
@@ -414,7 +417,6 @@ impl Launcher {
                 _ => e,
             },
         )?;
-        drop(running);
         // Opened at once, so the exit code is still readable after the exit.
         let tracked = Tracked {
             product: product.clone(),
@@ -422,7 +424,10 @@ impl Launcher {
             process: ProcessHandle::open(game.pid),
         };
         locked(&self.startup)?.remove(product);
+        // Still under the operation lock, so the game watcher never sees this
+        // game without its exit watch and announces it again.
         self.watch_exit(app, location.path.clone(), Some(tracked));
+        drop(running);
         Ok(game)
     }
 
@@ -435,9 +440,11 @@ impl Launcher {
         tracked: Option<Tracked>,
     ) {
         let (launcher, app) = (Arc::clone(self), app.clone());
+        self.exit_watches.fetch_add(1, Ordering::SeqCst);
         std::thread::spawn(move || {
             // An enumeration failure ends the watch; the UI then reads the state.
             let exited = wait_until_exited(&root, &*launcher.game, EXIT_POLL).is_ok();
+            launcher.exit_watches.fetch_sub(1, Ordering::SeqCst);
             if let Some(t) = tracked.filter(|t| exited && t.started.elapsed() < STARTUP_WINDOW) {
                 let failed = StartupFailed {
                     exit_code: t.process.and_then(|p| p.exit_code()),
@@ -450,11 +457,43 @@ impl Launcher {
         });
     }
 
+    /// Game watcher (#153): every [`START_POLL`], announces a game that started
+    /// under the selected D2R root outside Play (no exit watch runs) with
+    /// [`STATE_EVENT`], then watches its exit. Without it the UI would not reread
+    /// state, so Restart to update and the product page would not show the hold.
+    /// Runs until the launcher exits.
+    fn watch_games<R: Runtime>(self: &Arc<Self>, app: &AppHandle<R>) {
+        let (launcher, app) = (Arc::clone(self), app.clone());
+        std::thread::spawn(move || loop {
+            launcher.announce_started_game(&app);
+            std::thread::sleep(START_POLL);
+        });
+    }
+
+    fn announce_started_game<R: Runtime>(self: &Arc<Self>, app: &AppHandle<R>) {
+        let Some(root) = locked(&self.state)
+            .ok()
+            .and_then(|s| s.preferences().d2r_location.clone())
+        else {
+            return;
+        };
+        // Under the operation lock, like Play's spawn and exit watch.
+        let _running = self.running();
+        if self.exit_watches.load(Ordering::SeqCst) > 0 {
+            return;
+        }
+        // A listing failure already reads as running; nothing to announce.
+        if self.games_under(&root).is_ok_and(|g| !g.is_empty()) {
+            let _ = app.emit(STATE_EVENT, Versioned::new(()));
+            self.watch_exit(app, root, None);
+        }
+    }
+
     /// Startup (blocking; `run` calls it on a worker thread): recovers every
     /// installed product and every product of the cached feed (an interrupted
     /// first install has a journal but no record), then enables Play, watches a
-    /// game already running under the root, and refreshes the catalog in the
-    /// background.
+    /// game already running under the root and any started later, and refreshes
+    /// the catalog in the background.
     pub fn start_up<R: Runtime>(self: &Arc<Self>, app: &AppHandle<R>) {
         let root = match locked(&self.state) {
             Ok(state) => {
@@ -485,6 +524,7 @@ impl Launcher {
             }
         }
         let _ = app.emit(STATE_EVENT, Versioned::new(()));
+        self.watch_games(app);
         self.refresh_in_background(app);
     }
 
