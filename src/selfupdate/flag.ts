@@ -1,6 +1,6 @@
-// The self-update notice ships behind a build flag until the slice 5 gate (#89) passes (ADR 0003).
-// Off, nothing self-update-related renders or runs, and the launcher never checks for updates.
-// Release builds leave it off.
+// The self-update notice ships behind a build flag (ADR 0003). Off, nothing self-update-related
+// renders or runs, and the launcher never checks for updates. The signed release and gate builds
+// turn it on (release.yml; #157, after the slice 5 gate #89 passed); dev builds leave it off.
 import { createSelfUpdateFixture, DEFAULT_SELF_UPDATE_FIXTURE, SELF_UPDATE_FIXTURES, selfUpdateFixtureByKey, type SelfUpdateApi } from "./api";
 import { createLiveSelfUpdate } from "./live";
 

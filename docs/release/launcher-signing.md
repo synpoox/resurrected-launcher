@@ -1,6 +1,6 @@
 # Launcher release signing
 
-Status: the workflow exists and skips its build until the owner adds the secrets (#86). The updater is wired (#88; install on Quit #113), behind `VITE_SELF_UPDATE` until the #89 gate. Nothing here has been run with a real key.
+Status: the workflow exists and skips its build until the owner adds the secrets (#86). The updater is wired (#88; install on Quit #113). The #89 gate passed, so every signed build sets `VITE_SELF_UPDATE=1` and has Check for updates (#157). Nothing here has been run with a real key.
 
 Policy comes from the [#8 resolution](https://github.com/synpoox/resurrected-launcher/issues/8) (slice 5, launcher self-updates) and [ADR 0003](../adr/0003-tauri-with-signed-launcher-updates.md). Launcher updates use Tauri's key-based updater signatures. These signatures are not Authenticode, so the launcher must not claim a verified Windows publisher. Product releases stay unsigned (HTTPS and hashes, `docs/specs/release-manifest.md`), and their feed never supplies a launcher key.
 
@@ -22,8 +22,7 @@ The bundle is named after `productName` (`Project Resurrected`, #151), so Tauri 
 
 ## Gate builds (#89)
 
-A tag `launcher-v<version>-gate` (same `tauri.conf.json` version) makes a slice 5 gate build instead. It differs from a release build in two ways only, both checked by `src-tauri/tests/slice5_gate/gate_build.rs`:
-- `VITE_SELF_UPDATE=1`, so the launcher checks for updates. Release builds leave it empty (off).
+A tag `launcher-v<version>-gate` (same `tauri.conf.json` version) makes a slice 5 gate build instead. It differs from a release build in one way only, checked by `src-tauri/tests/slice5_gate/gate_build.rs` (both set `VITE_SELF_UPDATE=1`, so both check for updates):
 - `tauri build --config src-tauri/gate/tauri.gate.conf.json` sets the updater endpoint to `http://127.0.0.1:8789/latest.json` (with `dangerousInsecureTransportProtocol`, loopback only). The public key, install mode and everything else stay the release config, so every update is still verified against the release key. The config is fixed at build time; nothing at runtime can change it.
 
 Its `latest.json` points at `http://127.0.0.1:8789/<installer>` and the artifact is named `launcher-<version>-gate-unpublished`. `src-tauri/gate/serve-update.ps1` serves one update on that address (normal, `-Tamper`, a wrong-key `.sig`, `-Unsigned`), so N → N+1 and the bad-signature rows run without publishing anything. Never distribute a gate build.
