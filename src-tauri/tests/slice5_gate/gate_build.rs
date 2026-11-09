@@ -106,7 +106,7 @@ fn release_builds_keep_self_update_off_and_only_gate_tags_change_the_build() {
     );
     // The local download URL and the artifact name follow the same switch.
     assert!(has(
-        r#"if ($env:GATE -eq 'true') { $url = "http://127.0.0.1:8789/$($setup[0].Name)" }"#
+        r#"if ($env:GATE -eq 'true') { $url = "http://127.0.0.1:8789/$name" }"#
     ));
     assert!(has(
         "name: launcher-${{ steps.version.outputs.version }}${{ steps.version.outputs.gate == 'true' && '-gate' || '' }}-unpublished"

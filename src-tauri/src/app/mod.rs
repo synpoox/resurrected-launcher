@@ -21,11 +21,14 @@
 //!
 //! # Provisional names
 //!
-//! `tauri.conf.json` uses the technical `productName` `resurrected-launcher` and the
-//! identifier `com.projectd2r.launcher` on purpose, so the provisional display name
-//! stays in one place, [`crate::contract::UMBRELLA_DISPLAY_NAME`]. The identifier
-//! follows the planned projectd2r.com domain and is equally provisional; changing it
-//! later moves the per-user data directory.
+//! `tauri.conf.json` sets `productName` to the umbrella display name (#151): NSIS
+//! uses it for the Apps list, installer, install folder and Start menu shortcut.
+//! `mainBinaryName` keeps the technical exe name `resurrected-launcher`, and the
+//! identifier `com.projectd2r.launcher` stays fixed so the per-user data directory
+//! and updater continuity do not move. In code, the display name lives in
+//! [`crate::contract::UMBRELLA_DISPLAY_NAME`]; a test keeps the two in step. The
+//! identifier follows the planned projectd2r.com domain and is equally provisional;
+//! changing it later moves the per-user data directory.
 
 mod game;
 mod news;
@@ -475,5 +478,13 @@ mod tests {
             inline.is_null() || inline.as_array().is_some_and(|a| a.is_empty()),
             "inline capabilities in tauri.conf.json: {inline}"
         );
+    }
+
+    #[test]
+    fn bundle_names_show_the_umbrella_name_and_keep_technical_ids() {
+        let conf: serde_json::Value = serde_json::from_str(&root_file("tauri.conf.json")).unwrap();
+        assert_eq!(conf["productName"], UMBRELLA_DISPLAY_NAME);
+        assert_eq!(conf["mainBinaryName"], "resurrected-launcher");
+        assert_eq!(conf["identifier"], "com.projectd2r.launcher");
     }
 }

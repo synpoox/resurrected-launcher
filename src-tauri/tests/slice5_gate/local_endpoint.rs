@@ -20,7 +20,7 @@ use tauri::App;
 use super::{gate_conf, repo};
 
 const NEXT: &str = "99.0.0";
-const NAME: &str = "resurrected-launcher_99.0.0_x64-setup.exe";
+const NAME: &str = "Project-Resurrected_99.0.0_x64-setup.exe";
 
 fn b64(text: &str) -> String {
     base64::engine::general_purpose::STANDARD.encode(text)

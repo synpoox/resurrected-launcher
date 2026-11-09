@@ -18,6 +18,8 @@ It never creates, drafts or publishes a GitHub release, and it never writes a ta
 
 `latest.json` points at `https://github.com/<repo>/releases/download/launcher-v<version>/<installer>`. That URL only works after someone publishes those assets by hand. The updater endpoint the app trusts is `plugins.updater.endpoints` in `tauri.conf.json` (`https://github.com/synpoox/resurrected-launcher/releases/latest/download/latest.json`, decided on #86, set by #88), so it only answers once a release is published.
 
+The bundle is named after `productName` (`Project Resurrected`, #151), so Tauri writes `Project Resurrected_<version>_x64-setup.exe`. The workflow renames it and its `.sig` to `Project-Resurrected_<version>_x64-setup.exe` before writing `latest.json` (the release and gate URLs both use the renamed file), because GitHub would otherwise rename a spaced asset on upload and the URL would break. Publish the renamed files as they are.
+
 ## Gate builds (#89)
 
 A tag `launcher-v<version>-gate` (same `tauri.conf.json` version) makes a slice 5 gate build instead. It differs from a release build in two ways only, both checked by `src-tauri/tests/slice5_gate/gate_build.rs`:

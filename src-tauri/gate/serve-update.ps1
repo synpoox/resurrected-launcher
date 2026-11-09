@@ -18,7 +18,7 @@
     restored   -Signature made with the key restored from the recovery copy
 
 .EXAMPLE
-  powershell -NoProfile -ExecutionPolicy Bypass -File serve-update.ps1 -Installer .\n1\resurrected-launcher_0.1.1_x64-setup.exe -Signature .\n1\resurrected-launcher_0.1.1_x64-setup.exe.sig -Version 0.1.1
+  powershell -NoProfile -ExecutionPolicy Bypass -File serve-update.ps1 -Installer .\n1\Project-Resurrected_0.1.1_x64-setup.exe -Signature .\n1\Project-Resurrected_0.1.1_x64-setup.exe.sig -Version 0.1.1
 #>
 [CmdletBinding()]
 param(
@@ -34,6 +34,8 @@ $ErrorActionPreference = 'Stop'
 if ($Unsigned -eq [bool]$Signature) { throw 'Pass exactly one of -Signature or -Unsigned.' }
 $Installer = (Resolve-Path -LiteralPath $Installer).Path
 $name = [IO.Path]::GetFileName($Installer)
+# A spaced name (an unrenamed Tauri bundle) must still match the client's %20 request.
+$urlName = [Uri]::EscapeDataString($name)
 $bytes = [IO.File]::ReadAllBytes($Installer)
 if ($Tamper) { $bytes[[int]($bytes.Length / 2)] = $bytes[[int]($bytes.Length / 2)] -bxor 0xff }
 $sig = ''
@@ -47,11 +49,11 @@ $latest = [ordered]@{
   notes     = "Launcher $Version (slice 5 gate, local)"
   pub_date  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
   platforms = [ordered]@{
-    'windows-x86_64' = [ordered]@{ signature = $sig; url = "http://127.0.0.1:$Port/$name" }
+    'windows-x86_64' = [ordered]@{ signature = $sig; url = "http://127.0.0.1:$Port/$urlName" }
   }
 }
 $json = [Text.Encoding]::UTF8.GetBytes(($latest | ConvertTo-Json -Depth 5))
-$routes = @{ '/latest.json' = @('application/json', $json); "/$name" = @('application/octet-stream', $bytes) }
+$routes = @{ '/latest.json' = @('application/json', $json); "/$urlName" = @('application/octet-stream', $bytes) }
 
 # Tests read this line to learn the port.
 [Console]::Out.WriteLine("Serving http://127.0.0.1:$Port/latest.json (version $Version, $name, tamper=$Tamper, unsigned=$Unsigned)")

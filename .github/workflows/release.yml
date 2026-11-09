@@ -136,10 +136,18 @@ jobs:
           if ($setup.Count -ne 1) { Write-Output "::error::Expected one installer in $dir, found $($setup.Count)."; exit 1 }
           $sig = "$($setup[0].FullName).sig"
           if (-not (Test-Path $sig)) { Write-Output "::error::Missing updater signature $sig."; exit 1 }
+          # productName "Project Resurrected" has a space; GitHub would rename the
+          # uploaded asset (space to dot) and break the latest.json URL (#151).
+          $name = $setup[0].Name -replace ' ', '-'
+          if ($name -ne $setup[0].Name) {
+            Move-Item -LiteralPath $sig -Destination "$dir/$name.sig"
+            Move-Item -LiteralPath $setup[0].FullName -Destination "$dir/$name"
+            $sig = "$dir/$name.sig"
+          }
           $tag = "launcher-v$env:VERSION"
-          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/$($setup[0].Name)"
+          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/$name"
           # Gate builds update from src-tauri/gate/serve-update.ps1 on this machine.
-          if ($env:GATE -eq 'true') { $url = "http://127.0.0.1:8789/$($setup[0].Name)" }
+          if ($env:GATE -eq 'true') { $url = "http://127.0.0.1:8789/$name" }
           $latest = [ordered]@{
             version  = $env:VERSION
             notes    = "Launcher $env:VERSION"

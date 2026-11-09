@@ -47,7 +47,7 @@ fn verify_artifact(dir: &Path, pk: &minisign::PublicKey) -> (String, bool) {
     let setup = &setups[0];
     let name = setup.file_name().unwrap().to_str().unwrap().to_owned();
     let version = name
-        .strip_prefix("resurrected-launcher_")
+        .strip_prefix("Project-Resurrected_")
         .and_then(|r| r.strip_suffix("_x64-setup.exe"))
         .unwrap_or_else(|| panic!("unexpected installer name {name}"))
         .to_owned();
