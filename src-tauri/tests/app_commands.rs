@@ -851,6 +851,37 @@ fn a_running_game_refuses_play_operations_recovery_and_location_changes() {
     assert_eq!(rig.run("repair", json!({}))["status"], "succeeded");
 }
 
+/// #153: a game started outside Play (the loader run by hand, a desktop shortcut)
+/// after startup is announced, so the UI rereads state and holds Restart to
+/// update; its exit is announced too.
+#[test]
+fn a_game_started_outside_the_launcher_is_announced_and_its_exit_too() {
+    let rig = Rig::new();
+    let r1 = rig.publish(PD2R_1);
+    rig.game.product_root(&r1);
+    rig.start_up();
+    assert_eq!(rig.run("install", json!({}))["status"], "succeeded");
+    while rig.states.try_recv().is_ok() {}
+    assert_eq!(rig.state().readiness, Readiness::Ready);
+
+    rig.host.processes.lock().unwrap().push(RunningGame {
+        pid: FAKE_PID,
+        image: rig.game.d2r().join("D2R.exe"),
+        since: 1_700_000_000,
+    });
+    rig.state_event();
+    assert_eq!(
+        rig.state().readiness,
+        Readiness::Running {
+            since: 1_700_000_000
+        }
+    );
+
+    rig.host.exit_all();
+    rig.state_event();
+    assert_eq!(rig.state().readiness, Readiness::Ready);
+}
+
 /// A game that starts after the inspection but before the first live mutation is
 /// caught by the preflight recheck, through the Launcher's host.
 #[test]
