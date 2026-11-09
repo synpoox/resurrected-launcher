@@ -45,7 +45,8 @@ type DialogState =
   | { kind: "locate" }
   | { kind: "save-breaking"; inspection: Inspection }
   // Issue 138: consent dialogs open on the click, with a null inspection until it answers.
-  | { kind: "uninstall"; inspection: Inspection | null; report: OutcomeReport | null }
+  // `started`: Uninstall was accepted and its outcome hasn't arrived, so the confirm stays busy.
+  | { kind: "uninstall"; inspection: Inspection | null; report: OutcomeReport | null; started?: boolean }
   | { kind: "clean-install"; inspection: Inspection | null }
   | null;
 
@@ -171,7 +172,8 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   const [repairInspection, setRepairInspection] = useState<Inspection | null>(null);
   const [showFix, setShowFix] = useState(false);
   // Issue 138: one action at a time, busy from the click until its result or dialog arrives.
-  const pending = usePending();
+  // Shared per API and product, so leaving the page mid-request and coming back keeps it busy.
+  const pending = usePending({ owner: api, scope: product.id });
   const opened = useRef(false);
   const focused = useRef(0);
   const ids = { overview: useId(), notes: useId(), notice: useId(), line: useId(), why: useId() };
@@ -215,22 +217,27 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
       api.onOutcome((o) => {
         if (o.product_id !== product.id) return;
         if (o.status === "failed") fail(o.error);
-        if (o.status === "succeeded" && o.kind === "uninstall") {
-          setDialog((d) => (d?.kind === "uninstall" ? { ...d, report: o.report } : d));
+        if (o.kind === "uninstall") {
+          // The report fills the dialog; a failed or cancelled uninstall frees its confirm again.
+          const report = o.status === "succeeded" ? o.report : null;
+          setDialog((d) => (d?.kind === "uninstall" ? { ...d, report, started: false } : d));
         }
         void refresh();
       }),
     ).stop;
   }, [api, product.id, fail, refresh]);
 
+  /** Starts an operation and re-reads state (which then shows it running). True if it started. */
   const start = useCallback(
     async (kind: OperationKind, inspection: Inspection, consent: Partial<OperationRequest> = {}) => {
       try {
         await api.startOperation({ product_id: product.id, kind, ...consent }, inspection);
-        await refresh();
       } catch (e) {
         fail(e);
+        return false;
       }
+      await refresh().catch(() => undefined);
+      return true;
     },
     [api, product.id, refresh, fail],
   );
@@ -334,7 +341,9 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
     { label: "Open settings folder", onSelect: () => void api.openFolder(product.id, "settings").catch(fail) },
     { label: "Uninstall…", tone: "danger", divider: true, onSelect: () => void runAction("uninstall") },
   ];
-  const manage = <Menu label={`Manage ${product.short}`} items={manageItems} defaultOpen={open === "manage"} />;
+  const manage = (
+    <Menu label={`Manage ${product.short}`} items={manageItems} defaultOpen={open === "manage"} blocked={pending.key !== null} />
+  );
   const line = (dot: string, text: ReactNode) => (
     <span id={ids.line} className="ready-line">
       <span className={`dot ${dot}`} aria-hidden="true" />
@@ -720,9 +729,15 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           product={product}
           inspection={dialog.inspection}
           report={dialog.report}
-          busy={pending.key === "uninstall-confirm"}
+          busy={pending.key === "uninstall-confirm" || dialog.started === true}
           onClose={closeDialog}
-          onConfirm={(inspection) => void pending.run("uninstall-confirm", () => start("uninstall", inspection))}
+          onConfirm={(inspection) =>
+            void pending.run("uninstall-confirm", async () => {
+              if (!(await start("uninstall", inspection))) return;
+              // Busy until the outcome: its report (or a failure) arrives after start answers.
+              setDialog((d) => (d?.kind === "uninstall" && d.inspection === inspection && !d.report ? { ...d, started: true } : d));
+            })
+          }
         />
       )}
       {dialog?.kind === "clean-install" && (

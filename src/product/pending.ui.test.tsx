@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Issue 138: action buttons are busy from the click until the result or dialog arrives, never
 // submit twice, and consent dialogs open at once with a loading state while inspection runs.
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -207,6 +207,64 @@ describe("Settings folder buttons (issue 138)", () => {
   });
 });
 
+describe("Uninstall confirm (issue 138)", () => {
+  /** Starts like the native side: answers at once, and the outcome arrives later. */
+  function deferOutcome(a: FixtureApi) {
+    const starts: unknown[] = [];
+    a.startOperation = (request) => {
+      starts.push(request);
+      return Promise.resolve();
+    };
+    return starts;
+  }
+
+  async function openUninstall(user: ReturnType<typeof userEvent.setup>) {
+    await loaded();
+    await user.click(screen.getByRole("button", { name: "Manage PD2R" }));
+    await user.click(screen.getByRole("menuitem", { name: "Uninstall…" }));
+    const dialog = screen.getByRole("dialog", { name: /Uninstall Project Diablo 2/ });
+    await within(dialog).findByText("lootfilter/default.filter");
+    return dialog;
+  }
+
+  it("stays busy after the start answers, until the outcome report arrives", async () => {
+    const { api, user } = mount("ready");
+    const starts = deferOutcome(api);
+    const dialog = await openUninstall(user);
+    const confirm = within(dialog).getByRole("button", { name: "Uninstall" });
+    await user.click(confirm);
+    await waitFor(() => expect(starts).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(busy(confirm)).toBe(true);
+    await user.click(confirm);
+    expect(starts).toHaveLength(1);
+    act(() =>
+      api.emitOutcome({
+        status: "succeeded",
+        product_id: "pd2r",
+        kind: "uninstall",
+        report: { preserved: [], remaining: [], clean_install_backups: [] },
+      }),
+    );
+    expect(await screen.findByRole("dialog", { name: "PD2R was uninstalled" })).toBeTruthy();
+  });
+
+  it("a failed uninstall frees the confirm again", async () => {
+    const { api, user } = mount("ready");
+    const starts = deferOutcome(api);
+    const dialog = await openUninstall(user);
+    const confirm = within(dialog).getByRole("button", { name: "Uninstall" });
+    await user.click(confirm);
+    await waitFor(() => expect(starts).toHaveLength(1));
+    act(() =>
+      api.emitOutcome({ status: "failed", product_id: "pd2r", kind: "uninstall", error: { code: "internal", message: "Disk full" } }),
+    );
+    await waitFor(() => expect(busy(confirm)).toBe(false));
+    expect(blocked(confirm)).toBe(false);
+    expect(await screen.findByText("Disk full")).toBeTruthy();
+  });
+});
+
 describe("location dialog (issue 138)", () => {
   it("Use this installation is busy, with a spinner, until the choice answers", async () => {
     const { api, user } = mount("d2r-choose");
@@ -248,38 +306,103 @@ describe("location dialog (issue 138)", () => {
   });
 });
 
-describe("self-update Download (issue 138)", () => {
-  it("Download is busy until the request answers, and sends one request", async () => {
-    api = createFixtureApi("ready", { tick: 60_000 });
-    const su = createSelfUpdateFixture("available", { tick: 60_000 });
-    const real = su.download.bind(su);
-    const gate = deferred<void>();
+function mountSelfUpdate(phase: string) {
+  api = createFixtureApi("ready", { tick: 60_000 });
+  const su = createSelfUpdateFixture(phase, { tick: 60_000 });
+  const user = userEvent.setup();
+  render(
+    <ApiContext.Provider value={api}>
+      <ToastProvider>
+        <SelfUpdateProvider api={su}>
+          <Shell product={sceneByKey("ready")!.product} />
+        </SelfUpdateProvider>
+      </ToastProvider>
+    </ApiContext.Provider>,
+  );
+  return { su, user };
+}
+
+describe("self-update requests (issue 138)", () => {
+  it("Download stays busy after the request answers, until the launcher's next phase arrives", async () => {
+    const { su, user } = mountSelfUpdate("available");
+    // Answers without a phase event, like the native updater before its first progress.
     let sent = 0;
     su.download = () => {
       sent++;
-      return gate.promise.then(real);
+      return Promise.resolve();
     };
-    const user = userEvent.setup();
-    render(
-      <ApiContext.Provider value={api}>
-        <ToastProvider>
-          <SelfUpdateProvider api={su}>
-            <Shell product={sceneByKey("ready")!.product} />
-          </SelfUpdateProvider>
-        </ToastProvider>
-      </ApiContext.Provider>,
-    );
     await user.click(screen.getByRole("button", { name: /^Settings/ }));
     await user.click(screen.getByRole("tab", { name: "Launcher" }));
     const download = await within(screen.getByRole("tabpanel")).findByRole("button", { name: "Download" });
     await user.click(download);
+    await new Promise((r) => setTimeout(r, 0));
     await user.click(download);
     expect(sent).toBe(1);
     expect(busy(download)).toBe(true);
     expect(download.querySelector(".spinner")).not.toBeNull();
-    gate.resolve();
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Download" })?.getAttribute("aria-busy") ?? null).toBeNull());
+    act(() => su.emit({ phase: "downloading", current: "1.2.0", next: "1.3.0", percent: 1 }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Download" })).toBeNull());
     su.dispose();
+  });
+
+  it("a failed Download frees the button and says why", async () => {
+    const { su, user } = mountSelfUpdate("available");
+    su.download = () => Promise.reject(new Error("offline"));
+    await user.click(screen.getByRole("button", { name: /^Settings/ }));
+    await user.click(screen.getByRole("tab", { name: "Launcher" }));
+    const download = await within(screen.getByRole("tabpanel")).findByRole("button", { name: "Download" });
+    await user.click(download);
+    expect(await screen.findByText(/Couldn't start the launcher update/)).toBeTruthy();
+    expect(busy(download)).toBe(false);
+    su.dispose();
+  });
+
+  it("Restart to update sends one request and stays busy until the restart begins", async () => {
+    const { su, user } = mountSelfUpdate("ready");
+    let sent = 0;
+    su.restartToUpdate = () => {
+      sent++;
+      return Promise.resolve();
+    };
+    await user.click(screen.getByRole("button", { name: /^Settings/ }));
+    await user.click(screen.getByRole("tab", { name: "Launcher" }));
+    const restart = await within(screen.getByRole("tabpanel")).findByRole("button", { name: "Restart to update" });
+    await user.click(restart);
+    await new Promise((r) => setTimeout(r, 0));
+    await user.click(restart);
+    expect(sent).toBe(1);
+    expect(busy(restart)).toBe(true);
+    su.dispose();
+  });
+});
+
+describe("pending across pages and the Manage menu (issue 138)", () => {
+  it("leaving the page mid-request and coming back keeps the action busy", async () => {
+    const { api, user } = mount("install");
+    await screen.findByText(/free space needed/);
+    const start = hold(api, "startOperation");
+    await user.click(screen.getByRole("button", { name: "Install" }));
+    await user.click(screen.getByRole("button", { name: /^Settings/ }));
+    await user.click(screen.getByRole("button", { name: "Project Diablo 2: Resurrected" }));
+    const install = await screen.findByRole("button", { name: "Install" });
+    expect(busy(install)).toBe(true);
+    await user.click(install);
+    expect(start.calls).toHaveLength(1);
+    start.release();
+    await screen.findByRole("progressbar");
+  });
+
+  it("the Manage menu waits while an action runs, and closes if one starts", async () => {
+    const { api, user } = mount("ready");
+    await loaded();
+    const manage = screen.getByRole("button", { name: "Manage PD2R" });
+    const play = hold(api, "playProduct");
+    await user.click(screen.getByRole("button", { name: "Play" }));
+    expect(blocked(manage)).toBe(true);
+    await user.click(manage);
+    expect(screen.queryByRole("menu")).toBeNull();
+    play.release();
+    await screen.findByRole("button", { name: "Playing" });
   });
 });
 

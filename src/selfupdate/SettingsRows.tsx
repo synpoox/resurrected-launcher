@@ -48,7 +48,7 @@ function VersionRow({ su }: { su: SelfUpdate }) {
     switch (s.phase) {
       case "available":
         return (
-          <BusyButton className="ghost small" busy={su.starting} onClick={su.download}>
+          <BusyButton className="ghost small" busy={su.requesting === "download"} blocked={su.requesting !== null} onClick={su.download}>
             Download
           </BusyButton>
         );
@@ -59,15 +59,15 @@ function VersionRow({ su }: { su: SelfUpdate }) {
         const off = s.phase !== "ready" || why !== null;
         return (
           <>
-            <button
-              type="button"
-              className="btn primary small"
-              aria-disabled={off || undefined}
+            <BusyButton
+              className="primary small"
+              busy={su.requesting === "restart"}
+              blocked={off || su.requesting !== null}
               aria-describedby={why ? whyId : undefined}
-              onClick={() => !off && su.restart()}
+              onClick={su.restart}
             >
               Restart to update
-            </button>
+            </BusyButton>
             {why && (
               <span id={whyId} className="why">
                 {why}
@@ -79,7 +79,7 @@ function VersionRow({ su }: { su: SelfUpdate }) {
       case "download_failed":
       case "signature_rejected":
         return (
-          <BusyButton className="ghost small" busy={su.starting} onClick={su.download}>
+          <BusyButton className="ghost small" busy={su.requesting === "download"} blocked={su.requesting !== null} onClick={su.download}>
             Try again
           </BusyButton>
         );

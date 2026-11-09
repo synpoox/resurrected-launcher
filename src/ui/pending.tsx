@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 
 /** A small square spinner for a busy button or a loading dialog body. Static under reduced motion. */
 export function Spinner() {
@@ -15,22 +15,54 @@ export interface Pending {
   run: (key: string, fn: () => Promise<unknown> | void) => Promise<void>;
 }
 
-/** One action at a time: every action button is busy-disabled from its click until its result. */
-export function usePending(): Pending {
-  const [key, setKey] = useState<string | null>(null);
-  const current = useRef<string | null>(null);
-  const run = useCallback(async (k: string, fn: () => Promise<unknown> | void) => {
-    if (current.current !== null) return;
-    current.current = k;
-    setKey(k);
-    try {
-      await fn();
-    } finally {
-      current.current = null;
-      setKey(null);
-    }
-  }, []);
-  return { key, run };
+/** A pending slot that components subscribe to. */
+class Slot {
+  key: string | null = null;
+  private listeners = new Set<() => void>();
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => void this.listeners.delete(listener);
+  };
+  get = () => this.key;
+  set(key: string | null) {
+    this.key = key;
+    this.listeners.forEach((l) => l());
+  }
+}
+
+/** Shared slots, per owner (the LauncherApi) and scope (a product id), so they outlive a page. */
+const slots = new WeakMap<object, Map<string, Slot>>();
+
+function slotFor(owner: object, scope: string): Slot {
+  let scopes = slots.get(owner);
+  if (!scopes) slots.set(owner, (scopes = new Map()));
+  let slot = scopes.get(scope);
+  if (!slot) scopes.set(scope, (slot = new Slot()));
+  return slot;
+}
+
+/**
+ * One action at a time: every action button is busy-disabled from its click until its result.
+ * With `shared`, the slot belongs to that owner and scope instead of this component, so leaving a
+ * product page and coming back mid-request keeps its buttons busy (issue 138).
+ */
+export function usePending(shared?: { owner: object; scope: string }): Pending {
+  const [local] = useState(() => new Slot());
+  const slot = shared ? slotFor(shared.owner, shared.scope) : local;
+  const key = useSyncExternalStore(slot.subscribe, slot.get);
+  const run = useCallback(
+    async (k: string, fn: () => Promise<unknown> | void) => {
+      if (slot.get() !== null) return;
+      slot.set(k);
+      try {
+        await fn();
+      } finally {
+        slot.set(null);
+      }
+    },
+    [slot],
+  );
+  return useMemo(() => ({ key, run }), [key, run]);
 }
 
 export interface BusyButtonProps {
