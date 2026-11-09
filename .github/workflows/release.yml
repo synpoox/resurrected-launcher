@@ -5,10 +5,11 @@
 # release. With no signing key in the launcher-release environment, the build
 # job is skipped and the run still succeeds.
 #
-# A tag launcher-v<version>-gate makes a slice 5 gate build (#89): self-update on
-# (VITE_SELF_UPDATE=1) and the updater endpoint on 127.0.0.1 from
-# src-tauri/gate/tauri.gate.conf.json. Same key. Never distribute a gate build.
-# Every other trigger builds the release launcher, with self-update off.
+# Every build has self-update on (VITE_SELF_UPDATE=1; #157, after the #89 gate).
+# A tag launcher-v<version>-gate makes a slice 5 gate build (#89): the updater
+# endpoint on 127.0.0.1 from src-tauri/gate/tauri.gate.conf.json. Same key.
+# Never distribute a gate build. Every other trigger builds the release launcher
+# with the shipped config.
 name: Launcher release
 
 on:
@@ -100,7 +101,7 @@ jobs:
           }
           "version=$version" >> $env:GITHUB_OUTPUT
           "gate=$($gate.ToString().ToLower())" >> $env:GITHUB_OUTPUT
-          if ($gate) { Write-Output "::notice::Slice 5 gate build: self-update on, updater endpoint 127.0.0.1. Never distribute it." }
+          if ($gate) { Write-Output "::notice::Slice 5 gate build: updater endpoint 127.0.0.1. Never distribute it." }
       # Installs the toolchain pinned in src-tauri/rust-toolchain.toml.
       - run: rustup toolchain install
         working-directory: src-tauri
@@ -111,14 +112,14 @@ jobs:
       - run: npm ci
       # The key is passed only to this step. tauri.conf.json sets
       # bundle.createUpdaterArtifacts, so the build writes the .sig.
-      # Gate builds only: VITE_SELF_UPDATE=1 and the gate config merged over
-      # tauri.conf.json (endpoint only; the key stays). Release builds get neither.
+      # VITE_SELF_UPDATE=1 for every build (#157). Gate builds only: the gate config
+      # merged over tauri.conf.json (endpoint only; the key stays).
       - name: Build the signed NSIS installer
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           GATE: ${{ steps.version.outputs.gate }}
-          VITE_SELF_UPDATE: ${{ steps.version.outputs.gate == 'true' && '1' || '' }}
+          VITE_SELF_UPDATE: '1'
         run: |
           if ($env:GATE -eq 'true') {
             npx tauri build --ci --config "$env:GITHUB_WORKSPACE/src-tauri/gate/tauri.gate.conf.json"

@@ -1,6 +1,6 @@
-//! What the signed workflow builds: a release launcher with self-update off and
+//! What the signed workflow builds: a release launcher with self-update on and
 //! the shipped config, or (on a `launcher-v<version>-gate` tag) a gate build whose
-//! only differences are self-update on and a loopback updater endpoint. And what
+//! only difference is a loopback updater endpoint. And what
 //! every build installs: per user, no elevation, offline WebView2, bundled 7-Zip.
 
 use serde_json::{json, Value};
@@ -65,11 +65,11 @@ fn the_gate_config_starts_the_updater() {
     app_with_updater(updater).expect("the gate build's updater config is valid");
 }
 
-/// The workflow turns gate mode on only for `launcher-v<version>-gate`, and only
-/// then sets `VITE_SELF_UPDATE` or merges the gate config. A release tag
-/// (`launcher-v<version>`) builds with the shipped config and self-update off.
+/// Every build sets `VITE_SELF_UPDATE=1` (#157). The workflow turns gate mode on
+/// only for `launcher-v<version>-gate`, and only then merges the gate config. A
+/// release tag (`launcher-v<version>`) builds with the shipped config.
 #[test]
-fn release_builds_keep_self_update_off_and_only_gate_tags_change_the_build() {
+fn release_builds_have_self_update_on_and_only_gate_tags_change_the_build() {
     let yml = read(".github/workflows/release.yml").replace("\r\n", "\n");
     let lines: Vec<&str> = yml.lines().map(str::trim).collect();
     let has = |l: &str| lines.contains(&l);
@@ -81,15 +81,12 @@ fn release_builds_keep_self_update_off_and_only_gate_tags_change_the_build() {
     assert!(has(
         r#"if ($env:GITHUB_REF_TYPE -eq 'tag' -and -not $gate -and $env:GITHUB_REF_NAME -ne "launcher-v$version") {"#
     ));
-    // The flag is empty (off) unless gate; flag.ts turns on only for "1".
+    // The flag is "1" (on) for every build, gate or not; flag.ts turns on only for "1".
     let flag: Vec<_> = lines
         .iter()
         .filter(|l| l.starts_with("VITE_SELF_UPDATE:"))
         .collect();
-    assert_eq!(
-        flag,
-        [&"VITE_SELF_UPDATE: ${{ steps.version.outputs.gate == 'true' && '1' || '' }}"]
-    );
+    assert_eq!(flag, [&"VITE_SELF_UPDATE: '1'"]);
     // --config only in the gate branch, and only with the gate file.
     let configs: Vec<_> = lines.iter().filter(|l| l.contains("--config")).collect();
     assert_eq!(
