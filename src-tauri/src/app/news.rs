@@ -16,10 +16,11 @@ use crate::catalog::news::{self, News, MAX_NEWS_SIZE};
 use crate::contract::{ErrorCode, LauncherError, ProductId, Versioned};
 use crate::install::download::Expect;
 
-/// Where the owner publishes `news.json`: one file for every product, a release
-/// asset of the launcher repository (owner decision on #80).
+/// Where the owner publishes `news.json`: one file for every product, an asset of
+/// the launcher repository's mutable `catalog` release (#80, moved off
+/// `releases/latest` on #162 so launcher releases never drop it).
 pub const DEFAULT_NEWS_URL: &str =
-    "https://github.com/synpoox/resurrected-launcher/releases/latest/download/news.json";
+    "https://github.com/synpoox/resurrected-launcher/releases/download/catalog/news.json";
 
 /// "About <product>": each product's public page, bundled, never fetched. The one
 /// table, shared with the frontend (`src/products.ts` shows the button exactly for
@@ -231,5 +232,27 @@ mod tests {
     #[test]
     fn default_news_url_is_public_https() {
         assert!(crate::catalog::public_https("news", DEFAULT_NEWS_URL.to_owned()).is_ok());
+    }
+
+    #[test]
+    fn default_news_url_is_the_catalog_release_asset() {
+        assert_eq!(
+            DEFAULT_NEWS_URL,
+            "https://github.com/synpoox/resurrected-launcher/releases/download/catalog/news.json"
+        );
+    }
+
+    /// The starter file the orchestrator uploads to the `catalog` release (#162).
+    #[test]
+    fn starter_news_example_parses() {
+        let bytes = include_bytes!("../../../docs/release/news.example.json");
+        let parsed = news::News::parse(bytes).expect("docs/release/news.example.json is valid");
+        let items = parsed.for_product(&ProductId("pd2r".into()));
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].tag, "Announcement");
+        assert_eq!(
+            items[0].url,
+            "https://github.com/synpoox/pd2-resurrected/releases/tag/v0.2.0-alpha"
+        );
     }
 }
