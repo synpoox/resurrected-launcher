@@ -1,0 +1,51 @@
+# Publishes news/news.json as the news.json asset of the mutable `catalog`
+# release (#167). See docs/specs/news-feed.md. Edit the file on GitHub and
+# commit to main; this checks it with the launcher's own parser, then uploads it.
+# It touches no other release and never marks `catalog` as latest.
+name: Publish news
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - news/news.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-news
+  cancel-in-progress: false
+
+jobs:
+  # The launcher's News::parse, through the test that includes news/news.json.
+  validate:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # Installs the toolchain pinned in src-tauri/rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: src-tauri
+      - run: cargo test --locked --lib app::news::tests::published_news_parses -- --exact
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Upload news.json to the catalog release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view catalog --repo "$GITHUB_REPOSITORY" --json tagName > /dev/null
+          gh release upload catalog news/news.json --clobber --repo "$GITHUB_REPOSITORY"
+          gh release download catalog --pattern news.json --dir "$RUNNER_TEMP" --repo "$GITHUB_REPOSITORY"
+          cmp news/news.json "$RUNNER_TEMP/news.json"
