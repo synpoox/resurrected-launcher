@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::contract::{
-    ErrorCode, InventoryError, LauncherError, PathError, ProductId, RelativePath,
+    ErrorCode, InventoryError, LauncherError, PathError, ProductId, RelativePath, Sha256Digest,
 };
 
 use super::*;
@@ -89,6 +89,17 @@ fn manifest_rejections() -> Vec<(&'static str, CatalogError)> {
                 "compatibility.required_settings[0].file",
                 "must be a shipped_default file of this release",
             ),
+        ),
+        (
+            "previous-default-on-managed",
+            invalid(
+                "files[0].previous_default_sha256",
+                "only a shipped_default lists previous hashes",
+            ),
+        ),
+        (
+            "previous-default-placeholder",
+            placeholder("files[5].previous_default_sha256[1]"),
         ),
         (
             "ownership-unknown",
@@ -502,6 +513,25 @@ fn every_invalid_fixture_is_asserted() {
         .collect();
     on_disk.sort();
     assert_eq!(on_disk, covered);
+}
+
+/// #134: a shipped default may list the hashes earlier releases shipped for it;
+/// without the field (every other fixture) it lists none.
+#[test]
+fn release_manifest_lists_previous_shipped_default_hashes_case_insensitively() {
+    let m =
+        ReleaseManifest::parse(&fixture("valid/release-manifest-previous-defaults.json")).unwrap();
+    let want: Sha256Digest = "ab".repeat(32).parse().unwrap();
+    assert_eq!(
+        m.previous_default_hashes(&path("LOOTFILTER/default.filter")),
+        [want]
+    );
+    assert!(m
+        .previous_default_hashes(&path("d2rloader/config.ini"))
+        .is_empty());
+    assert!(valid_manifest()
+        .previous_default_hashes(&path("lootfilter/default.filter"))
+        .is_empty());
 }
 
 #[test]

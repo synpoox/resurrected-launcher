@@ -1,5 +1,7 @@
 //! Release manifest, schema 3 (`docs/specs/release-manifest.md`).
 
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
 
 use crate::contract::{ExpectedFile, ExpectedInventory, ProductId, RelativePath, Sha256Digest};
@@ -125,6 +127,8 @@ pub struct ReleaseManifest {
     /// Paths relative to `install_root`.
     pub inventory: ExpectedInventory,
     shipped_defaults: Vec<RelativePath>,
+    /// Upper-cased path -> `previous_default_sha256` of that shipped default.
+    previous_defaults: BTreeMap<String, Vec<Sha256Digest>>,
     pub compatibility: Compatibility,
     pub saves: Saves,
 }
@@ -158,6 +162,16 @@ impl ReleaseManifest {
         } else {
             Ownership::Unknown
         }
+    }
+
+    /// The SHA-256 values earlier releases published for the shipped default at
+    /// `path` (`previous_default_sha256`), compared ignoring case as Windows does.
+    /// Bytes with one of them are an older release's untouched default, not a
+    /// player edit (#134). Empty for managed and unlisted paths.
+    pub fn previous_default_hashes(&self, path: &RelativePath) -> &[Sha256Digest] {
+        self.previous_defaults
+            .get(&path.as_str().to_uppercase())
+            .map_or(&[], Vec::as_slice)
     }
 
     /// How a 7-Zip listing of the release archive differs from `files` and
@@ -224,6 +238,9 @@ struct RawFile {
     size: Option<u64>,
     sha256: Option<String>,
     ownership: Ownership,
+    /// Optional: hashes earlier releases shipped for this `shipped_default`.
+    #[serde(default)]
+    previous_default_sha256: Option<Vec<Option<String>>>,
 }
 
 #[derive(Deserialize)]
@@ -305,6 +322,7 @@ impl RawManifest {
             return Err(invalid("files", "must not be empty"));
         }
         let mut shipped_defaults = Vec::new();
+        let mut previous_defaults = BTreeMap::new();
         let files = each("files", self.files, |field, f| {
             let file = ExpectedFile {
                 path: check::path(&format!("{field}.path"), f.path)?,
@@ -321,6 +339,18 @@ impl RawManifest {
                 return Err(CatalogError::PlaceholderVerification {
                     field: format!("{field}.{which}"),
                 });
+            }
+            if let Some(prev) = f.previous_default_sha256 {
+                if f.ownership != Ownership::ShippedDefault {
+                    return Err(invalid(
+                        format!("{field}.previous_default_sha256"),
+                        "only a shipped_default lists previous hashes",
+                    ));
+                }
+                let prev = each(&format!("{field}.previous_default_sha256"), prev, |f, h| {
+                    check::digest(f, h)
+                })?;
+                previous_defaults.insert(file.path.as_str().to_uppercase(), prev);
             }
             match f.ownership {
                 Ownership::Managed => {}
@@ -491,6 +521,7 @@ impl RawManifest {
             archive,
             inventory,
             shipped_defaults,
+            previous_defaults,
             compatibility,
             saves,
         })

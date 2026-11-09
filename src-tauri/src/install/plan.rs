@@ -34,6 +34,10 @@ pub struct Request<'a> {
     /// State records an installed release of this product. Its published hashes
     /// are the baseline that tells untouched shipped defaults from edited ones.
     pub installed: Option<&'a ReleaseManifest>,
+    /// Other manifests of this product the launcher has (State's cache), for
+    /// clean install: a file holding bytes one of them published is an older
+    /// release's, not the player's (#134). May be empty.
+    pub earlier: &'a [ReleaseManifest],
     /// The player acknowledged the save-incompatibility notice (ADR 0001).
     pub acknowledge_save_breaking: bool,
     /// Explicit consent for [`OperationKind::CleanInstall`].
@@ -82,6 +86,10 @@ pub struct Inspection {
     /// Clean install: files that stay only in the labelled backup (unknown files,
     /// and edited defaults that fail a mandatory setting).
     pub backup_only: Vec<RelativePath>,
+    /// Clean install: the mandatory settings that an edited default in
+    /// [`Self::backup_only`] fails, so the release's default goes live instead.
+    /// Named to the player before they consent (#6 item 4, #134).
+    pub settings_reset: Vec<Conflict>,
     /// Release files already in the live root that stay as they are: the
     /// release's own bytes, or an edited shipped default kept in place. With no
     /// installed record, a non-zero count is an existing installation the
@@ -189,6 +197,7 @@ pub fn inspect(
         conflicts: Vec::new(),
         preserved: Vec::new(),
         backup_only: Vec::new(),
+        settings_reset: Vec::new(),
         kept: 0,
         save_breaking_notice: new.saves.incompatibility_notice.clone(),
         expect: Vec::new(),
@@ -236,7 +245,7 @@ pub fn inspect(
                 )
             });
             let want = Want::File((f.size, *f.sha256.as_bytes()));
-            let fate = match kind {
+            let mut fate = match kind {
                 // Adopt changes nothing; LiveVerified checks managed files match.
                 Adopt => match (disk, new.ownership_of(&f.path)) {
                     (OnDisk::File(d), Ownership::ShippedDefault) if !is(&d, f) => Fate::KeepEdited,
@@ -244,6 +253,15 @@ pub fn inspect(
                 },
                 _ => fate(disk, f, new.ownership_of(&f.path), base),
             };
+            // Clean install: an older release's untouched file is not carried
+            // forward or listed; the new release's goes live (#134).
+            if kind == CleanInstall && matches!(fate, Fate::KeepEdited | Fate::Conflict) {
+                if let OnDisk::File(d) = disk {
+                    if published_before(req, &f.path, &d) {
+                        fate = Fate::Replace;
+                    }
+                }
+            }
             if matches!(fate, Fate::Keep | Fate::KeepEdited) {
                 insp.kept += 1;
             }
@@ -271,6 +289,7 @@ pub fn inspect(
                     if kind == CleanInstall && !bad.is_empty() {
                         // The new default goes live; the player's file stays in the backup.
                         insp.backup_only.push(f.path.clone());
+                        insp.settings_reset.extend(bad);
                         expect.push((f.path.to_string(), want));
                     } else {
                         insp.preserved.push(f.path.clone());
@@ -367,7 +386,6 @@ pub fn inspect(
     // Unknown files (saves, plugins, anything unlisted) must still be there after.
     // Clean install leaves them only in the labelled backup, and says so.
     if std::fs::symlink_metadata(root).is_ok() {
-        let old = baseline.map(files_by_fold).unwrap_or_default();
         for (rel, size) in preserve::walk(root)? {
             if known.contains(&fold(&rel)) {
                 continue;
@@ -375,19 +393,40 @@ pub fn inspect(
             if kind != CleanInstall {
                 expect.push((rel, Want::Size(size)));
             } else if rel != DISPOSABLE_SENTINEL {
+                let p =
+                    RelativePath::new(rel).map_err(|e| invalid(format!("unknown file: {e}")))?;
                 // An old-release file with its published bytes is not the player's.
-                if let Some(f) = old.get(&fold(&rel)) {
-                    if matches!(on_disk(&at(root, &rel))?, OnDisk::File(d) if is(&d, f)) {
+                if let OnDisk::File(d) = on_disk(&under(root, &p))? {
+                    if published_before(req, &p, &d) {
                         continue;
                     }
                 }
-                let p =
-                    RelativePath::new(rel).map_err(|e| invalid(format!("unknown file: {e}")))?;
                 insp.backup_only.push(p);
             }
         }
     }
     Ok(insp)
+}
+
+/// Whether `d` at `path` is bytes an earlier release of the product published
+/// there: the installed release's file, a file of a cached manifest
+/// ([`Request::earlier`]), or a `previous_default_sha256` of the target or of
+/// one of those manifests. Such a file is not the player's (#134).
+fn published_before(req: &Request, path: &RelativePath, d: &Digest) -> bool {
+    let key = fold(path.as_str());
+    let known = req.installed.into_iter().chain(req.earlier);
+    let listed = known.clone().any(|m| {
+        m.inventory
+            .files()
+            .iter()
+            .any(|f| fold(f.path.as_str()) == key && is(d, f))
+    });
+    listed
+        || std::iter::once(req.release).chain(known).any(|m| {
+            m.previous_default_hashes(path)
+                .iter()
+                .any(|h| h.as_bytes() == &d.1)
+        })
 }
 
 /// The digest of `disk`; [`fate`] only replaces or keeps edited a regular file.

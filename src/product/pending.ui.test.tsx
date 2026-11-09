@@ -137,7 +137,7 @@ describe("consent dialogs open on the click (issue 138)", () => {
     await user.click(confirm);
     expect(api.calls.filter((c) => c.name === "startOperation")).toHaveLength(0);
     inspect.release();
-    expect(await within(dialog).findByText(/doesn't match 0\.4\.2/)).toBeTruthy();
+    expect(await within(dialog).findByText(/doesn't match alpha 0\.4\.2/)).toBeTruthy();
     expect(blocked(confirm)).toBe(false);
     await user.click(confirm);
     await waitFor(() => expect(api.calls.some((c) => c.name === "startOperation")).toBe(true));

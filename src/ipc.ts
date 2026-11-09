@@ -181,6 +181,9 @@ export interface Inspection {
   files_kept: number;
   preserved: string[];
   backup_only: string[];
+  /** Clean install: mandatory settings an edited file in `backup_only` fails; the release's
+   *  default goes live instead (issue 134). Always `type: "setting"`. */
+  settings_reset: Conflict[];
   conflicts: Conflict[];
   save_breaking_notice: string | null;
   space_needed: number;
