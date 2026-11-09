@@ -10,7 +10,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use resurrected_launcher_lib::catalog::{GameBuild, Platform, ReleaseManifest};
+use resurrected_launcher_lib::catalog::{GameBuild, LoaderBuild, Platform, ReleaseManifest};
 use resurrected_launcher_lib::contract::{
     ErrorCode, GameLocation, GameStore, Readiness, RelativePath, RunningGame,
 };
@@ -356,6 +356,87 @@ fn loader_must_be_present_versioned_and_allowed() {
     assert_eq!(run(&f, &ok_host()), Readiness::LoaderMissing);
 }
 
+fn pin(version: &str, file: &str, bytes: &[u8]) -> LoaderBuild {
+    LoaderBuild {
+        version: version.into(),
+        file: RelativePath::new(file).unwrap(),
+        size: bytes.len() as u64,
+        sha256: support::sha256(bytes),
+    }
+}
+
+/// #148: a pinned loader file must match a pin for its version; unpinned files
+/// and manifests without `loader_builds` are checked by version only.
+#[test]
+fn pinned_loader_files_must_match_the_official_bytes() {
+    let game = game_dir();
+    let loc = location(game.path());
+    let mut m = manifest("r1");
+    let host = ok_host();
+
+    // No pins: the version check alone gates Play.
+    assert!(m.compatibility.loader_builds.is_empty());
+    assert_eq!(
+        run(&facts(Some(&loc), Some(&m), None), &host),
+        Readiness::Ready
+    );
+
+    // Only D2RLoader.exe pinned (file compared ignoring case), with the real bytes;
+    // a pin for another version is irrelevant. D2RCore.dll stays unpinned.
+    m.compatibility.loader_builds = vec![
+        pin("1.0.0", "D2RLoader.exe", b"other"),
+        pin(LOADER, "d2rloader.EXE", b"loader"),
+    ];
+    assert_eq!(
+        run(&facts(Some(&loc), Some(&m), None), &host),
+        Readiness::Ready
+    );
+
+    // Same version, different bytes (same size, then different size).
+    fs::write(game.path().join("D2RLoader.exe"), b"LOADER").unwrap();
+    let modified = Readiness::LoaderModified {
+        file: "D2RLoader.exe".into(),
+        version: LOADER.into(),
+    };
+    assert_eq!(run(&facts(Some(&loc), Some(&m), None), &host), modified);
+    fs::write(game.path().join("D2RLoader.exe"), b"patched loader").unwrap();
+    assert_eq!(run(&facts(Some(&loc), Some(&m), None), &host), modified);
+
+    // Any pin of the version matches; a pinned core is checked after the loader.
+    m.compatibility
+        .loader_builds
+        .push(pin(LOADER, "D2RLoader.exe", b"patched loader"));
+    m.compatibility
+        .loader_builds
+        .push(pin(LOADER, "D2RCore.dll", b"official core"));
+    assert_eq!(
+        run(&facts(Some(&loc), Some(&m), None), &host),
+        Readiness::LoaderModified {
+            file: "D2RCore.dll".into(),
+            version: LOADER.into(),
+        }
+    );
+    fs::write(game.path().join("D2RCore.dll"), b"official core").unwrap();
+    assert_eq!(
+        run(&facts(Some(&loc), Some(&m), None), &host),
+        Readiness::Ready
+    );
+
+    // An unsupported version is reported before any byte check.
+    let old = FakeHost::with_versions("3.3.93847", "1.0.0", LOADER);
+    assert!(matches!(
+        run(&facts(Some(&loc), Some(&m), None), &old),
+        Readiness::LoaderUnsupported { .. }
+    ));
+
+    // The recommended manifest's pins apply when nothing is installed.
+    fs::write(game.path().join("D2RCore.dll"), b"core").unwrap();
+    assert!(matches!(
+        run(&facts(Some(&loc), None, Some(&m)), &host),
+        Readiness::LoaderModified { .. }
+    ));
+}
+
 #[test]
 fn build_hash_is_cached_by_path_size_and_mtime() {
     let game = game_dir();
@@ -410,7 +491,7 @@ fn system_host_reads_versions_and_registry_without_failing() {
 }
 
 /// Read-only: validates and assesses `RESURRECTED_REAL_D2R` against the known
-/// 3.3.93847 build and loader 1.3.1-beta, and proves no file's mtime changed.
+/// 3.3.93847 build and the official loader 1.3.1-beta bytes, and proves no file's mtime changed.
 #[test]
 fn real_d2r_copy_is_ready_read_only() {
     let Some(root) = std::env::var_os("RESURRECTED_REAL_D2R") else {
@@ -429,6 +510,15 @@ fn real_d2r_copy_is_ready_read_only() {
         "e1f5436e3d9687f644ef16938b1b183d1fdef434f18cf66d852cf68f48cc8936"
             .parse()
             .unwrap();
+    // The official 1.3.1-beta D2RLoader.exe the PD2R manifest pins (#148).
+    m.compatibility.loader_builds = vec![LoaderBuild {
+        version: LOADER.into(),
+        file: RelativePath::new("D2RLoader.exe").unwrap(),
+        size: 23_331_160,
+        sha256: "93021dad48533bcfca8a95c69a0cc00cdb9008a3ce6ceba1d04c7aca71985a10"
+            .parse()
+            .unwrap(),
+    }];
     for file in ["D2RLoader.exe", "D2RCore.dll"] {
         println!("{file}: {:?}", host.product_version(&root.join(file)));
     }

@@ -25,6 +25,7 @@ export function recheckText(state: ProductState, product: Product): string {
       return `D2R build ${r.found} isn't supported by this ${product.short} release. ${product.short}'s page explains what to do.`;
     case "loader_missing":
     case "loader_unsupported":
+    case "loader_modified":
       return `D2RLoader isn't ready at this location. ${product.short}'s page explains what to do.`;
     case "d2r_missing":
       return "D2R still wasn't found there.";

@@ -4,6 +4,11 @@
 # uploads them as workflow artifacts. It never creates or publishes a GitHub
 # release. With no signing key in the launcher-release environment, the build
 # job is skipped and the run still succeeds.
+#
+# A tag launcher-v<version>-gate makes a slice 5 gate build (#89): self-update on
+# (VITE_SELF_UPDATE=1) and the updater endpoint on 127.0.0.1 from
+# src-tauri/gate/tauri.gate.conf.json. Same key. Never distribute a gate build.
+# Every other trigger builds the release launcher, with self-update off.
 name: Launcher release
 
 on:
@@ -88,11 +93,14 @@ jobs:
         id: version
         run: |
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
-          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "launcher-v$version") {
-            Write-Output "::error::Tag $env:GITHUB_REF_NAME does not match tauri.conf.json version $version (expected launcher-v$version)."
+          $gate = $env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -eq "launcher-v$version-gate"
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and -not $gate -and $env:GITHUB_REF_NAME -ne "launcher-v$version") {
+            Write-Output "::error::Tag $env:GITHUB_REF_NAME does not match tauri.conf.json version $version (expected launcher-v$version, or launcher-v$version-gate for a gate build)."
             exit 1
           }
           "version=$version" >> $env:GITHUB_OUTPUT
+          "gate=$($gate.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          if ($gate) { Write-Output "::notice::Slice 5 gate build: self-update on, updater endpoint 127.0.0.1. Never distribute it." }
       # Installs the toolchain pinned in src-tauri/rust-toolchain.toml.
       - run: rustup toolchain install
         working-directory: src-tauri
@@ -103,14 +111,25 @@ jobs:
       - run: npm ci
       # The key is passed only to this step. tauri.conf.json sets
       # bundle.createUpdaterArtifacts, so the build writes the .sig.
+      # Gate builds only: VITE_SELF_UPDATE=1 and the gate config merged over
+      # tauri.conf.json (endpoint only; the key stays). Release builds get neither.
       - name: Build the signed NSIS installer
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npx tauri build --ci
+          GATE: ${{ steps.version.outputs.gate }}
+          VITE_SELF_UPDATE: ${{ steps.version.outputs.gate == 'true' && '1' || '' }}
+        run: |
+          if ($env:GATE -eq 'true') {
+            npx tauri build --ci --config "$env:GITHUB_WORKSPACE/src-tauri/gate/tauri.gate.conf.json"
+          } else {
+            npx tauri build --ci
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Write latest.json
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          GATE: ${{ steps.version.outputs.gate }}
         run: |
           $dir = 'src-tauri/target/release/bundle/nsis'
           $setup = @(Get-ChildItem $dir -Filter "*_${env:VERSION}_x64-setup.exe")
@@ -126,6 +145,9 @@ jobs:
             $sig = "$dir/$name.sig"
           }
           $tag = "launcher-v$env:VERSION"
+          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/$name"
+          # Gate builds update from src-tauri/gate/serve-update.ps1 on this machine.
+          if ($env:GATE -eq 'true') { $url = "http://127.0.0.1:8789/$name" }
           $latest = [ordered]@{
             version  = $env:VERSION
             notes    = "Launcher $env:VERSION"
@@ -133,7 +155,7 @@ jobs:
             platforms = [ordered]@{
               'windows-x86_64' = [ordered]@{
                 signature = (Get-Content $sig -Raw).Trim()
-                url       = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/$name"
+                url       = $url
               }
             }
           }
@@ -141,7 +163,7 @@ jobs:
           Get-FileHash "$dir/*" -Algorithm SHA256 | Format-Table -AutoSize Hash, Path
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: launcher-${{ steps.version.outputs.version }}-unpublished
+          name: launcher-${{ steps.version.outputs.version }}${{ steps.version.outputs.gate == 'true' && '-gate' || '' }}-unpublished
           path: |
             src-tauri/target/release/bundle/nsis/*-setup.exe
             src-tauri/target/release/bundle/nsis/*-setup.exe.sig

@@ -118,6 +118,7 @@ export type Readiness =
   | { status: "build_unsupported"; found: string }
   | { status: "loader_missing" }
   | { status: "loader_unsupported"; found: string; allowed: string[] }
+  | { status: "loader_modified"; file: string; version: string }
   | { status: "not_installed" }
   | { status: "update_available" }
   | { status: "ready" };

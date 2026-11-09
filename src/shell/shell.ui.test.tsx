@@ -623,6 +623,15 @@ describe("journey states", () => {
     expect(names(api)).toContain("openLoaderDownloadPage");
   });
 
+  // issue 148: an allowed version whose bytes differ from the pinned official file.
+  it("loader-modified names the file and version and offers the official page", async () => {
+    const { api, user } = mount("loader-modified");
+    expect(await screen.findByText(/D2RLoader\.exe doesn't match the official D2RLoader 1\.3\.1-beta download/)).toBeTruthy();
+    expect(screen.queryByText(/doesn't allow it/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Get D2RLoader" }));
+    expect(names(api)).toContain("openLoaderDownloadPage");
+  });
+
   it("install shows the release and free space needed", async () => {
     mount("install");
     expect(await screen.findByText("alpha 0.4.2 · 3.6 GB free space needed")).toBeTruthy();
