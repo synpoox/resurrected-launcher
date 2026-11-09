@@ -127,8 +127,12 @@ describe("live selection", () => {
   it("release builds leave VITE_SELF_UPDATE off", () => {
     const envFiles = readdirSync(".").filter((f) => f.startsWith(".env"));
     for (const f of envFiles) expect(readFileSync(f, "utf8"), f).not.toMatch(/VITE_SELF_UPDATE/);
-    for (const f of [".github/workflows/release.yml", ".github/workflows/ci.yml", "vite.config.ts", "package.json"]) {
+    for (const f of [".github/workflows/ci.yml", "vite.config.ts", "package.json"]) {
       if (existsSync(f)) expect(readFileSync(f, "utf8"), f).not.toMatch(/VITE_SELF_UPDATE/);
     }
+    // release.yml sets it only for a launcher-v<version>-gate tag (#89); empty, the flag is off.
+    const release = readFileSync(".github/workflows/release.yml", "utf8");
+    const set = release.split("\n").map((l) => l.trimEnd()).filter((l) => /^\s*VITE_SELF_UPDATE\s*:/.test(l));
+    expect(set).toEqual(["          VITE_SELF_UPDATE: ${{ steps.version.outputs.gate == 'true' && '1' || '' }}"]);
   });
 });

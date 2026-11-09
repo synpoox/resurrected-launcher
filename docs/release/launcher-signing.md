@@ -18,6 +18,14 @@ It never creates, drafts or publishes a GitHub release, and it never writes a ta
 
 `latest.json` points at `https://github.com/<repo>/releases/download/launcher-v<version>/<installer>`. That URL only works after someone publishes those assets by hand. The updater endpoint the app trusts is `plugins.updater.endpoints` in `tauri.conf.json` (`https://github.com/synpoox/resurrected-launcher/releases/latest/download/latest.json`, decided on #86, set by #88), so it only answers once a release is published.
 
+## Gate builds (#89)
+
+A tag `launcher-v<version>-gate` (same `tauri.conf.json` version) makes a slice 5 gate build instead. It differs from a release build in two ways only, both checked by `src-tauri/tests/slice5_gate/gate_build.rs`:
+- `VITE_SELF_UPDATE=1`, so the launcher checks for updates. Release builds leave it empty (off).
+- `tauri build --config src-tauri/gate/tauri.gate.conf.json` sets the updater endpoint to `http://127.0.0.1:8789/latest.json` (with `dangerousInsecureTransportProtocol`, loopback only). The public key, install mode and everything else stay the release config, so every update is still verified against the release key. The config is fixed at build time; nothing at runtime can change it.
+
+Its `latest.json` points at `http://127.0.0.1:8789/<installer>` and the artifact is named `launcher-<version>-gate-unpublished`. `src-tauri/gate/serve-update.ps1` serves one update on that address (normal, `-Tamper`, a wrong-key `.sig`, `-Unsigned`), so N → N+1 and the bad-signature rows run without publishing anything. Never distribute a gate build.
+
 ## Secrets
 
 Both secrets live in the GitHub **environment** `launcher-release`, not in repository secrets. Only the `build` step that runs `tauri build` receives them.

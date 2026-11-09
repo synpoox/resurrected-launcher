@@ -459,20 +459,8 @@ fn tauri_conf_trusts_only_the_key_and_endpoint_from_86() {
     assert_eq!(keys, ["endpoints", "pubkey", "windows"], "{updater}");
     assert_eq!(updater["windows"], json!({ "installMode": "passive" }));
     assert_eq!(conf["bundle"]["createUpdaterArtifacts"], true);
-    // The release workflow no longer needs its temporary override.
-    let release = fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../.github/workflows/release.yml"
-    ))
-    .unwrap();
-    assert!(
-        !release.contains("--config"),
-        "release.yml still overrides the config"
-    );
-    assert!(
-        !release.contains("VITE_SELF_UPDATE"),
-        "self-update must stay off in release builds"
-    );
+    // Release builds never override this config or turn self-update on; only gate
+    // builds do (tests/slice5_gate/gate_build.rs).
 }
 
 /// The real config starts the plugin, and its updater uses exactly that config.
