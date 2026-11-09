@@ -578,6 +578,17 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         const g = state.loader_guidance;
         const found = g?.found ?? (r.status === "loader_unsupported" ? r.found : null);
         const allowed = g?.allowed ?? (r.status === "loader_unsupported" ? r.allowed : []);
+        if (r.status === "loader_modified") {
+          return (
+            <Notice>
+              <b>
+                {r.file} doesn't match the official D2RLoader {r.version} download
+              </b>
+              , so it may be damaged or changed. Reinstall D2RLoader from the official download page, then choose Check
+              again. The launcher never downloads or runs the installer.
+            </Notice>
+          );
+        }
         return (
           <Notice>
             {found ? (

@@ -210,6 +210,14 @@ export const SCENES: readonly Scene[] = [
       loader_guidance: { found: null, allowed: ["1.3.1-beta"], download_page: "https://d2rloader.net/download.html" },
     }),
   }),
+  scene({
+    key: "loader-modified",
+    label: "Loader not official",
+    state: base({
+      readiness: { status: "loader_modified", file: "D2RLoader.exe", version: "1.3.1-beta" },
+      loader_guidance: { found: "1.3.1-beta", allowed: ["1.3.1-beta"], download_page: "https://d2rloader.net/download.html" },
+    }),
+  }),
   scene({ key: "install", label: "Ready to install", state: base(notInstalled), notes: [r("0.4.2", 3, NOTES_042)] }),
   scene({
     key: "adopt",

@@ -182,7 +182,7 @@ pub struct ProductState {
     pub readiness: Readiness,
     /// The earliest-started process under the D2R root, any product.
     pub running_game: Option<RunningGame>,
-    /// Set when readiness is `loader_missing` or `loader_unsupported`.
+    /// Set when readiness is `loader_missing`, `loader_unsupported` or `loader_modified`.
     pub loader_guidance: Option<LoaderGuidance>,
     pub catalog: CatalogState,
     /// The last Play's game exited within 30 s; the next Play clears it.

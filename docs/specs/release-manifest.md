@@ -103,7 +103,7 @@ Unknown game/loader combinations block Play.
 
 There is no loader installer pin: the launcher never downloads or runs the D2RLoader installer ([#59](https://github.com/synpoox/resurrected-launcher/issues/59)). It reads the installed loader's version, checks it against `compatibility.loader_versions`, and when it is missing or unsupported links the player to the official download page. A manifest that still carries the earlier `loader` block is rejected as an unknown field.
 
-`compatibility.loader_builds` records the publisher's SHA-256 of each official loader file, so a loader the player downloaded can be checked against the verified copy. PD2R pins D2RLoader 1.3.1-beta as `D2RLoader.exe`, 23,331,160 B, sha256 `93021dad48533bcfca8a95c69a0cc00cdb9008a3ce6ceba1d04c7aca71985a10`. Readiness does not compare installed loader bytes yet; until it does, the version check alone gates Play.
+`compatibility.loader_builds` records the publisher's SHA-256 of each official loader file, so a loader the player downloaded can be checked against the verified copy. PD2R pins D2RLoader 1.3.1-beta as `D2RLoader.exe`, 23,331,160 B, sha256 `93021dad48533bcfca8a95c69a0cc00cdb9008a3ce6ceba1d04c7aca71985a10`. Readiness checks it ([#148](https://github.com/synpoox/resurrected-launcher/issues/148)): after the version check, each installed loader file whose `(version, file)` is pinned must match one of those pins by size and SHA-256, or readiness is `loader_modified` and Play is refused with the official-download guidance. A file the list does not pin, and every file when the list is empty, is checked by version alone.
 
 ## Immutability
 

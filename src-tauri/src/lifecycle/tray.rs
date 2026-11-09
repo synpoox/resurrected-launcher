@@ -226,9 +226,9 @@ pub fn view(
         Readiness::RecoveryRequired => shown(Overlay::Idle, "Checking files…".into(), vec![]),
         Readiness::D2rMissing => error("D2R not found"),
         Readiness::BuildUnsupported { .. } => error("D2R version not supported"),
-        Readiness::LoaderMissing | Readiness::LoaderUnsupported { .. } => {
-            error("D2RLoader not ready")
-        }
+        Readiness::LoaderMissing
+        | Readiness::LoaderUnsupported { .. }
+        | Readiness::LoaderModified { .. } => error("D2RLoader not ready"),
     }
 }
 

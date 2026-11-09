@@ -21,6 +21,7 @@ describe("fixtures", () => {
   it("each state fixture derives the journey it is named after", () => {
     const overlays: Record<string, string> = {
       "d2r-choose": "d2r-missing",
+      "loader-modified": "loader-missing",
       "save-breaking": "update",
       repair: "ready",
       manage: "ready",
