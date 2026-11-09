@@ -1,5 +1,7 @@
 //! Release manifest, schema 3 (`docs/specs/release-manifest.md`).
 
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
 
 use crate::contract::{ExpectedFile, ExpectedInventory, ProductId, RelativePath, Sha256Digest};
@@ -64,6 +66,18 @@ pub struct GameBuild {
     pub sha256: Sha256Digest,
 }
 
+/// An official D2RLoader file this release is verified with, pinned by version and
+/// bytes, so a downloaded loader can be checked against the publisher's copy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoaderBuild {
+    /// One of [`Compatibility::loader_versions`].
+    pub version: String,
+    /// Relative to the D2R installation root, e.g. `D2RLoader.exe`.
+    pub file: RelativePath,
+    pub size: u64,
+    pub sha256: Sha256Digest,
+}
+
 /// A `key = value` the product needs, in a shipped-default file of this release.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Setting {
@@ -79,6 +93,9 @@ pub struct Setting {
 pub struct Compatibility {
     pub game_builds: Vec<GameBuild>,
     pub loader_versions: Vec<String>,
+    /// Pinned loader files. Optional in schema 3 (empty when absent); when present,
+    /// every entry of `loader_versions` has at least one.
+    pub loader_builds: Vec<LoaderBuild>,
     pub required_settings: Vec<Setting>,
 }
 
@@ -110,6 +127,8 @@ pub struct ReleaseManifest {
     /// Paths relative to `install_root`.
     pub inventory: ExpectedInventory,
     shipped_defaults: Vec<RelativePath>,
+    /// Upper-cased path -> `previous_default_sha256` of that shipped default.
+    previous_defaults: BTreeMap<String, Vec<Sha256Digest>>,
     pub compatibility: Compatibility,
     pub saves: Saves,
 }
@@ -143,6 +162,16 @@ impl ReleaseManifest {
         } else {
             Ownership::Unknown
         }
+    }
+
+    /// The SHA-256 values earlier releases published for the shipped default at
+    /// `path` (`previous_default_sha256`), compared ignoring case as Windows does.
+    /// Bytes with one of them are an older release's untouched default, not a
+    /// player edit (#134). Empty for managed and unlisted paths.
+    pub fn previous_default_hashes(&self, path: &RelativePath) -> &[Sha256Digest] {
+        self.previous_defaults
+            .get(&path.as_str().to_uppercase())
+            .map_or(&[], Vec::as_slice)
     }
 
     /// How a 7-Zip listing of the release archive differs from `files` and
@@ -209,6 +238,9 @@ struct RawFile {
     size: Option<u64>,
     sha256: Option<String>,
     ownership: Ownership,
+    /// Optional: hashes earlier releases shipped for this `shipped_default`.
+    #[serde(default)]
+    previous_default_sha256: Option<Vec<Option<String>>>,
 }
 
 #[derive(Deserialize)]
@@ -216,7 +248,19 @@ struct RawFile {
 struct RawCompatibility {
     game_builds: Vec<RawGameBuild>,
     loader_versions: Vec<String>,
+    /// Added after schema 3 shipped, so manifests without it still parse.
+    #[serde(default)]
+    loader_builds: Vec<RawLoaderBuild>,
     required_settings: Vec<RawSetting>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawLoaderBuild {
+    version: String,
+    file: String,
+    size: Option<u64>,
+    sha256: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -278,6 +322,7 @@ impl RawManifest {
             return Err(invalid("files", "must not be empty"));
         }
         let mut shipped_defaults = Vec::new();
+        let mut previous_defaults = BTreeMap::new();
         let files = each("files", self.files, |field, f| {
             let file = ExpectedFile {
                 path: check::path(&format!("{field}.path"), f.path)?,
@@ -294,6 +339,18 @@ impl RawManifest {
                 return Err(CatalogError::PlaceholderVerification {
                     field: format!("{field}.{which}"),
                 });
+            }
+            if let Some(prev) = f.previous_default_sha256 {
+                if f.ownership != Ownership::ShippedDefault {
+                    return Err(invalid(
+                        format!("{field}.previous_default_sha256"),
+                        "only a shipped_default lists previous hashes",
+                    ));
+                }
+                let prev = each(&format!("{field}.previous_default_sha256"), prev, |f, h| {
+                    check::digest(f, h)
+                })?;
+                previous_defaults.insert(file.path.as_str().to_uppercase(), prev);
             }
             match f.ownership {
                 Ownership::Managed => {}
@@ -363,6 +420,52 @@ impl RawManifest {
                 "must not be empty",
             ));
         }
+        let loader_versions = each(
+            "compatibility.loader_versions",
+            c.loader_versions,
+            |f, v| {
+                check::semver(f, &v)?;
+                Ok(v)
+            },
+        )?;
+        let mut loader_builds: Vec<LoaderBuild> = Vec::new();
+        for (i, b) in c.loader_builds.into_iter().enumerate() {
+            let field = format!("compatibility.loader_builds[{i}]");
+            if !loader_versions.contains(&b.version) {
+                return Err(invalid(
+                    format!("{field}.version"),
+                    "must be one of compatibility.loader_versions",
+                ));
+            }
+            let build = LoaderBuild {
+                version: b.version,
+                file: check::path(&format!("{field}.file"), b.file)?,
+                size: check::size(&format!("{field}.size"), b.size)?,
+                sha256: check::digest(&format!("{field}.sha256"), b.sha256)?,
+            };
+            let file = build.file.as_str().to_uppercase();
+            if loader_builds
+                .iter()
+                .any(|o| o.version == build.version && o.file.as_str().to_uppercase() == file)
+            {
+                return Err(invalid(
+                    format!("{field}.file"),
+                    "duplicate file for this loader version",
+                ));
+            }
+            loader_builds.push(build);
+        }
+        if !loader_builds.is_empty() {
+            if let Some(i) = loader_versions
+                .iter()
+                .position(|v| !loader_builds.iter().any(|b| &b.version == v))
+            {
+                return Err(invalid(
+                    format!("compatibility.loader_versions[{i}]"),
+                    "has no pinned build in compatibility.loader_builds",
+                ));
+            }
+        }
         let compatibility = Compatibility {
             game_builds: each("compatibility.game_builds", c.game_builds, |field, g| {
                 Ok(GameBuild {
@@ -373,14 +476,8 @@ impl RawManifest {
                     sha256: check::digest(&format!("{field}.sha256"), g.sha256)?,
                 })
             })?,
-            loader_versions: each(
-                "compatibility.loader_versions",
-                c.loader_versions,
-                |f, v| {
-                    check::semver(f, &v)?;
-                    Ok(v)
-                },
-            )?,
+            loader_versions,
+            loader_builds,
             required_settings: each(
                 "compatibility.required_settings",
                 c.required_settings,
@@ -424,6 +521,7 @@ impl RawManifest {
             archive,
             inventory,
             shipped_defaults,
+            previous_defaults,
             compatibility,
             saves,
         })

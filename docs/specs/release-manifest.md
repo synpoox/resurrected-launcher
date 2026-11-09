@@ -59,7 +59,7 @@ One per release, published as a durable public asset next to the archive. See `f
 | --- | --- |
 | `install_root` | `mods/<folder>`, relative to the selected D2R installation, for example `mods/PD2Resurrected`. The folder may not start with `-`, so `-mod <folder>` cannot read as a loader switch. No absolute or publisher-chosen destinations. Launch selects the product only as `-mod <folder>`, so no `default_mod` loader setting is required. The schema-2 `launch.launch_arguments` are dropped on purpose: publisher-supplied arguments are not allowed. |
 | `archive` | `{url, format, size, sha256, file_count, total_size}`. One complete archive; repairs and updates download all of it, no deltas. `url` is HTTPS; `format` is `7z`; `size` and `sha256` are required and real. `file_count` and `total_size` must equal the count and size sum of `files`, and a sum that overflows 64 bits is inconsistent. |
-| `files` | Every file the archive unpacks into `install_root`: `{path, size, sha256, ownership}`. Must not be empty. |
+| `files` | Every file the archive unpacks into `install_root`: `{path, size, sha256, ownership}`, plus the optional `previous_default_sha256` described under Ownership. Must not be empty. |
 | `empty_dirs` | Directories that must exist although they hold no file. |
 
 Paths use `/`, are relative to `install_root`, and must pass the contract's `RelativePath` rules (no absolute, drive, `..`, `.`, stream, device name, trailing dot/space, forbidden character or 8.3 alias). The list must have no duplicates ignoring case and nothing may lie under a file or an empty dir (`ExpectedInventory`). Extraction later checks the unpacked tree against exactly this inventory.
@@ -75,6 +75,8 @@ A file `size` and `sha256` must always be present. `size: 0` is allowed only wit
 | `managed` | Supplied by the release. Repair restores it; update replaces it. Required mod plugins and patches are managed and recognized by path and hash. |
 | `shipped_default` | Initial configuration, including the loot filter and loader configuration. Update replaces it only while it still has the previous release's published hash; once edited it is a player file. |
 
+**`previous_default_sha256`** ([#134](https://github.com/synpoox/resurrected-launcher/issues/134)): optional, only on a `shipped_default`. It lists the SHA-256 of this file in earlier releases (64 hex characters each; a zero or missing entry is a placeholder). Omitting it means none. A manifest that puts it on a `managed` file is `metadata_invalid`. The toolkit fills it from the earlier published manifests. Clean install uses it when there is no installed record: a shipped default whose bytes match one of these hashes is an older release's untouched default, not a player edit. So the new default goes live, and the old file stays only in the labelled backup. The launcher also counts as older-release bytes any file that matches a cached manifest of the same product (refresh never drops them). Any other differing shipped default is carried forward.
+
 Anything on disk that the manifest does not list is unknown (player files, optional plugins) and is never managed implicitly. `unknown` is not a valid value in the manifest.
 
 ### Compatibility
@@ -83,6 +85,7 @@ Anything on disk that the manifest does not list is unknown (player files, optio
 | --- | --- |
 | `compatibility.game_builds` | Non-empty. Each `{build, platform, executable, size, sha256}`: `platform` is `windows_x64`; `executable` is relative to the D2R installation; size and hash are real fingerprints of that file. A marketing label alone is not enough. |
 | `compatibility.loader_versions` | Non-empty list of allowed loader versions: `MAJOR.MINOR.PATCH` with an optional `-prerelease` (`1.3.1-beta`), compared as exact strings. |
+| `compatibility.loader_builds` | Optional ([#121](https://github.com/synpoox/resurrected-launcher/issues/121)); absent means `[]`, so schema-3 manifests published before it still parse. Each `{version, file, size, sha256}` pins one official D2RLoader file by version and bytes: `version` is one of `loader_versions`; `file` is relative to the D2R installation (`D2RLoader.exe`, `D2RCore.dll`); `size` and `sha256` are real fingerprints of the official download, with the same placeholder rules as `game_builds`. A `(version, file)` pair appears once, `file` compared ignoring case. When the list is non-empty, every `loader_versions` entry has at least one build. The packager always emits it. |
 | `compatibility.required_settings` | `{file, key, value}` settings the product needs. `file` must be a `shipped_default` of this release, compared ignoring case as Windows does. A plain `key` is read INI-style (the first `key=value` line in any section, value as written). A dotted `key` such as `d2rcore.save_format.mode` is read as TOML: the enclosing `[table]` plus the line's key must spell it, and a quoted string value is compared unquoted. An edited conflicting value pauses the update instead of being overwritten. |
 
 Unknown game/loader combinations block Play.
@@ -99,6 +102,8 @@ Unknown game/loader combinations block Play.
 ### Loader
 
 There is no loader installer pin: the launcher never downloads or runs the D2RLoader installer ([#59](https://github.com/synpoox/resurrected-launcher/issues/59)). It reads the installed loader's version, checks it against `compatibility.loader_versions`, and when it is missing or unsupported links the player to the official download page. A manifest that still carries the earlier `loader` block is rejected as an unknown field.
+
+`compatibility.loader_builds` records the publisher's SHA-256 of each official loader file, so a loader the player downloaded can be checked against the verified copy. PD2R pins D2RLoader 1.3.1-beta as `D2RLoader.exe`, 23,331,160 B, sha256 `93021dad48533bcfca8a95c69a0cc00cdb9008a3ce6ceba1d04c7aca71985a10`. Readiness checks it ([#148](https://github.com/synpoox/resurrected-launcher/issues/148)): after the version check, each installed loader file whose `(version, file)` is pinned must match one of those pins by size and SHA-256, or readiness is `loader_modified` and Play is refused with the official-download guidance. A file the list does not pin, and every file when the list is empty, is checked by version alone.
 
 ## Immutability
 

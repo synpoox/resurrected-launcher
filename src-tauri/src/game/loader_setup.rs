@@ -1,19 +1,20 @@
 //! D2RLoader guidance (#59). The launcher never downloads, bundles or runs the
-//! loader installer: when the loader is missing or unsupported it points the
+//! loader installer: when the loader is missing, unsupported or modified it points the
 //! player to the official download page, and "Check again" reassesses readiness.
 
 use crate::catalog::ReleaseManifest;
 use crate::contract::{LoaderGuidance, Readiness, LOADER_DOWNLOAD_PAGE};
 
-/// Guidance for `readiness`, or `None` unless it is `loader_missing` or
-/// `loader_unsupported`. `manifest` is the one the readiness was assessed against
+/// Guidance for `readiness`, or `None` unless it is `loader_missing`,
+/// `loader_unsupported` or `loader_modified`. `manifest` is the one the readiness was assessed against
 /// (installed, else recommended); `allowed` is its `compatibility.loader_versions`,
-/// `found` the unsupported version (`None` when missing), and `download_page`
+/// `found` the unsupported or modified file's version (`None` when missing), and `download_page`
 /// [`crate::contract::LOADER_DOWNLOAD_PAGE`].
 pub fn guidance(readiness: &Readiness, manifest: &ReleaseManifest) -> Option<LoaderGuidance> {
     let found = match readiness {
         Readiness::LoaderMissing => None,
         Readiness::LoaderUnsupported { found, .. } => Some(found.clone()),
+        Readiness::LoaderModified { version, .. } => Some(version.clone()),
         _ => return None,
     };
     Some(LoaderGuidance {
@@ -52,6 +53,18 @@ mod tests {
         };
         let g = guidance(&r, &manifest()).unwrap();
         assert_eq!(g.found.as_deref(), Some("0.9"));
+        assert_eq!(g.allowed, ["1.3.1-beta", "1.4.0"]);
+        assert_eq!(g.download_page, LOADER_DOWNLOAD_PAGE);
+    }
+
+    #[test]
+    fn modified_loader_reports_its_allowed_version() {
+        let r = Readiness::LoaderModified {
+            file: "D2RLoader.exe".into(),
+            version: "1.3.1-beta".into(),
+        };
+        let g = guidance(&r, &manifest()).unwrap();
+        assert_eq!(g.found.as_deref(), Some("1.3.1-beta"));
         assert_eq!(g.allowed, ["1.3.1-beta", "1.4.0"]);
         assert_eq!(g.download_page, LOADER_DOWNLOAD_PAGE);
     }

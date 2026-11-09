@@ -118,6 +118,7 @@ export type Readiness =
   | { status: "build_unsupported"; found: string }
   | { status: "loader_missing" }
   | { status: "loader_unsupported"; found: string; allowed: string[] }
+  | { status: "loader_modified"; file: string; version: string }
   | { status: "not_installed" }
   | { status: "update_available" }
   | { status: "ready" };
@@ -181,6 +182,9 @@ export interface Inspection {
   files_kept: number;
   preserved: string[];
   backup_only: string[];
+  /** Clean install: mandatory settings an edited file in `backup_only` fails; the release's
+   *  default goes live instead (issue 134). Always `type: "setting"`. */
+  settings_reset: Conflict[];
   conflicts: Conflict[];
   save_breaking_notice: string | null;
   space_needed: number;
@@ -451,6 +455,8 @@ export interface NewsItem {
   /** "Announcement" or "Guide". */
   tag: string;
   title: string;
+  /** Optional short description under the title (issue 139); absent when news.json has none. */
+  summary?: string;
   /** YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ */
   published: string;
 }

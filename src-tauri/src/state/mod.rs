@@ -12,6 +12,7 @@
 
 mod diagnostics;
 mod file;
+pub mod log;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,7 +32,6 @@ const INSTALLED_SCHEMA: u32 = 1;
 const CACHE_INDEX_FILE: &str = "metadata-cache.json";
 const CACHE_INDEX_SCHEMA: u32 = 1;
 const CACHE_DIR: &str = "metadata-cache";
-const LOG_FILE: &str = "launcher.log";
 
 /// Player preferences (Settings, plus the remembered product).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -388,6 +388,15 @@ impl StateStore {
         Ok(digest)
     }
 
+    /// Identities of the cached metadata that start with `prefix`, in cache order.
+    pub fn cached_identities(&self, prefix: &str) -> Vec<String> {
+        self.cache
+            .iter()
+            .filter(|e| e.identity.starts_with(prefix))
+            .map(|e| e.identity.clone())
+            .collect()
+    }
+
     /// The cached bytes for `identity`, if present and still matching their
     /// SHA-256. A damaged blob is quarantined, a missing one forgotten, and both
     /// reported; a blob that cannot be read right now is reported and kept.
@@ -434,7 +443,12 @@ impl StateStore {
 
     /// Where the app writes the launcher log that diagnostics may include.
     pub fn log_path(&self) -> PathBuf {
-        self.dir.join(LOG_FILE)
+        self.dir.join(log::LOG_FILE)
+    }
+
+    /// Appends one line to `launcher.log` ([`log::append`]).
+    pub fn log(&self, line: &str) {
+        log::append(&self.dir, line);
     }
 }
 

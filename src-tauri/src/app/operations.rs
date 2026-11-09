@@ -67,6 +67,17 @@ pub trait Releases: Send + Sync {
         state: &mut StateStore,
         record: &InstalledRelease,
     ) -> Result<Release, LauncherError>;
+    /// Every other release manifest of `product` the launcher holds, except
+    /// `release_id`: clean install's evidence of what older releases shipped
+    /// (#134). Unreadable or invalid ones are skipped.
+    fn earlier(
+        &self,
+        _state: &mut StateStore,
+        _product: &ProductId,
+        _release_id: &str,
+    ) -> Vec<ReleaseManifest> {
+        Vec::new()
+    }
 }
 
 /// Reads the feed (`feed`) and manifests (`manifest/<product>/<release>`) from
@@ -143,6 +154,29 @@ impl Releases for CachedReleases {
             &record.release_id,
             &record.manifest_sha256,
         )
+    }
+
+    fn earlier(
+        &self,
+        state: &mut StateStore,
+        product: &ProductId,
+        release_id: &str,
+    ) -> Vec<ReleaseManifest> {
+        let prefix = format!("manifest/{}/", product.0);
+        let mut out = Vec::new();
+        for identity in state.cached_identities(&prefix) {
+            if identity[prefix.len()..] == *release_id {
+                continue;
+            }
+            let Some(cached) = state.cached(&identity) else {
+                continue;
+            };
+            match ReleaseManifest::parse(&cached.bytes) {
+                Ok(m) if &m.product_id == product => out.push(m),
+                _ => {}
+            }
+        }
+        out
     }
 }
 
@@ -290,6 +324,7 @@ struct Resolved {
     d2r: PathBuf,
     release: Release,
     installed: Option<Release>,
+    earlier: Vec<ReleaseManifest>,
     acknowledge_save_breaking: bool,
     consent_clean_install: bool,
 }
@@ -302,6 +337,7 @@ impl Resolved {
             release: &self.release.manifest,
             release_sha256: self.release.sha256,
             installed: self.installed.as_ref().map(|r| &r.manifest),
+            earlier: &self.earlier,
             acknowledge_save_breaking: self.acknowledge_save_breaking,
             consent_clean_install: self.consent_clean_install,
         }
@@ -420,11 +456,18 @@ impl Launcher {
                 self.releases.recommended(&mut state, &req.product_id)?
             }
         };
+        let earlier = if req.kind == CleanInstall {
+            let id = &release.manifest.release_id;
+            self.releases.earlier(&mut state, &req.product_id, id)
+        } else {
+            Vec::new()
+        };
         Ok(Resolved {
             kind: req.kind,
             d2r,
             release,
             installed,
+            earlier,
             acknowledge_save_breaking: req.acknowledge_save_breaking,
             consent_clean_install: req.consent_clean_install,
         })
@@ -449,6 +492,7 @@ impl Launcher {
                 p.space,
             ),
             (&insp.preserved, &insp.backup_only, &insp.conflicts),
+            &insp.settings_reset,
             (&insp.save_breaking_notice, &insp.expect),
         );
         let digest = Sha256::digest(format!("{stable:?}"));
@@ -507,6 +551,9 @@ pub struct InspectionView {
     pub preserved: Vec<RelativePath>,
     /// Clean install: files that stay only in the labelled backup.
     pub backup_only: Vec<RelativePath>,
+    /// Clean install: mandatory settings an edited default in `backup_only`
+    /// fails; the release's default goes live in its place (#134).
+    pub settings_reset: Vec<ConflictView>,
     /// Non-empty: start is refused until resolved.
     pub conflicts: Vec<ConflictView>,
     pub save_breaking_notice: Option<String>,
@@ -525,28 +572,29 @@ impl InspectionView {
             files_kept: insp.kept,
             preserved: insp.preserved,
             backup_only: insp.backup_only,
-            conflicts: insp
-                .conflicts
-                .into_iter()
-                .map(|c| match c {
-                    Conflict::Setting {
-                        file,
-                        key,
-                        required,
-                        found,
-                    } => ConflictView::Setting {
-                        file,
-                        key,
-                        required,
-                        found,
-                    },
-                    Conflict::UnknownFile { path } => ConflictView::UnknownFile { path },
-                })
-                .collect(),
+            settings_reset: insp.settings_reset.into_iter().map(view).collect(),
+            conflicts: insp.conflicts.into_iter().map(view).collect(),
             save_breaking_notice: insp.save_breaking_notice,
             space_needed: insp.plan.space.total(),
             token,
         }
+    }
+}
+
+fn view(c: Conflict) -> ConflictView {
+    match c {
+        Conflict::Setting {
+            file,
+            key,
+            required,
+            found,
+        } => ConflictView::Setting {
+            file,
+            key,
+            required,
+            found,
+        },
+        Conflict::UnknownFile { path } => ConflictView::UnknownFile { path },
     }
 }
 
@@ -874,5 +922,44 @@ struct Recovering<'a>(&'a Launcher, &'a ProductId);
 impl Drop for Recovering<'_> {
     fn drop(&mut self) {
         self.0.running().recovering.remove(self.1);
+    }
+}
+
+#[cfg(test)]
+mod earlier_tests {
+    use super::*;
+
+    fn fixture(rel: &str) -> Vec<u8> {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../fixtures/catalog")
+            .join(rel);
+        std::fs::read(p).unwrap()
+    }
+
+    /// #134: clean install's evidence is every other cached manifest of the product,
+    /// never the target itself, another product's, or bytes that fail validation.
+    #[test]
+    fn earlier_lists_other_valid_cached_manifests_of_the_product() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = StateStore::open(dir.path());
+        let pd2r = ProductId("pd2r".into());
+        let old = fixture("real/pd2r-0.1.0-alpha/release-manifest.json");
+        let target = fixture("valid/release-manifest.json");
+        state
+            .put_cached("manifest/pd2r/pd2r-0.1.0-alpha", &old)
+            .unwrap();
+        state
+            .put_cached("manifest/pd2r/pd2r-0.4.0-alpha.1", &target)
+            .unwrap();
+        state.put_cached("manifest/pd2r/broken", b"{}").unwrap();
+        state
+            .put_cached("manifest/pd2rx/pd2r-0.1.0-alpha", &old)
+            .unwrap();
+        state.put_cached("feed", b"{}").unwrap();
+
+        let earlier = CachedReleases.earlier(&mut state, &pd2r, "pd2r-0.4.0-alpha.1");
+
+        let ids: Vec<_> = earlier.iter().map(|m| m.release_id.as_str()).collect();
+        assert_eq!(ids, ["pd2r-0.1.0-alpha"]);
     }
 }

@@ -208,9 +208,11 @@ fn a_valid_file_shows_three_announcements_and_guides_newest_first() {
         NewsItem {
             tag: "Announcement".into(),
             title: "TCP/IP co-op testing weekend".into(),
+            summary: Some("Two days of open direct co-op games on the alpha.".into()),
             published: "2026-11-01".into(),
         }
     );
+    assert_eq!(items[1].summary, None);
     // The reply is text only: no URL reaches the webview.
     let raw = rig
         .invoke("get_news", json!({ "product_id": "pd2r" }))

@@ -182,7 +182,7 @@ pub struct ProductState {
     pub readiness: Readiness,
     /// The earliest-started process under the D2R root, any product.
     pub running_game: Option<RunningGame>,
-    /// Set when readiness is `loader_missing` or `loader_unsupported`.
+    /// Set when readiness is `loader_missing`, `loader_unsupported` or `loader_modified`.
     pub loader_guidance: Option<LoaderGuidance>,
     pub catalog: CatalogState,
     /// The last Play's game exited within 30 s; the next Play clears it.
@@ -456,14 +456,29 @@ impl Launcher {
     /// game already running under the root, and refreshes the catalog in the
     /// background.
     pub fn start_up<R: Runtime>(self: &Arc<Self>, app: &AppHandle<R>) {
+        let root = match locked(&self.state) {
+            Ok(state) => {
+                state.log(&format!("launcher {} started", app.package_info().version));
+                for i in state.issues() {
+                    let aside = i.quarantined_as.as_deref().unwrap_or("left in place");
+                    state.log(&format!(
+                        "state file {}: {:?}, {} ({aside})",
+                        i.file, i.problem, i.detail
+                    ));
+                }
+                state.preferences().d2r_location.clone()
+            }
+            Err(_) => None,
+        };
         for product in &self.known_products() {
             // A failure leaves the journal; readiness then reports recovery_required.
-            let _ = self.recover(product);
+            // Without a D2R location there is nothing to recover, so that refusal
+            // is not logged on every start.
+            if let (Err(e), Some(_)) = (self.recover(product), &root) {
+                self.log(&format!("recovery of {} failed: {e}", product.0));
+            }
         }
         self.recovered.store(true, Ordering::SeqCst);
-        let root = locked(&self.state)
-            .ok()
-            .and_then(|s| s.preferences().d2r_location.clone());
         if let Some(root) = root {
             if self.games_under(&root).is_ok_and(|g| !g.is_empty()) {
                 self.watch_exit(app, root, None);
@@ -471,6 +486,13 @@ impl Launcher {
         }
         let _ = app.emit(STATE_EVENT, Versioned::new(()));
         self.refresh_in_background(app);
+    }
+
+    /// Appends one line to `launcher.log` (#125). Never call it with State locked.
+    pub fn log(&self, line: &str) {
+        if let Ok(state) = locked(&self.state) {
+            state.log(line);
+        }
     }
 
     /// Starts a catalog refresh unless one is running; emits [`STATE_EVENT`] when
@@ -487,7 +509,10 @@ impl Launcher {
         std::thread::spawn(move || {
             let done = match launcher.refresh_catalog() {
                 Ok(()) => CatalogState::Refreshed,
-                Err(error) => CatalogState::Failed { error },
+                Err(error) => {
+                    launcher.log(&format!("catalog refresh failed: {error}"));
+                    CatalogState::Failed { error }
+                }
             };
             *launcher.catalog.lock().unwrap_or_else(|e| e.into_inner()) = done;
             let _ = app.emit(STATE_EVENT, Versioned::new(()));

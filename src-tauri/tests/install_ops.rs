@@ -14,7 +14,7 @@ use std::sync::Mutex;
 use resurrected_launcher_lib::catalog::ReleaseManifest;
 use resurrected_launcher_lib::contract::{
     Boundary, ErrorCode, FailAt, FaultInjector, FaultPoint, LauncherError, NoFaults, OperationKind,
-    RelativePath, DISPOSABLE_SENTINEL,
+    RelativePath, Sha256Digest, DISPOSABLE_SENTINEL,
 };
 use resurrected_launcher_lib::install::download::Downloader;
 use resurrected_launcher_lib::install::extract::SevenZip;
@@ -88,6 +88,7 @@ impl Rig {
             release: manifest,
             release_sha256: sha256(&release.manifest_json),
             installed,
+            earlier: &[],
             acknowledge_save_breaking: false,
             consent_clean_install: false,
         }
@@ -321,6 +322,16 @@ save_format=pd2r
     let insp = ops::inspect(&rig.env(&NoFaults), &clean).unwrap();
     assert!(insp.conflicts.is_empty() && insp.preserved.is_empty());
     assert_eq!(insp.backup_only, [rel(CONFIG)]);
+    // #134: the setting it fails is named before consent, not just counted.
+    assert_eq!(
+        insp.settings_reset,
+        [Conflict::Setting {
+            file: rel(CONFIG),
+            key: "default_mod".into(),
+            required: "PD2R".into(),
+            found: Some("Other".into()),
+        }]
+    );
     let report = rig.run(&clean).unwrap();
 
     // The new default is live; the player's edit is only in the labelled backup.
@@ -331,6 +342,106 @@ save_format=pd2r
     };
     assert_eq!(tree(backup), before);
     assert_eq!(rig.installed_release().as_deref(), Some(PD2R_2));
+}
+
+/// `manifest` with `previous_default_sha256` listing `hashes` on its loot filter.
+fn listing_previous_loot_filter(manifest: &[u8], hashes: &[Sha256Digest]) -> ReleaseManifest {
+    let mut json: serde_json::Value = serde_json::from_slice(manifest).unwrap();
+    let file = json["files"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|f| f["path"] == LOOT_FILTER)
+        .unwrap();
+    let hashes: Vec<String> = hashes.iter().map(ToString::to_string).collect();
+    file["previous_default_sha256"] = serde_json::json!(hashes);
+    ReleaseManifest::parse(&serde_json::to_vec(&json).unwrap()).unwrap()
+}
+
+/// #134: an older release installed by hand (no record). Its untouched loot
+/// filter is that release's default, not a player edit, so clean install puts the
+/// new default live once it has evidence: a cached older manifest, or the new
+/// manifest's `previous_default_sha256`. Without either it is still carried forward.
+#[test]
+fn clean_install_replaces_an_older_releases_untouched_default_instead_of_carrying_it() {
+    let r1 = release(PD2R_1);
+    let old_filter = sha256(&r1.payload[LOOT_FILTER]);
+    for evidence in ["none", "cached manifest", "previous hash"] {
+        let rig = Rig::new();
+        let root = rig.game.installed(&r1);
+        let (r2, mut m2) = rig.served(PD2R_2);
+        if evidence == "previous hash" {
+            let archive = m2.archive.clone();
+            m2 = listing_previous_loot_filter(&r2.manifest_json, &[old_filter]);
+            m2.archive = archive;
+        }
+        let earlier = [r1.manifest.clone()];
+        let mut clean = rig.request(CleanInstall, &r2, &m2, None);
+        clean.consent_clean_install = true;
+        if evidence == "cached manifest" {
+            clean.earlier = &earlier;
+        }
+        let before = tree(&root);
+
+        let insp = ops::inspect(&rig.env(&NoFaults), &clean).unwrap();
+        let report = rig.run(&clean).unwrap();
+
+        let [backup] = &report.clean_install_backups[..] else {
+            panic!("{evidence}: one labelled backup");
+        };
+        assert_eq!(
+            tree(backup),
+            before,
+            "{evidence}: the old folder, byte for byte"
+        );
+        if evidence == "none" {
+            assert_eq!(insp.preserved, [rel(LOOT_FILTER)]);
+            assert_eq!(
+                fs::read(root.join(LOOT_FILTER)).unwrap(),
+                r1.payload[LOOT_FILTER]
+            );
+        } else {
+            assert!(
+                insp.preserved.is_empty(),
+                "{evidence}: {:?}",
+                insp.preserved
+            );
+            // Without the old manifest, its other files are unknown, so only in the backup.
+            let backup_only = insp.backup_only.contains(&rel(LOOT_FILTER));
+            assert!(!backup_only, "{evidence}: {:?}", insp.backup_only);
+            if evidence == "cached manifest" {
+                assert!(insp.backup_only.is_empty(), "{:?}", insp.backup_only);
+            }
+            assert_eq!(tree(&root), release_tree(&r2), "{evidence}");
+        }
+        assert_eq!(rig.installed_release().as_deref(), Some(PD2R_2));
+    }
+}
+
+/// #134: a real player edit still differs from every published default, so it is
+/// carried forward even when the older release is known.
+#[test]
+fn clean_install_still_carries_forward_a_player_edit_of_an_older_release() {
+    let rig = Rig::new();
+    let r1 = release(PD2R_1);
+    let root = rig.game.installed(&r1);
+    let filter = edit_loot_filter(&root);
+    let (r2, m2) = rig.served(PD2R_2);
+    let old = sha256(&r1.payload[LOOT_FILTER]);
+    let mut listed = listing_previous_loot_filter(&r2.manifest_json, &[old]);
+    listed.archive = m2.archive.clone();
+    let earlier = [r1.manifest.clone()];
+    let mut clean = rig.request(CleanInstall, &r2, &listed, None);
+    clean.consent_clean_install = true;
+    clean.earlier = &earlier;
+
+    let report = rig.run(&clean).unwrap();
+
+    assert_eq!(report.preserved, [rel(LOOT_FILTER)]);
+    assert_eq!(
+        tree(&root),
+        with_file(release_tree(&r2), LOOT_FILTER, &filter)
+    );
 }
 
 #[test]

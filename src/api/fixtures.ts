@@ -112,8 +112,18 @@ const NEWS: Record<string, NewsState> = {
   pd2r: {
     status: "ok",
     items: [
-      { tag: "Announcement", title: "TCP/IP co-op testing weekend", published: iso(7) },
-      { tag: "Guide", title: "Backing up your saves before an update", published: iso(14) },
+      {
+        tag: "Announcement",
+        title: "TCP/IP co-op testing weekend",
+        summary: "Two days of open direct co-op games on the alpha.",
+        published: iso(7),
+      },
+      {
+        tag: "Guide",
+        title: "Backing up your saves before an update",
+        summary: "Where D2R keeps characters and stash, and how to copy them somewhere safe first.",
+        published: iso(14),
+      },
       { tag: "Guide", title: "Setting up D2RLoader", published: iso(30) },
     ],
   },
@@ -200,6 +210,14 @@ export const SCENES: readonly Scene[] = [
       loader_guidance: { found: null, allowed: ["1.3.1-beta"], download_page: "https://d2rloader.net/download.html" },
     }),
   }),
+  scene({
+    key: "loader-modified",
+    label: "Loader not official",
+    state: base({
+      readiness: { status: "loader_modified", file: "D2RLoader.exe", version: "1.3.1-beta" },
+      loader_guidance: { found: "1.3.1-beta", allowed: ["1.3.1-beta"], download_page: "https://d2rloader.net/download.html" },
+    }),
+  }),
   scene({ key: "install", label: "Ready to install", state: base(notInstalled), notes: [r("0.4.2", 3, NOTES_042)] }),
   scene({
     key: "adopt",
@@ -223,8 +241,20 @@ export const SCENES: readonly Scene[] = [
       clean_install: {
         files_added: 2341,
         files_replaced_or_removed: 0,
-        preserved: ["d2rloader/config/d2rloader.toml"],
-        backup_only: Array.from({ length: 100 }, (_, i) => `PD2Resurrected.mpq/data/global/excel/old-${i}.txt`),
+        preserved: ["lootfilter/default.filter"],
+        backup_only: [
+          "d2rloader/config/d2rloader.toml",
+          ...Array.from({ length: 100 }, (_, i) => `PD2Resurrected.mpq/data/global/excel/old-${i}.txt`),
+        ],
+        settings_reset: [
+          {
+            type: "setting",
+            file: "d2rloader/config/d2rloader.toml",
+            key: "d2rcore.save_format.mode",
+            required: "pd2r",
+            found: "vanilla",
+          },
+        ],
       },
     },
     open: "clean-install",
@@ -411,6 +441,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
       files_kept: 0,
       preserved: request.kind === "uninstall" ? ["d2rloader/config.ini", "lootfilter/default.filter"] : [],
       backup_only: [],
+      settings_reset: [],
       conflicts: [],
       save_breaking_notice: release.save_breaking
         ? "alpha 0.5.0 changes the save format. Characters from 0.4.x may not load."

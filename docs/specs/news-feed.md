@@ -16,6 +16,7 @@ The product page's news feed (bottom right, `docs/specs/launcher-ui.md`) reads o
       "product_id": "pd2r",
       "kind": "announcement",
       "title": "TCP/IP co-op testing weekend",
+      "summary": "Two days of open direct co-op games on the alpha.",
       "published": "2026-11-01",
       "url": "https://discord.gg/4mKqKXMRy9"
     }
@@ -32,12 +33,13 @@ The product page's news feed (bottom right, `docs/specs/launcher-ui.md`) reads o
 | `product_id` | A catalog product id (`pd2r`, `project-forever`, `project-09`), by the catalog's rule: 1 to 64 of `a-z 0-9 . _ -`, starting with a letter or digit. Items for other products are ignored. |
 | `kind` | `announcement` (tag "Announcement") or `guide` (tag "Guide") are shown. `release_notes` and any other kind are dropped, because Patch Notes owns release notes. |
 | `title` | Plain text, 1 to 120 characters after trimming. No control or bidirectional-override characters. It is never parsed as HTML. |
+| `summary` | Optional short description shown under the title ([#139](https://github.com/synpoox/resurrected-launcher/issues/139)). When present, the same rule as `title` with 1 to 200 characters. The feed shows two lines at most. |
 | `published` | `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SSZ` (UTC), a real date from 2000 on. |
 | `url` | At most 512 characters, `https` on a public host (the release feed's rule: no port, user info, IP literal or dot segment) and the host is exactly one of `github.com`, `discord.gg` or `discord.com`. Add `projectd2r.com` once the website is hosted. After the host, only ASCII `A-Z a-z 0-9 - . _ ~ / ? # [ ] @ ! $ & ' ( ) * + ; = %`: no comma (explorer.exe splits on commas), quote, backslash, space, `^`, `` ` ``, `|`, `<`, `>`, `{`, `}` or non-ASCII. Percent-encode anything else. |
 
 Unknown fields are ignored. Any other invalid item rejects the whole file. The file is at most 64 KiB; the download stops at the cap.
 
-The feed shows a product's first three items, newest first. A date-only `published` sorts as the start of its day (UTC), and items with the same instant keep file order. The webview receives tag, title and date only. Links stay native: `open_news_link(product_id, index)` opens entry `index` of the latest-started `get_news` reply for that product through `explorer.exe`, after checking the URL against the same rule again. The frontend likewise shows only its latest request's reply, so overlapping requests (a Retry during a fetch) cannot shift an index. A refused open shows its error and reloads the feed. No remote HTML or image is ever rendered, and remote content gets no command or capability.
+The feed shows a product's first three items, newest first. A date-only `published` sorts as the start of its day (UTC), and items with the same instant keep file order. The webview receives tag, title, summary and date only. Links stay native: `open_news_link(product_id, index)` opens entry `index` of the latest-started `get_news` reply for that product through `explorer.exe`, after checking the URL against the same rule again. The frontend likewise shows only its latest request's reply, so overlapping requests (a Retry during a fetch) cannot shift an index. A refused open shows its error and reloads the feed. No remote HTML or image is ever rendered, and remote content gets no command or capability.
 
 ## "About <product>"
 

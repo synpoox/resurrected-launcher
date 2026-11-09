@@ -345,6 +345,7 @@ impl Op {
             release: &self.manifest,
             release_sha256: sha256(&self.release.manifest_json),
             installed: self.installed.as_ref(),
+            earlier: &[],
             acknowledge_save_breaking: self.acknowledge_save_breaking,
             consent_clean_install: self.consent_clean_install,
         }

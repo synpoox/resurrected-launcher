@@ -200,6 +200,27 @@ describe("product page", () => {
     expect(api.calls.at(-1)).toEqual({ name: "openNewsLink", args: ["pd2r", 1] });
   });
 
+  it("news cards show tag, date, title and an optional summary, inside the link (issue 139)", async () => {
+    const { api, user } = mount("ready", (a) => {
+      a.scene.news.pd2r = {
+        status: "ok",
+        items: [
+          { tag: "Announcement", title: "With summary", summary: "A short description.", published: "2026-11-05" },
+          { tag: "Guide", title: "No summary", published: "2026-11-01" },
+        ],
+      };
+    });
+    const feed = await screen.findByRole("region", { name: "News" });
+    const [first, second] = await within(feed).findAllByRole("button");
+    expect(within(first).getByText("Announcement").className).toBe("feed-tag");
+    expect(within(first).getByText("A short description.").className).toBe("feed-summary");
+    expect(first.textContent).toMatch(/With summary.*A short description\./);
+    expect(second.querySelector(".feed-summary")).toBeNull();
+    expect(within(second).getByText("Guide").className).toBe("feed-tag");
+    await user.click(within(first).getByText("A short description."));
+    expect(api.calls.at(-1)).toEqual({ name: "openNewsLink", args: ["pd2r", 0] });
+  });
+
   it("news: a refused link shows why and reloads the feed", async () => {
     const { api, user } = mount("ready", (a) => {
       a.openNewsLink = () => Promise.reject({ code: "invalid_request", message: "no news item 0 for pd2r; load news again" });
@@ -602,6 +623,15 @@ describe("journey states", () => {
     expect(names(api)).toContain("openLoaderDownloadPage");
   });
 
+  // issue 148: an allowed version whose bytes differ from the pinned official file.
+  it("loader-modified names the file and version and offers the official page", async () => {
+    const { api, user } = mount("loader-modified");
+    expect(await screen.findByText(/D2RLoader\.exe doesn't match the official D2RLoader 1\.3\.1-beta download/)).toBeTruthy();
+    expect(screen.queryByText(/doesn't allow it/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Get D2RLoader" }));
+    expect(names(api)).toContain("openLoaderDownloadPage");
+  });
+
   it("install shows the release and free space needed", async () => {
     mount("install");
     expect(await screen.findByText("alpha 0.4.2 · 3.6 GB free space needed")).toBeTruthy();
@@ -621,8 +651,13 @@ describe("journey states", () => {
   it("an existing install that differs offers Clean install with consent, never a failing Install", async () => {
     const { api, user } = mount("clean-install");
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(/doesn't match 0\.4\.2/)).toBeTruthy();
+    expect(within(dialog).getByText(/doesn't match alpha 0\.4\.2/)).toBeTruthy();
+    expect(within(dialog).getByText("lootfilter/default.filter")).toBeTruthy();
+    // issue 134: a mandatory-setting conflict is named, not just counted.
+    expect(within(dialog).getByText(/Reset to alpha 0\.4\.2's default/)).toBeTruthy();
     expect(within(dialog).getByText("d2rloader/config/d2rloader.toml")).toBeTruthy();
+    expect(within(dialog).getByText("d2rcore.save_format.mode")).toBeTruthy();
+    expect(within(dialog).getByText("vanilla")).toBeTruthy();
     expect(within(dialog).getByText(/100 other files stay only in the backup/)).toBeTruthy();
     expect(names(api)).not.toContain("startOperation");
     await user.click(within(dialog).getByRole("button", { name: "Not now" }));

@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useApi } from "../api/context";
 import { useProducts } from "../product/store";
 import { DiagnosticsDialog } from "../settings/DiagnosticsDialog";
+import { BUSY_SAFETY_MS } from "../ui/pending";
 import { useToast, type ToastInput } from "../ui/Toast";
 import type { SelfUpdateApi, SelfUpdateStatus } from "./api";
 import { availableText, downloadFailedText, readyText, rejectedText, updatedText } from "./copy";
@@ -21,6 +22,11 @@ export interface SelfUpdate {
   clearDot(): void;
   check(): Promise<void>;
   download(): void;
+  /**
+   * The request sent and not yet answered by a new status (issue 138: no second request): busy
+   * from the click until the launcher reports the next phase, or the request fails.
+   */
+  requesting: "download" | "restart" | null;
   restart(): void;
   whatsNew(): void;
   setAutoDownload(enabled: boolean): void;
@@ -54,11 +60,19 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
   /** The automatic-download value the launcher last confirmed, and the latest change request. */
   const autoConfirmed = useRef<{ value: boolean; request: number } | null>(null);
   const autoRequest = useRef(0);
+  const [requesting, setRequesting] = useState<"download" | "restart" | null>(null);
+  const requestingRef = useRef<"download" | "restart" | null>(null);
+  /** Counts statuses, so a request that answers after its next status already arrived still frees. */
+  const statusSeq = useRef(0);
 
   useEffect(() => {
     let live = true;
     const unlisten = api.onPhase((s) => {
       if (!live) return;
+      statusSeq.current++;
+      // The launcher answered a request with its next phase.
+      requestingRef.current = null;
+      setRequesting(null);
       setStatus(s);
       // The update installed: nothing is waiting any more.
       if (s.phase === "updated" || s.phase === "up_to_date") setDot(false);
@@ -87,15 +101,40 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
     () => toast.show({ tone: "error", text: "Couldn't start the launcher update. Try again from Settings → Launcher." }),
     [toast],
   );
+  const settle = useCallback(() => {
+    requestingRef.current = null;
+    setRequesting(null);
+  }, []);
+  /** Sends one request at a time; frees on failure, or on the next status after it was sent. */
+  const request = useCallback(
+    (what: "download" | "restart", send: () => Promise<void>) => {
+      if (requestingRef.current) return false;
+      requestingRef.current = what;
+      setRequesting(what);
+      const seq = statusSeq.current;
+      // Safety: a request answered by no phase event still frees after a while.
+      setTimeout(() => statusSeq.current === seq && requestingRef.current === what && settle(), BUSY_SAFETY_MS);
+      send().then(
+        () => statusSeq.current !== seq && requestingRef.current === what && settle(),
+        () => {
+          settle();
+          failed();
+        },
+      );
+      return true;
+    },
+    [settle, failed],
+  );
   const download = useCallback(() => {
+    if (requestingRef.current) return;
     // A new attempt: close the old failure toast, and if this one fails too, its toast shows again,
     // even when the failure arrives with no downloading event in between.
     if (openToast.current) toast.dismiss(openToast.current.id);
     openToast.current = null;
     lastShownKey.current = null;
-    void api.download().catch(failed);
-  }, [api, toast, failed]);
-  const restart = useCallback(() => void api.restartToUpdate().catch(failed), [api, failed]);
+    request("download", () => api.download());
+  }, [api, toast, request]);
+  const restart = useCallback(() => void request("restart", () => api.restartToUpdate()), [api, request]);
   const whatsNew = useCallback(() => void api.openWhatsNew().catch(() => {}), [api]);
 
   // Only Later leaves the dot (owner decision on PR 105): not What's new, Export diagnostics or a timeout.
@@ -158,8 +197,8 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
   const clearDot = useCallback(() => setDot(false), []);
 
   const value = useMemo<SelfUpdate>(
-    () => ({ status, hold, autoDownload, dot, clearDot, check, download, restart, whatsNew, setAutoDownload }),
-    [status, hold, autoDownload, dot, clearDot, check, download, restart, whatsNew, setAutoDownload],
+    () => ({ status, hold, autoDownload, dot, clearDot, check, download, requesting, restart, whatsNew, setAutoDownload }),
+    [status, hold, autoDownload, dot, clearDot, check, download, requesting, restart, whatsNew, setAutoDownload],
   );
   return (
     <SelfUpdateContext.Provider value={value}>
