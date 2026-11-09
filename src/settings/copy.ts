@@ -45,6 +45,8 @@ export function folderName(folder: Folder, product: Product | null): string {
       return `${product?.short} plugins folder`;
     case "global_plugins":
       return "global plugins folder";
+    case "clean_install_backup":
+      return `${product?.short} clean-install backup`;
   }
 }
 

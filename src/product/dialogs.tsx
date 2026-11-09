@@ -5,6 +5,8 @@ import { isLauncherError } from "../api/types";
 import type { Product } from "../products";
 import { Dialog } from "../ui/Dialog";
 import { BusyButton, Spinner } from "../ui/pending";
+import { useToast } from "../ui/Toast";
+import { asError } from "./store";
 
 const STORE: Record<GameLocation["store"], string> = { battle_net: "Battle.net", unknown: "Store not recognised" };
 
@@ -215,39 +217,63 @@ export interface UninstallProps {
   onClose: () => void;
 }
 
-/** Removes the product's files only. Kept: saves and settings. Not touched: D2R, D2RLoader, other products. */
+/** Removes the product's files only. Kept: saves and settings. Not touched: D2R, D2RLoader, other products.
+ *  Once it succeeded, a short result with Open folder actions and no file lists (issue 156). */
 export function UninstallDialog({ product, inspection, report, busy, onConfirm, onClose }: UninstallProps) {
   const api = useApi();
-  const kept = report ? report.preserved : (inspection?.preserved ?? []);
-  const waiting = !report && (inspection === null || busy);
+  const toast = useToast();
+  const open = (folder: "saves" | "settings") =>
+    void api.openFolder(product.id, folder).catch((e: unknown) => toast.show({ tone: "error", text: asError(e).message }));
+  if (report) {
+    return (
+      <Dialog
+        title={`${product.short} was uninstalled`}
+        tone="info"
+        onClose={onClose}
+        actions={
+          <>
+            <button type="button" className="btn primary" onClick={onClose} data-autofocus="">
+              Done
+            </button>
+            <button type="button" className="btn ghost" onClick={() => open("saves")}>
+              Open saves folder
+            </button>
+            {report.remaining.length > 0 && (
+              <button type="button" className="btn ghost" onClick={() => open("settings")}>
+                Open {product.short} folder
+              </button>
+            )}
+          </>
+        }
+      >
+        <p>Your saves and settings were kept.</p>
+      </Dialog>
+    );
+  }
+  const kept = inspection?.preserved ?? [];
+  const waiting = inspection === null || busy;
   return (
     <Dialog
-      title={report ? `${product.short} was uninstalled` : `Uninstall ${product.name}?`}
-      tone={report ? "info" : "risk"}
+      title={`Uninstall ${product.name}?`}
+      tone="risk"
       onClose={onClose}
       actions={
-        report ? (
-          <button type="button" className="btn primary" onClick={onClose}>
-            Done
+        <>
+          <BusyButton className="primary" busy={busy} blocked={waiting} onClick={() => inspection && onConfirm(inspection)}>
+            Uninstall
+          </BusyButton>
+          <button type="button" className="btn ghost" onClick={onClose} data-autofocus="">
+            Cancel
           </button>
-        ) : (
-          <>
-            <BusyButton className="primary" busy={busy} blocked={waiting} onClick={() => inspection && onConfirm(inspection)}>
-              Uninstall
-            </BusyButton>
-            <button type="button" className="btn ghost" onClick={onClose} data-autofocus="">
-              Cancel
-            </button>
-          </>
-        )
+        </>
       }
     >
-      <p>{report ? `${product.short}'s game files were removed.` : `This removes ${product.short}'s game files only.`}</p>
-      {!report && !inspection && <Inspecting text={`Checking ${product.short}'s files…`} />}
+      <p>{`This removes ${product.short}'s game files only.`}</p>
+      {!inspection && <Inspecting text={`Checking ${product.short}'s files…`} />}
       <ul className="kept">
         <li>
           <b>Kept:</b> your saves and settings.{" "}
-          <button type="button" className="link" onClick={() => void api.openFolder(product.id, "saves")}>
+          <button type="button" className="link" onClick={() => open("saves")}>
             Open saves
           </button>
           {kept.length > 0 && (
@@ -260,21 +286,6 @@ export function UninstallDialog({ product, inspection, report, busy, onConfirm, 
             </ul>
           )}
         </li>
-        {report && report.remaining.length > 0 && (
-          <li>
-            <b>Left in the {product.short} folder:</b> files the launcher didn't install.{" "}
-            <button type="button" className="link" onClick={() => void api.openFolder(product.id, "settings")}>
-              Open
-            </button>
-            <ul className="paths">
-              {report.remaining.map((p) => (
-                <li key={p}>
-                  <code>{p}</code>
-                </li>
-              ))}
-            </ul>
-          </li>
-        )}
         <li>
           <b>Not touched:</b> Diablo II: Resurrected, D2RLoader and other products.
         </li>

@@ -60,8 +60,8 @@ export interface ProductPageProps {
   tab?: Tab;
   trayFocus?: TrayFocus;
   onOpenSettings: () => void;
-  /** Clears this product's clean-install backup notice. */
-  onDismissBackups?: () => void;
+  /** Clears a product's clean-install backup notice; with `only`, just if it still shows those. */
+  onDismissBackups?: (productId: string, only?: string[]) => void;
 }
 
 export function ProductPage(props: ProductPageProps) {
@@ -160,6 +160,17 @@ function initialTab(productId: string, installedId: string | undefined): Tab {
   return installedId && seen !== null && seen !== installedId ? "notes" : "overview";
 }
 
+/** Failure toasts from each product's outcomes, per toast host: they close when a newer
+ *  operation on that product starts (issue 156). Kept outside the page, so they survive leaving it. */
+const outcomeToasts = new WeakMap<object, Map<string, number[]>>();
+function outcomeToastsOf(host: object, productId: string): number[] {
+  let byProduct = outcomeToasts.get(host);
+  if (!byProduct) outcomeToasts.set(host, (byProduct = new Map()));
+  let ids = byProduct.get(productId);
+  if (!ids) byProduct.set(productId, (ids = []));
+  return ids;
+}
+
 function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpenSettings, onDismissBackups, state }: ProductPageProps & { state: ProductState }) {
   const api = useApi();
   const toast = useToast();
@@ -182,7 +193,8 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   const ids = { overview: useId(), notes: useId(), notice: useId(), line: useId(), why: useId() };
 
   const samples = data?.samples ?? [];
-  const backups = data?.backups ?? [];
+  const shownBackups = data?.backups;
+  const backups = shownBackups ?? [];
   const last = samples.at(-1)?.event ?? null;
   const journey: Journey = journeyOf(state, last);
   const stats = progressStats(samples);
@@ -219,7 +231,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
     return subscribe(
       api.onOutcome((o) => {
         if (o.product_id !== product.id) return;
-        if (o.status === "failed") fail(o.error);
+        if (o.status === "failed") outcomeToastsOf(toast, product.id).push(fail(o.error));
         if (o.kind === "uninstall") {
           uninstallAttempt.current++;
           // The report fills the dialog; a failed or cancelled uninstall frees its confirm again.
@@ -229,21 +241,28 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         void refresh();
       }),
     ).stop;
-  }, [api, product.id, fail, refresh]);
+  }, [api, product.id, fail, refresh, toast]);
 
   /** Starts an operation and re-reads state (which then shows it running). True if it started. */
   const start = useCallback(
     async (kind: OperationKind, inspection: Inspection, consent: Partial<OperationRequest> = {}) => {
+      // Toasts from earlier outcomes only: this operation's own outcome can arrive before start answers.
+      const shown = outcomeToastsOf(toast, product.id);
+      const stale = [...shown];
       try {
         await api.startOperation({ product_id: product.id, kind, ...consent }, inspection);
       } catch (e) {
         fail(e);
         return false;
       }
+      // A newer operation started: the last one's outcome toasts and notice are stale.
+      shown.splice(0, stale.length);
+      stale.forEach(toast.dismiss);
+      if (shownBackups?.length) onDismissBackups?.(product.id, shownBackups);
       await refresh().catch(() => undefined);
       return true;
     },
-    [api, product.id, refresh, fail],
+    [api, product.id, refresh, fail, toast, onDismissBackups, shownBackups],
   );
 
   /** Opens a consent dialog at once, then fills it when its inspection answers (issue 138). It
@@ -339,14 +358,22 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   const recommended = state.recommended;
   const offered = recommended ? label(recommended.release_id, recommended.display_version) : null;
 
+  // While the game runs the menu stays, and what needs it closed says why (issue 156).
+  const quitFirst = journey === "running" ? `Quit ${product.short} first` : undefined;
   const manageItems: MenuItem[] = [
-    { label: "Repair", onSelect: () => void runAction("repair") },
+    { label: "Repair", disabledReason: quitFirst, onSelect: () => void runAction("repair") },
     { label: "Open saves folder", onSelect: () => void pending.run("saves", () => api.openFolder(product.id, "saves").catch(fail)) },
     {
       label: "Open settings folder",
       onSelect: () => void pending.run("settings", () => api.openFolder(product.id, "settings").catch(fail)),
     },
-    { label: "Uninstall…", tone: "danger", divider: true, onSelect: () => void runAction("uninstall") },
+    {
+      label: "Uninstall…",
+      tone: "danger",
+      divider: true,
+      disabledReason: quitFirst,
+      onSelect: () => void runAction("uninstall"),
+    },
   ];
   const manage = (
     <Menu label={`Manage ${product.short}`} items={manageItems} defaultOpen={open === "manage"} blocked={pending.key !== null} />
@@ -542,6 +569,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
               <span className="pulse" aria-hidden="true" />
               Playing
             </button>
+            {!compact && manage}
             {!compact &&
               state.readiness.status === "running" &&
               line("none", `Started ${startedAgo(state.readiness.since)} · Repair and updates wait until you quit`)}
@@ -716,15 +744,15 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
             <div className="action-col">
               {backups.length > 0 && (
                 <Notice>
-                  <b>Clean install finished.</b> Your previous files were moved to{" "}
-                  {backups.map((p, i) => (
-                    <span key={p}>
-                      {i > 0 && ", "}
-                      <code>{p}</code>
-                    </span>
-                  ))}
-                  .{" "}
-                  <button type="button" className="link" onClick={onDismissBackups}>
+                  <b>Clean install finished.</b> Your previous files were backed up.{" "}
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => void api.openFolder(product.id, "clean_install_backup").catch(fail)}
+                  >
+                    Open backup
+                  </button>{" "}
+                  <button type="button" className="link" onClick={() => onDismissBackups?.(product.id)}>
                     Dismiss
                   </button>
                 </Notice>

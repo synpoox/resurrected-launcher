@@ -124,15 +124,15 @@ describe("live selection", () => {
     if (fixture?.ok) fixture.api.dispose();
   });
 
-  it("release builds leave VITE_SELF_UPDATE off", () => {
+  it("only release.yml turns VITE_SELF_UPDATE on, for every signed build", () => {
     const envFiles = readdirSync(".").filter((f) => f.startsWith(".env"));
     for (const f of envFiles) expect(readFileSync(f, "utf8"), f).not.toMatch(/VITE_SELF_UPDATE/);
     for (const f of [".github/workflows/ci.yml", "vite.config.ts", "package.json"]) {
       if (existsSync(f)) expect(readFileSync(f, "utf8"), f).not.toMatch(/VITE_SELF_UPDATE/);
     }
-    // release.yml sets it only for a launcher-v<version>-gate tag (#89); empty, the flag is off.
+    // release.yml sets it for release and gate builds alike (#157); dev and CI builds leave it off.
     const release = readFileSync(".github/workflows/release.yml", "utf8");
     const set = release.split("\n").map((l) => l.trimEnd()).filter((l) => /^\s*VITE_SELF_UPDATE\s*:/.test(l));
-    expect(set).toEqual(["          VITE_SELF_UPDATE: ${{ steps.version.outputs.gate == 'true' && '1' || '' }}"]);
+    expect(set).toEqual(["          VITE_SELF_UPDATE: '1'"]);
   });
 });

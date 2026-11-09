@@ -21,8 +21,9 @@
 //! never interrupts an install transaction; a running game holds the install (Quit
 //! still exits, and the update installs on a later Quit or Restart to update).
 //!
-//! The webview drives checks: with `VITE_SELF_UPDATE` off (release builds until
-//! the #89 gate), nothing calls these commands and the launcher never checks.
+//! The webview drives checks: with `VITE_SELF_UPDATE` off (dev builds; signed
+//! release builds turn it on, #157), nothing calls these commands and the launcher
+//! never checks.
 
 use std::io;
 use std::path::{Path, PathBuf};

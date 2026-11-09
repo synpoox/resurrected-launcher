@@ -213,7 +213,7 @@ impl Steps for OpSteps<'_> {
 }
 
 /// Labelled clean-install backups beside `root`, oldest first.
-fn clean_install_backups(root: &Path) -> Vec<PathBuf> {
+pub fn clean_install_backups(root: &Path) -> Vec<PathBuf> {
     let (Some(parent), Some(name)) = (root.parent(), root.file_name()) else {
         return Vec::new();
     };
