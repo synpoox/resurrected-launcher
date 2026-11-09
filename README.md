@@ -19,7 +19,7 @@ Install, update and play the Project Resurrected mods for Diablo II: Resurrected
 
 ## Download
 
-**There is no release yet.** The launcher is still in development. When it ships, the installer will be on the [Releases page](https://github.com/synpoox/resurrected-launcher/releases).
+Download the latest installer (`Project-Resurrected_<version>_x64-setup.exe`) from the [Releases page](https://github.com/synpoox/resurrected-launcher/releases/latest) and run it. It installs for your user only and needs no administrator rights. The installer is not Authenticode-signed, so Windows SmartScreen may warn you: choose **More info → Run anyway**. After that, the launcher updates itself.
 
 ## System requirements
 
