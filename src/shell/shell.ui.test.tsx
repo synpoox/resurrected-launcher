@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
@@ -311,6 +311,22 @@ describe("product page", () => {
     const banner = (await screen.findAllByRole("img")).find((i) => i.classList.contains("notes-banner"));
     expect(banner?.getAttribute("alt")).toMatch(/The Warlock seated on a throne/);
     expect(banner?.getAttribute("src")).not.toMatch(/^(https?:)?\/\//);
+  });
+
+  it("Patch Notes show the newest release's header image, and the hero art when it fails to load (#179)", async () => {
+    const url = "https://github.com/synpoox/pd2r/releases/download/v0.2.0/header.png";
+    const { user } = mount("ready", (a) => {
+      a.scene.notes = [
+        { ...a.scene.notes[0], release_id: "old", release_date: "2026-10-01", header_image: "https://github.com/old.png" },
+        { ...a.scene.notes[0], release_id: "new", release_date: "2026-11-04", header_image: url },
+      ];
+    });
+    await user.click(within(await loaded()).getByRole("tab", { name: "Patch Notes" }));
+    const banner = () => (screen.getAllByRole("img") as HTMLImageElement[]).find((i) => i.classList.contains("notes-banner"));
+    await waitFor(() => expect(banner()?.getAttribute("src")).toBe(url));
+    fireEvent.error(banner()!);
+    await waitFor(() => expect(banner()?.getAttribute("src")).not.toMatch(/^(https?:)?\/\//));
+    expect(banner()?.getAttribute("alt")).toMatch(/The Warlock seated on a throne/);
   });
 
   it("each release: two-line title, summary, divider and tag · date", async () => {
