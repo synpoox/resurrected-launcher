@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "product_id": "pd2r",
+      "kind": "announcement",
+      "title": "PD2R 0.2.0-alpha is out",
+      "summary": "The second alpha is ready to install from the launcher. See the release for what changed.",
+      "published": "2026-11-08",
+      "url": "https://github.com/synpoox/pd2-resurrected/releases/tag/v0.2.0-alpha"
+    }
+  ]
+}

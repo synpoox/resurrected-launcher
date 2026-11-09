@@ -15,6 +15,11 @@ const sources = readdirSync("src", { recursive: true, withFileTypes: true })
 // Properties that take a colour; their values must come from tokens.
 const COLOUR_PROPS =
   /(?:^|[;{\s])((?:background|color|border[\w-]*|outline[\w-]*|fill|stroke|box-shadow|text-shadow|caret-color|accent-color|text-decoration[\w-]*)\s*:\s*([^;}]+))/gi;
+// Drops /* */ and // comments so issue references like "#155" don't read as hex colours.
+// A // right after ":" is a URL scheme ("https://"), not a comment.
+const stripComments = (text: string) =>
+  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(?<!:)\/\/[^\n]*/g, "");
+const COLOUR_LITERAL = /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|hwb\(|lab\(|lch\(|oklab\(|oklch\(|color\(/i;
 const COLOURLESS =
   /^(?:none|inherit|initial|unset|transparent|currentcolor|underline|0|-?[\d.]+(?:px|em|rem|%)?(?:\s+(?:solid|dashed|dotted|double))?)$/i;
 
@@ -34,8 +39,13 @@ describe("design tokens", () => {
     for (const { name, text } of sources) {
       // src/art SVGs can't read CSS vars as images; src/art/art.test.ts holds their colours to token values.
       if (name.endsWith("tokens.css") || /^src[\\/]art[\\/][^\\/]+\.svg$/.test(name)) continue;
-      expect(text, name).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|hwb\(|lab\(|lch\(|oklab\(|oklch\(|color\(/i);
+      expect(stripComments(text), name).not.toMatch(COLOUR_LITERAL);
     }
+  });
+
+  it("the colour literal check ignores comments but not code", () => {
+    expect(stripComments("// see #155\n/* #abc */ a {}")).not.toMatch(COLOUR_LITERAL);
+    expect(stripComments('const u = "https://x"; a { color: #fff; }')).toMatch(COLOUR_LITERAL);
   });
 
   it("colour properties in stylesheets use tokens, not named colours", () => {

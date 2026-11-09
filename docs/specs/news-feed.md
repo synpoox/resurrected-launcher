@@ -3,7 +3,8 @@
 The product page's news feed (bottom right, `docs/specs/launcher-ui.md`) reads one launcher-owned file, `news.json`. Decided by the owner on [#80](https://github.com/synpoox/resurrected-launcher/issues/80):
 
 - It is separate from the release feed. The release feed, schema 3 (`docs/specs/release-manifest.md`) and the d2rAI-toolkit packager are unchanged.
-- One file serves every product. The owner publishes it as a release asset of synpoox/resurrected-launcher, so the launcher reads `https://github.com/synpoox/resurrected-launcher/releases/latest/download/news.json` (`app::news::DEFAULT_NEWS_URL`). pd2-resurrected is unchanged.
+- One file serves every product. It is an asset of the launcher repo's mutable `catalog` release (next to `feed.json`), so the launcher reads `https://github.com/synpoox/resurrected-launcher/releases/download/catalog/news.json` (`app::news::DEFAULT_NEWS_URL`, [#162](https://github.com/synpoox/resurrected-launcher/issues/162)). Launcher releases never touch it. pd2-resurrected is unchanged.
+- The owner (or the orchestrator on the owner's behalf) updates it at any time, with no launcher release: edit the file, check it against the rules below, then run `gh release upload catalog news.json --clobber --repo synpoox/resurrected-launcher`. The next `get_news` reads it. `docs/release/news.example.json` is the starter file; a test parses it with the launcher's parser.
 - There is no cache, on disk or in memory: every `get_news` downloads the file again. Offline, or a missing or invalid file, reads "News needs a connection. Retry".
 
 ## Format
