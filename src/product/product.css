@@ -226,10 +226,16 @@
   padding: 0 0 10px;
 }
 
-.feed ul {
+.feed-list {
   list-style: none;
   display: grid;
   gap: 8px;
+}
+
+.feed-all {
+  justify-self: start;
+  margin-top: 10px;
+  font-size: 14px;
 }
 
 .feed-item {
