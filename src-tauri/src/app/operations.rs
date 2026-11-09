@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -205,6 +205,9 @@ pub struct Launcher {
     pub(super) catalog: Mutex<CatalogState>,
     /// Set once startup recovery finished; Play is refused before.
     pub(super) recovered: AtomicBool,
+    /// Exit watchers running now. The game watcher announces a game only while
+    /// none runs, so a Play (which starts its own) is not announced twice.
+    pub(super) exit_watches: AtomicUsize,
     /// The last `detect_game_locations` reply, for `select_game_location`.
     pub(super) detected: Mutex<Vec<GameLocation>>,
     /// Products whose last Play ended within the startup window.
@@ -369,6 +372,7 @@ impl Launcher {
             hashes: BuildHashCache::default(),
             catalog: Mutex::new(CatalogState::NotRefreshed),
             recovered: AtomicBool::new(false),
+            exit_watches: AtomicUsize::new(0),
             detected: Mutex::default(),
             startup: Mutex::default(),
             recent_errors: Mutex::default(),
