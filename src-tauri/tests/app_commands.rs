@@ -1384,6 +1384,21 @@ fn a_game_that_exits_soon_after_play_is_a_startup_failure_until_the_next_play() 
 }
 
 #[test]
+fn a_successful_repair_clears_the_startup_failure() {
+    // #171: after "The game closed while starting", Repair succeeded but the
+    // product kept startup_failed, so the page kept Try again instead of Play.
+    let rig = Rig::new();
+    rig.install(PD2R_1);
+    rig.start_up();
+    rig.play().unwrap();
+    rig.host.exit_all();
+    rig.state_event();
+    assert!(rig.state().startup_failed.is_some());
+    assert_eq!(rig.run("repair", json!({}))["status"], "succeeded");
+    assert_eq!(rig.state().startup_failed, None);
+}
+
+#[test]
 fn release_notes_list_the_newer_release_then_the_installed_one() {
     let rig = Rig::new();
     let notes = || -> Vec<ReleaseNotes> {
