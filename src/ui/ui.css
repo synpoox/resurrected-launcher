@@ -55,6 +55,41 @@
   cursor: default;
 }
 
+/* Busy (issue 138): the action in progress keeps the disabled look and adds a spinner; the others
+   in its group are aria-disabled. */
+.btn[aria-busy="true"],
+.link[aria-busy="true"] {
+  cursor: progress;
+}
+
+.link.browse {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid;
+  border-right-color: transparent;
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.dialog .inspecting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+
 .link {
   color: var(--text);
   text-decoration: underline;
@@ -206,16 +241,16 @@
   z-index: 7;
   right: 24px;
   bottom: 24px;
-  width: 340px;
+  width: 380px;
   display: grid;
   gap: 8px;
 }
 
 .toast {
-  padding: 12px 16px;
+  padding: 14px 18px;
   background: var(--panel);
   border-left: 2px solid var(--muted);
-  font-size: 13px;
+  font-size: 17px;
   line-height: 1.5;
   color: var(--hero-copy);
 }
@@ -226,8 +261,10 @@
 
 .toast-actions {
   display: flex;
-  gap: 14px;
-  margin-top: 6px;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 15px;
 }
 
 /* Switch */

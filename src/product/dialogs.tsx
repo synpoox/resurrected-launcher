@@ -4,6 +4,7 @@ import type { GameLocation, Inspection, OutcomeReport } from "../api/types";
 import { isLauncherError } from "../api/types";
 import type { Product } from "../products";
 import { Dialog } from "../ui/Dialog";
+import { BusyButton, Spinner } from "../ui/pending";
 
 const STORE: Record<GameLocation["store"], string> = { battle_net: "Battle.net", unknown: "Store not recognised" };
 
@@ -13,7 +14,10 @@ export function LocationDialog({ product, onClose }: { product: Product; onClose
   const [locations, setLocations] = useState<GameLocation[] | null>(null);
   const [picked, setPicked] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  // Issue 138: Use and Browse are busy separately; either blocks both.
+  const [using, setUsing] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
+  const busy = using || browsing;
   const firstRadio = useRef<HTMLInputElement>(null);
   const hasLocations = Boolean(locations?.length);
 
@@ -34,21 +38,23 @@ export function LocationDialog({ product, onClose }: { product: Product; onClose
   }, [api]);
 
   const use = async () => {
-    setBusy(true);
+    setUsing(true);
     setError(null);
     try {
       await api.selectGameLocation(picked);
       onClose(true);
     } catch (e) {
       setError(isLauncherError(e) && e.code === "game_running" ? "Quit the game to change this." : "That installation can't be used any more. Pick another, or browse for one.");
-      setBusy(false);
+      setUsing(false);
     }
   };
 
   const browse = async () => {
+    if (busy) return;
+    setBrowsing(true);
     setError(null);
     try {
-      if (await api.chooseGameLocation()) onClose(true);
+      if (await api.chooseGameLocation()) return onClose(true);
     } catch (e) {
       setError(
         isLauncherError(e) && e.code === "d2r_not_found"
@@ -56,6 +62,7 @@ export function LocationDialog({ product, onClose }: { product: Product; onClose
           : "That folder can't be used.",
       );
     }
+    setBrowsing(false);
   };
 
   const count = locations?.length ?? 0;
@@ -65,9 +72,15 @@ export function LocationDialog({ product, onClose }: { product: Product; onClose
       onClose={() => onClose(false)}
       actions={
         <>
-          <button type="button" className="btn primary" disabled={count === 0 || busy} onClick={use}>
-            Use this installation
-          </button>
+          {count === 0 ? (
+            <button type="button" className="btn primary" disabled>
+              Use this installation
+            </button>
+          ) : (
+            <BusyButton className="primary" busy={using} blocked={busy} onClick={() => void use()}>
+              Use this installation
+            </BusyButton>
+          )}
           <button type="button" className="btn ghost" onClick={() => onClose(false)}>
             Cancel
           </button>
@@ -103,7 +116,14 @@ export function LocationDialog({ product, onClose }: { product: Product; onClose
           ))}
         </div>
       )}
-      <button type="button" className="link browse" onClick={browse}>
+      <button
+        type="button"
+        className="link browse"
+        aria-busy={browsing || undefined}
+        aria-disabled={busy || undefined}
+        onClick={() => void browse()}
+      >
+        {browsing && <Spinner />}
         Browse for another folder…
       </button>
       {error && (
@@ -173,19 +193,33 @@ export function SaveBreakingDialog({ product, inspection, installedVersion, onCo
   );
 }
 
+/** A consent dialog's body while its inspection runs (issue 138: the dialog opens on the click). */
+function Inspecting({ text }: { text: string }) {
+  return (
+    <p className="inspecting" role="status">
+      <Spinner />
+      {text}
+    </p>
+  );
+}
+
 export interface UninstallProps {
   product: Product;
-  inspection: Inspection;
+  /** Null while the inspection runs: the dialog shows a loading state and Uninstall waits. */
+  inspection: Inspection | null;
   /** Set once the uninstall succeeded: the dialog then reports what was kept. */
   report: OutcomeReport | null;
-  onConfirm: () => void;
+  /** Uninstall was chosen and hasn't answered yet. */
+  busy?: boolean;
+  onConfirm: (inspection: Inspection) => void;
   onClose: () => void;
 }
 
 /** Removes the product's files only. Kept: saves and settings. Not touched: D2R, D2RLoader, other products. */
-export function UninstallDialog({ product, inspection, report, onConfirm, onClose }: UninstallProps) {
+export function UninstallDialog({ product, inspection, report, busy, onConfirm, onClose }: UninstallProps) {
   const api = useApi();
-  const kept = report ? report.preserved : inspection.preserved;
+  const kept = report ? report.preserved : (inspection?.preserved ?? []);
+  const waiting = !report && (inspection === null || busy);
   return (
     <Dialog
       title={report ? `${product.short} was uninstalled` : `Uninstall ${product.name}?`}
@@ -198,9 +232,9 @@ export function UninstallDialog({ product, inspection, report, onConfirm, onClos
           </button>
         ) : (
           <>
-            <button type="button" className="btn primary" onClick={onConfirm}>
+            <BusyButton className="primary" busy={busy} blocked={waiting} onClick={() => inspection && onConfirm(inspection)}>
               Uninstall
-            </button>
+            </BusyButton>
             <button type="button" className="btn ghost" onClick={onClose} data-autofocus="">
               Cancel
             </button>
@@ -209,6 +243,7 @@ export function UninstallDialog({ product, inspection, report, onConfirm, onClos
       }
     >
       <p>{report ? `${product.short}'s game files were removed.` : `This removes ${product.short}'s game files only.`}</p>
+      {!report && !inspection && <Inspecting text={`Checking ${product.short}'s files…`} />}
       <ul className="kept">
         <li>
           <b>Kept:</b> your saves and settings.{" "}
@@ -250,8 +285,9 @@ export function UninstallDialog({ product, inspection, report, onConfirm, onClos
 
 export interface CleanInstallProps {
   product: Product;
-  inspection: Inspection;
-  onConfirm: () => void;
+  /** Null while the inspection runs: the dialog shows a loading state and Clean install waits. */
+  inspection: Inspection | null;
+  onConfirm: (inspection: Inspection) => void;
   onClose: () => void;
 }
 
@@ -259,24 +295,33 @@ export interface CleanInstallProps {
  *  managed files), so Install would be refused. Clean install, with this consent, moves the folder
  *  aside as a labelled backup, installs the release and carries edited settings forward. */
 export function CleanInstallDialog({ product, inspection, onConfirm, onClose }: CleanInstallProps) {
+  const actions = (
+    <>
+      <BusyButton className="primary" blocked={!inspection} onClick={() => inspection && onConfirm(inspection)}>
+        Clean install
+      </BusyButton>
+      <button type="button" className="btn ghost" onClick={onClose} data-autofocus="">
+        Not now
+      </button>
+    </>
+  );
+  const title = `Replace the ${product.short} files in your game folder?`;
+  if (!inspection) {
+    return (
+      <Dialog title={title} tone="risk" onClose={onClose} actions={actions}>
+        <Inspecting text={`Checking the ${product.short} files in your game folder…`} />
+      </Dialog>
+    );
+  }
   const version = inspection.release.display_version;
   const kept = inspection.preserved;
   const backupOnly = inspection.backup_only.length;
   return (
     <Dialog
-      title={`Replace the ${product.short} files in your game folder?`}
+      title={title}
       tone="risk"
       onClose={onClose}
-      actions={
-        <>
-          <button type="button" className="btn primary" onClick={onConfirm}>
-            Clean install
-          </button>
-          <button type="button" className="btn ghost" onClick={onClose} data-autofocus="">
-            Not now
-          </button>
-        </>
-      }
+      actions={actions}
     >
       <p>
         {product.short} is already in your game folder, but it doesn't match {version}: it's an older version, or some of

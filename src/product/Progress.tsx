@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from "react";
+import { Spinner } from "../ui/pending";
 
 export interface ProgressProps {
   label: string;
@@ -11,10 +12,12 @@ export interface ProgressProps {
   striped?: boolean;
   /** Patch Notes: a 250px bar with Cancel and no detail line. */
   compact?: boolean;
+  /** Cancel was chosen and hasn't answered yet (issue 138): a spinner, and no second request. */
+  busy?: boolean;
 }
 
 /** Replaces Play while an operation runs: label, %, bar, detail and Cancel. */
-export function Progress({ label, percent, detail, cancelLabel, onCancel, striped, compact }: ProgressProps) {
+export function Progress({ label, percent, detail, cancelLabel, onCancel, striped, compact, busy }: ProgressProps) {
   const detailId = useId();
   const fill = useRef<HTMLDivElement>(null);
   const value = percent ?? 0;
@@ -47,8 +50,11 @@ export function Progress({ label, percent, detail, cancelLabel, onCancel, stripe
           className="btn ghost small"
           disabled={!onCancel}
           aria-describedby={onCancel ? undefined : detailId}
-          onClick={onCancel}
+          aria-busy={busy || undefined}
+          aria-disabled={busy || undefined}
+          onClick={busy ? undefined : onCancel}
         >
+          {busy && <Spinner />}
           {cancelLabel}
         </button>
       </div>
