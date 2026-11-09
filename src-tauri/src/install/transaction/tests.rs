@@ -923,3 +923,39 @@ fn recovery_refuses_while_the_game_runs_and_keeps_the_journal() {
     assert_eq!(fx.recover(&NoFaults), Ok(Recovery::RolledBack));
     assert_whole(&fx, &ends, false, "recovery after the game exits");
 }
+
+/// Makes `path` a directory when the transaction reaches `at`, so a planned copy
+/// onto it conflicts.
+struct DirAppearsAt {
+    at: (Boundary, FaultPoint),
+    path: PathBuf,
+}
+
+impl FaultInjector for DirAppearsAt {
+    fn check(&self, b: Boundary, p: FaultPoint) -> Result<(), InjectedFault> {
+        if (b, p) == self.at {
+            fs::create_dir_all(&self.path).unwrap();
+        }
+        Ok(())
+    }
+}
+
+/// A conflict found before anything left `L` rolls back cleanly: the player is told
+/// the files did not match, not that recovery is required (#143).
+#[test]
+fn clean_install_conflict_that_rolls_back_cleanly_is_not_recovery_required() {
+    let case = clean_install_case();
+    let ends = ends(&case);
+    let fx = Fixture::new(&case);
+    let root = WriteGuard::check(&fx.root).unwrap().root().to_path_buf();
+    let conflict = DirAppearsAt {
+        at: (Boundary::CleanInstallBackupMade, FaultPoint::BeforeEntry(0)),
+        path: Paths::for_root(&root).staging.join(DISPOSABLE_SENTINEL),
+    };
+    let err = fx.run(&case, &conflict).unwrap_err();
+    assert_eq!(err.code, ErrorCode::InventoryMismatch, "{err}");
+    assert!(err.message.contains("matches neither state"), "{err}");
+    assert_whole(&fx, &ends, false, "clean rollback");
+    assert_eq!(fx.recover(&NoFaults), Ok(Recovery::Nothing));
+    fx.run(&case, &NoFaults).unwrap();
+}
