@@ -3067,6 +3067,8 @@ dependencies = [
  "tauri-winrt-notification",
  "tempfile",
  "ureq",
+ "webview2-com",
+ "windows-core",
 ]
 
 [[package]]
