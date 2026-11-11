@@ -63,7 +63,7 @@ pub fn run() {
         std::thread::spawn(move || launcher.start_up(&handle));
         // Built hidden on autostart, so the frontend is listening when the tray
         // first opens it (tray requests are emitted right after showing).
-        let (width, height) = window_size(app.primary_monitor()?.map(|m| {
+        let (width, height) = window_size(app.primary_monitor().ok().flatten().map(|m| {
             (
                 f64::from(m.work_area().size.width) / m.scale_factor(),
                 f64::from(m.work_area().size.height) / m.scale_factor(),
