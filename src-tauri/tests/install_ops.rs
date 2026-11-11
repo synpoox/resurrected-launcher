@@ -515,6 +515,48 @@ fn higher_save_format_is_refused_without_acknowledgement() {
     assert_eq!(rig.installed_release().as_deref(), Some(PD2R_3));
 }
 
+/// #215: the release history reaches the check in `ops::run`, so a skipped
+/// save-breaking release is refused without acknowledgement even when the target
+/// declares the installed format and is not flagged; without history it is not seen.
+#[test]
+fn skipped_save_breaking_release_in_history_is_refused_without_acknowledgement() {
+    let rig = Rig::new();
+    let (r2, mut m2) = rig.served(PD2R_2);
+    let root = rig.game.installed(&r2);
+    m2.release_date = "2099-01-01".into();
+    m2.saves.save_format_version = Some(1);
+    rig.run(&rig.request(Adopt, &r2, &m2, None)).unwrap();
+    let (r3, mut m3) = rig.served(PD2R_3);
+    m3.release_date = "2099-01-03".into();
+    m3.saves.incompatibility_notice = None;
+    m3.saves.save_format_version = Some(1);
+    let mut skipped = m3.clone();
+    skipped.release_id = "pd2r-skipped".into();
+    skipped.release_date = "2099-01-02".into();
+    skipped.saves.incompatibility_notice = Some("Saves break.".into());
+    let history = [skipped];
+    let before = tree(&root);
+
+    for kind in [Update, CleanInstall] {
+        let mut req = rig.request(kind, &r3, &m3, Some(&m2));
+        req.history = &history;
+        req.consent_clean_install = true;
+        assert_eq!(
+            code(rig.run(&req)),
+            ErrorCode::SaveBreakingNotAcknowledged,
+            "{kind:?}"
+        );
+        assert_eq!(tree(&root), before);
+    }
+    assert_eq!(rig.archive_hits(&r3), 0);
+
+    let mut ack = rig.request(Update, &r3, &m3, Some(&m2));
+    ack.history = &history;
+    ack.acknowledge_save_breaking = true;
+    rig.run(&ack).unwrap();
+    assert_eq!(rig.installed_release().as_deref(), Some(PD2R_3));
+}
+
 #[test]
 fn adoption_recognises_a_matching_installation_and_changes_no_file() {
     let rig = Rig::new();

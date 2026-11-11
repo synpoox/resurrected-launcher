@@ -18,7 +18,7 @@ import { Menu, type MenuItem } from "../ui/Menu";
 import { Notice } from "../ui/Notice";
 import { BUSY_SAFETY_MS, BusyButton, usePending } from "../ui/pending";
 import { useToast } from "../ui/Toast";
-import { CleanInstallDialog, LocationDialog, SaveBreakingDialog, UninstallDialog } from "./dialogs";
+import { CleanInstallDialog, LocationDialog, SaveBreakingDialog, UninstallDialog, type SaveBreakingOp } from "./dialogs";
 import { formatBytes, formatCount, operationFailureText, formatTimeLeft, releaseLabel, startedAgo } from "./format";
 import { HeroArt, HeroCopy } from "./Hero";
 import { existingOf, hasNotice, journeyOf, type Journey } from "./journey";
@@ -44,7 +44,7 @@ export const seenKey = (productId: string) => `launcher.patchNotesSeen.${product
 
 type DialogState =
   | { kind: "locate" }
-  | { kind: "save-breaking"; inspection: Inspection }
+  | { kind: "save-breaking"; op: SaveBreakingOp; inspection: Inspection }
   // Issue 138: consent dialogs open on the click, with a null inspection until it answers.
   // `started`: Uninstall was accepted and its outcome hasn't arrived, so the confirm stays busy.
   | { kind: "uninstall"; inspection: Inspection | null; report: OutcomeReport | null; started?: boolean }
@@ -316,20 +316,20 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         fail(e);
         return;
       }
-      if (kind === "update" && inspection.breaks_saves) {
-        // Acknowledged once per target release (issue 213): a retry after a cancel or failure
-        // doesn't ask again.
-        if (saveBreakingAcked(product.id, inspection.release.release_id)) {
+      if ((kind === "update" || kind === "install") && inspection.breaks_saves) {
+        // Acknowledged once per installed release and target (issues 213, 215): a retry after a
+        // cancel or failure doesn't ask again.
+        if (saveBreakingAcked(product.id, installedId, inspection.release.release_id)) {
           await start(kind, inspection, { acknowledge_save_breaking: true });
           return;
         }
-        setDialog({ kind: "save-breaking", inspection });
+        setDialog({ kind: "save-breaking", op: kind, inspection });
         return;
       }
       if (kind === "repair") setRepairInspection(inspection);
       await start(kind, inspection);
     },
-    [api, product.id, start, fail, openConsent],
+    [api, product.id, installedId, start, fail, openConsent],
   );
   /** `operate` in the pending slot: for the menu, tray and fixture paths, which have no busy button. */
   const runAction = useCallback((kind: OperationKind) => pending.run(kind, () => operate(kind)), [pending, operate]);
@@ -803,12 +803,16 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         <SaveBreakingDialog
           product={product}
           inspection={dialog.inspection}
+          op={dialog.op}
           installedVersion={installed?.display_version ?? null}
           onClose={closeDialog}
           onConfirm={() => {
+            const { op, inspection } = dialog;
             closeDialog();
-            rememberSaveBreakingAck(product.id, dialog.inspection.release.release_id);
-            void pending.run("update", () => start("update", dialog.inspection, { acknowledge_save_breaking: true }));
+            rememberSaveBreakingAck(product.id, installedId, inspection.release.release_id);
+            // A clean install was already consented to in its own dialog, which led here.
+            const consent = op === "clean_install" ? { consent_clean_install: true } : {};
+            void pending.run(op, () => start(op, inspection, { acknowledge_save_breaking: true, ...consent }));
           }}
         />
       )}
@@ -842,6 +846,17 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           onClose={closeDialog}
           onConfirm={(inspection) => {
             closeDialog();
+            if (inspection.breaks_saves) {
+              // Across a save-format change the same acknowledgement as Update comes next (issue 215).
+              if (!saveBreakingAcked(product.id, installedId, inspection.release.release_id)) {
+                setDialog({ kind: "save-breaking", op: "clean_install", inspection });
+                return;
+              }
+              void pending.run("clean_install", () =>
+                start("clean_install", inspection, { consent_clean_install: true, acknowledge_save_breaking: true }),
+              );
+              return;
+            }
             void pending.run("clean_install", () => start("clean_install", inspection, { consent_clean_install: true }));
           }}
         />
