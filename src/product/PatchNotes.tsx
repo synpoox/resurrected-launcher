@@ -12,7 +12,7 @@ function longDate(day: string): string {
   return new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
 
-function Text({ inlines }: { inlines: Inline[] }) {
+export function Text({ inlines }: { inlines: Inline[] }) {
   return inlines.map((n, i) =>
     n.kind === "strong" ? (
       <strong key={i}>{n.text}</strong>
@@ -91,7 +91,7 @@ function SectionBody({ blocks }: { blocks: Block[] }) {
 const sectionId = (releaseKey: string, i: number) => `${releaseKey}-s${i}`;
 
 /** Each section: a large italic heading over its own bordered box. */
-function NotesSections({ releaseKey, sections }: { releaseKey: string; sections: NotesSection[] }) {
+export function NotesSections({ releaseKey, sections }: { releaseKey: string; sections: NotesSection[] }) {
   return sections.map((section, i) => (
     <section
       key={i}
@@ -161,10 +161,20 @@ export interface PatchNotesProps {
 export function PatchNotes({ product, releases, onRetry }: PatchNotesProps) {
   const sorted = [...(releases ?? [])].sort((a, b) => b.release_date.localeCompare(a.release_date));
   const art = HERO_ART[product.hero];
+  // #179: the newest release's header image, else the bundled hero art. The URL is
+  // validated by the manifest reader and the CSP's img-src allows only those hosts.
+  const header = sorted[0]?.header_image ?? null;
+  const [failed, setFailed] = useState<string | null>(null);
+  const remote = header !== null && header !== failed;
   return (
     <div className="notes" tabIndex={0} aria-label={`${product.short} Patch Notes`}>
-      {/* A bundled module URL: the CSP's img-src 'self' allows it; never a remote image. */}
-      <img className="notes-banner" src={art.src} alt={art.accessibleName} />
+      <img
+        key={remote ? header : "hero"}
+        className="notes-banner"
+        src={remote ? header : art.src}
+        alt={remote ? `${product.name} Patch Notes header` : art.accessibleName}
+        onError={remote ? () => setFailed(header) : undefined}
+      />
       {releases !== null && sorted.length === 0 && <p className="notes-empty">No Patch Notes yet.</p>}
       {sorted.map((r) => {
         const parts = r.notes === null ? null : parseNotes(r.notes);

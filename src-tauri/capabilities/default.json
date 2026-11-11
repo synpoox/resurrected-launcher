@@ -21,6 +21,8 @@
     "allow-preview-diagnostics",
     "allow-save-diagnostics",
     "allow-show-diagnostics-in-folder",
+    "allow-copy-launcher-log",
+    "allow-open-logs-folder",
     "allow-get-start-with-windows",
     "allow-set-start-with-windows",
     "allow-minimize-window",

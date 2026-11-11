@@ -9,6 +9,7 @@ import { useToast, type ToastInput } from "../ui/Toast";
 import type { SelfUpdateApi, SelfUpdateStatus } from "./api";
 import { availableText, downloadFailedText, readyText, rejectedText, updatedText } from "./copy";
 import { restartHold, type RestartHold } from "./hold";
+import { takeWhatsNew, WhatsNewDialog } from "./WhatsNewDialog";
 
 export interface SelfUpdate {
   /** Null until the first status arrives. */
@@ -49,6 +50,8 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
   const [autoDownload, setAuto] = useState<boolean | null>(null);
   const [dot, setDot] = useState(false);
   const [diagnostics, setDiagnostics] = useState(false);
+  /** The launcher's own release notes, opened once after a self-update (#189). */
+  const [notes, setNotes] = useState<{ version: string; notes: string } | null>(null);
   /** The self-update toast on screen now, if any. Cleared as soon as that toast closes. */
   const openToast = useRef<OpenToast | null>(null);
   /** The key of the last toast shown, so a re-sent status doesn't show it twice. */
@@ -65,8 +68,19 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
   /** Counts statuses, so a request that answers after its next status already arrived still frees. */
   const statusSeq = useRef(0);
 
+  /** The version whose What's new dialog opened, so its Updated toast stays suppressed. */
+  const notesOpened = useRef<string | null>(null);
+
   useEffect(() => {
     let live = true;
+    // The first start of a new version opens its notes once, instead of the Updated toast.
+    // When the dialog doesn't open (already seen, storage failing), the toast shows as usual.
+    const openNotes = (s: SelfUpdateStatus) => {
+      if (s.phase === "updated" && s.notes?.trim() && takeWhatsNew(s.current)) {
+        notesOpened.current = s.current;
+        setNotes({ version: s.current, notes: s.notes });
+      }
+    };
     const unlisten = api.onPhase((s) => {
       if (!live) return;
       statusSeq.current++;
@@ -74,11 +88,16 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
       requestingRef.current = null;
       setRequesting(null);
       setStatus(s);
+      openNotes(s);
       // The update installed: nothing is waiting any more.
       if (s.phase === "updated" || s.phase === "up_to_date") setDot(false);
     });
     api.getStatus().then(
-      (s) => live && setStatus((prev) => prev ?? s),
+      (s) => {
+        if (!live) return;
+        setStatus((prev) => prev ?? s);
+        openNotes(s);
+      },
       () => {},
     );
     api.getAutoDownload().then(
@@ -145,7 +164,7 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
   useEffect(() => {
     if (!status) return;
     const key = toastKey(status);
-    const input = toastFor(status, hold, { download, restart, whatsNew, later, diagnostics: () => setDiagnostics(true) });
+    const input = notesReplaceToast(status, notesOpened.current) ? null : toastFor(status, hold, { download, restart, whatsNew, later, diagnostics: () => setDiagnostics(true) });
     const current = openToast.current;
     if (current?.key === key) {
       // Same phase and release, new details (a restart hold began or ended).
@@ -204,9 +223,16 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
     <SelfUpdateContext.Provider value={value}>
       {children}
       {diagnostics && <DiagnosticsDialog onClose={() => setDiagnostics(false)} />}
+      {notes && (
+        <WhatsNewDialog version={notes.version} notes={notes.notes} onReleasePage={whatsNew} onClose={() => setNotes(null)} />
+      )}
     </SelfUpdateContext.Provider>
   );
 }
+
+/** Updated with release notes whose What's new dialog opened: the dialog is its notice, not a toast. */
+const notesReplaceToast = (s: SelfUpdateStatus, opened: string | null) =>
+  s.phase === "updated" && !!s.notes?.trim() && opened === s.current;
 
 interface OpenToast {
   id: number;
