@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useApi } from "../api/context";
 import { subscribe } from "../api/subscribe";
 import type { SceneOpen } from "../api/fixtures";
@@ -19,7 +19,7 @@ import { Notice } from "../ui/Notice";
 import { BUSY_SAFETY_MS, BusyButton, usePending } from "../ui/pending";
 import { useToast } from "../ui/Toast";
 import { CleanInstallDialog, LocationDialog, SaveBreakingDialog, UninstallDialog } from "./dialogs";
-import { formatBytes, formatCount, formatTimeLeft, releaseLabel, startedAgo } from "./format";
+import { formatBytes, formatCount, operationFailureText, formatTimeLeft, releaseLabel, startedAgo } from "./format";
 import { HeroArt, HeroCopy } from "./Hero";
 import { existingOf, hasNotice, journeyOf, type Journey } from "./journey";
 import { NewsFeed } from "./NewsFeed";
@@ -208,7 +208,9 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   useEffect(loadNotes, [loadNotes, installedId, recommendedId]);
 
   // The first launch after an update opens Patch Notes once, on the new release (see initialTab).
-  useEffect(() => {
+  // A layout effect, so the release is recorded in the same commit that first shows the page:
+  // a passive effect could still be pending when the page is already visible (issue 191).
+  useLayoutEffect(() => {
     if (installedId) localStorage.setItem(seenKey(product.id), installedId);
   }, [installedId, product.id]);
 
@@ -231,7 +233,10 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
     return subscribe(
       api.onOutcome((o) => {
         if (o.product_id !== product.id) return;
-        if (o.status === "failed") outcomeToastsOf(toast, product.id).push(fail(o.error));
+        if (o.status === "failed") {
+          const text = operationFailureText(o.error, product.short);
+          outcomeToastsOf(toast, product.id).push(toast.show({ tone: "error", text }));
+        }
         if (o.kind === "uninstall") {
           uninstallAttempt.current++;
           // The report fills the dialog; a failed or cancelled uninstall frees its confirm again.
@@ -241,7 +246,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         void refresh();
       }),
     ).stop;
-  }, [api, product.id, fail, refresh, toast]);
+  }, [api, product.id, product.short, refresh, toast]);
 
   /** Starts an operation and re-reads state (which then shows it running). True if it started. */
   const start = useCallback(
