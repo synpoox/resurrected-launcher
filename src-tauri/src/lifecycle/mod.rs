@@ -62,16 +62,20 @@ pub fn run() {
         std::thread::spawn(move || launcher.start_up(&handle));
         // Built hidden on autostart, so the frontend is listening when the tray
         // first opens it (tray requests are emitted right after showing).
+        let (width, height) = window_size(app.primary_monitor()?.map(|m| {
+            (
+                f64::from(m.work_area().size.width) / m.scale_factor(),
+                f64::from(m.work_area().size.height) / m.scale_factor(),
+            )
+        }));
         WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
             .title(UMBRELLA_DISPLAY_NAME)
             .decorations(false)
-            .inner_size(1280.0, 720.0)
+            .inner_size(width, height)
             // Opens centred on the primary monitor (#174); nothing saves or restores position.
             .center()
-            .min_inner_size(1024.0, 640.0)
-            // A fixed maximum, like the Riot Client, and no maximise (#135): the
-            // layout is designed between these two sizes.
-            .max_inner_size(1600.0, 900.0)
+            // A fixed size, like the Riot Client (#203): not resizable, so no maximise either (#135).
+            .resizable(false)
             .maximizable(false)
             .visible(!autostart)
             .build()?;
@@ -83,6 +87,15 @@ pub fn run() {
     .plugin(tauri_plugin_updater::Builder::new().build())
     .run(tauri::generate_context!())
     .expect("launcher failed to start");
+}
+
+/// The fixed logical window size (#203): 1600x900, or 1280x720 when the primary
+/// monitor's work area (logical) is smaller than that or unknown.
+fn window_size(work_area: Option<(f64, f64)>) -> (f64, f64) {
+    match work_area {
+        Some((w, h)) if w >= 1600.0 && h >= 900.0 => (1600.0, 900.0),
+        _ => (1280.0, 720.0),
+    }
 }
 
 /// The app builder. Single instance is the first plugin: a second launch focuses
@@ -145,5 +158,23 @@ fn hide_on_close<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
             let _ = window.hide();
             notice::on_close(window.app_handle());
         }
+    }
+}
+
+#[cfg(test)]
+mod window_size_tests {
+    use super::window_size;
+
+    #[test]
+    fn large_work_area_gets_1600x900() {
+        assert_eq!(window_size(Some((1920.0, 1040.0))), (1600.0, 900.0));
+        assert_eq!(window_size(Some((1600.0, 900.0))), (1600.0, 900.0));
+    }
+
+    #[test]
+    fn smaller_or_unknown_work_area_gets_1280x720() {
+        assert_eq!(window_size(Some((1536.0, 824.0))), (1280.0, 720.0));
+        assert_eq!(window_size(Some((1700.0, 860.0))), (1280.0, 720.0));
+        assert_eq!(window_size(None), (1280.0, 720.0));
     }
 }
