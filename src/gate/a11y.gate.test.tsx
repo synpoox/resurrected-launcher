@@ -72,7 +72,7 @@ describe("axe-core: every Settings panel", () => {
     await user.click(screen.getByRole("button", { name: /^Settings/ }));
     await user.click(screen.getByRole("tab", { name: panel }));
     expect(screen.getByRole("tabpanel")).toBeTruthy();
-    await screen.findByText(/build 3\.3\.0|Start with Windows|PD2R plugins|Export diagnostics/);
+    await screen.findByText(/build 3\.3\.0|Start with Windows|PD2R plugins|Export diagnostics…/);
     expect(await violations()).toEqual([]);
   });
 

@@ -13,6 +13,10 @@ use super::CatalogError;
 /// for any non-empty one.
 const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
+/// The only hosts a Patch Notes header image may load from (#179). Exact match;
+/// the launcher CSP's `img-src` lists the same hosts.
+pub const HEADER_IMAGE_HOSTS: [&str; 2] = ["github.com", "objects.githubusercontent.com"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReleaseStatus {
@@ -107,6 +111,11 @@ pub struct Saves {
     pub folder: RelativePath,
     /// Present exactly when the release is save-breaking; shown before updating.
     pub incompatibility_notice: Option<String>,
+    /// The release's character-save format, a number that only ever rises. Absent
+    /// (older manifests) means unknown, which counts as compatible. Comparing the
+    /// installed and target values catches a save-breaking release that an update
+    /// skips over (#213).
+    pub save_format_version: Option<u32>,
     pub loader_save_format: Option<Setting>,
 }
 
@@ -120,6 +129,9 @@ pub struct ReleaseManifest {
     pub status: ReleaseStatus,
     /// Shown as Patch Notes.
     pub release_notes: String,
+    /// Optional Patch Notes banner (#179): `https` on [`HEADER_IMAGE_HOSTS`]. The
+    /// launcher shows the product's hero art when absent or when it fails to load.
+    pub release_notes_header_image: Option<String>,
     pub min_launcher_version: String,
     /// `mods/<folder>`, relative to the D2R installation root.
     pub install_root: RelativePath,
@@ -150,6 +162,43 @@ impl ReleaseManifest {
 
     pub fn is_save_breaking(&self) -> bool {
         self.saves.incompatibility_notice.is_some()
+    }
+
+    /// Whether moving from `installed` to this release may leave character saves
+    /// unusable (#213). True when this release is itself save-breaking, or when the
+    /// installed release declares a save format and this release declares a
+    /// different one (higher: a breaking release may have been skipped; lower: a
+    /// downgrade), or when any release in `history` between the installed one
+    /// (exclusive) and this one (inclusive of its date) is save-breaking or declares
+    /// a format other than the installed one's. Missing data counts as compatible.
+    pub fn breaks_saves_from(
+        &self,
+        installed: Option<&ReleaseManifest>,
+        history: &[ReleaseManifest],
+    ) -> bool {
+        if self.is_save_breaking() {
+            return true;
+        }
+        let Some(installed) = installed else {
+            return false;
+        };
+        let differs = |m: &ReleaseManifest| {
+            matches!(
+                (installed.saves.save_format_version, m.saves.save_format_version),
+                (Some(from), Some(to)) if from != to
+            )
+        };
+        if differs(self) {
+            return true;
+        }
+        history.iter().any(|m| {
+            m.product_id == self.product_id
+                && m.release_id != self.release_id
+                && m.release_id != installed.release_id
+                && m.release_date >= installed.release_date
+                && m.release_date <= self.release_date
+                && (m.is_save_breaking() || differs(m))
+        })
     }
 
     /// Ownership of a path relative to `install_root`, compared as Windows does.
@@ -211,6 +260,9 @@ struct RawManifest {
     release_date: String,
     status: ReleaseStatus,
     release_notes: String,
+    /// Added after schema 3 shipped (#179), so manifests without it still parse.
+    #[serde(default)]
+    release_notes_header_image: Option<String>,
     min_launcher_version: String,
     install_root: String,
     archive: RawArchive,
@@ -287,6 +339,7 @@ struct RawSaves {
     folder: String,
     save_breaking: bool,
     incompatibility_notice: Option<String>,
+    save_format_version: Option<u32>,
     loader_save_format: Option<RawSetting>,
 }
 
@@ -295,6 +348,18 @@ fn invalid(field: impl Into<String>, reason: &'static str) -> CatalogError {
         field: field.into(),
         reason,
     }
+}
+
+/// `https` (the catalog's rule) on one of [`HEADER_IMAGE_HOSTS`].
+fn header_image(field: &str, url: String) -> Result<String, CatalogError> {
+    let (url, host) = check::https_host(field, url)?;
+    if !HEADER_IMAGE_HOSTS.contains(&host.as_str()) {
+        return Err(invalid(
+            field,
+            "host must be github.com or objects.githubusercontent.com",
+        ));
+    }
+    Ok(url)
 }
 
 impl RawManifest {
@@ -503,6 +568,10 @@ impl RawManifest {
         let saves = Saves {
             folder,
             incompatibility_notice,
+            save_format_version: match s.save_format_version {
+                Some(0) => return Err(invalid("saves.save_format_version", "must be at least 1")),
+                v => v,
+            },
             loader_save_format: s
                 .loader_save_format
                 .map(|l| setting("saves.loader_save_format", l))
@@ -516,6 +585,10 @@ impl RawManifest {
             release_date: check::date("release_date", self.release_date)?,
             status: self.status,
             release_notes: check::text("release_notes", self.release_notes)?,
+            release_notes_header_image: self
+                .release_notes_header_image
+                .map(|u| header_image("release_notes_header_image", u))
+                .transpose()?,
             min_launcher_version: self.min_launcher_version,
             install_root,
             archive,

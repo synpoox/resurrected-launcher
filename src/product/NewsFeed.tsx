@@ -10,6 +10,10 @@ export interface NewsFeedProps {
   news: NewsState | null;
   onOpen: (index: number) => void;
   onRetry: () => void;
+  /** A Retry is in flight: the button is disabled and the line says so. */
+  retrying?: boolean;
+  /** When the last Retry failed again; shown as "Still offline". */
+  failedAt?: Date | null;
 }
 
 /** Newest first, keeping each item's index in the product's feed (links open by index). */
@@ -42,24 +46,35 @@ function NewsList({ items, onOpen }: { items: { item: NewsItem; index: number }[
 /** Bottom-right, text only: announcements and guides as cards stacked vertically (issue 139).
  *  Links open by index, never by URL. More than NEWS_LIMIT items adds See all, which lists
  *  every item in a dialog, newest first (issue 192). */
-export function NewsFeed({ news, onOpen, onRetry }: NewsFeedProps) {
+export function NewsFeed({ news, onOpen, onRetry, retrying = false, failedAt = null }: NewsFeedProps) {
   const [allFor, setAllFor] = useState<NewsState | null>(null);
   const all = allFor !== null && allFor === news;
   const setAll = (open: boolean) => setAllFor(open ? news : null);
   // Open only for the news object it was opened on: a refresh closes it for good.
+  // An empty list renders nothing: no heading, no placeholder (#183). After the hooks above.
+  if (news?.status === "ok" && news.items.length === 0) return null;
   let body;
   if (news === null) body = null;
   else if (news.status === "offline") {
     body = (
-      <p className="feed-empty">
-        News needs a connection.{" "}
-        <button type="button" className="link" onClick={onRetry}>
+      <p className="feed-empty" role="status">
+        {retrying
+          ? "Retrying…"
+          : failedAt
+            ? `Still offline (tried at ${failedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}).`
+            : "News needs a connection."}{" "}
+        <button
+          type="button"
+          className="link"
+          disabled={retrying}
+          aria-busy={retrying || undefined}
+          onClick={onRetry}
+        >
           Retry
         </button>
       </p>
     );
-  } else if (news.items.length === 0) body = <p className="feed-empty">Nothing yet.</p>;
-  else {
+  } else {
     const items = newestFirst(news.items);
     body = (
       <>

@@ -301,6 +301,19 @@ export const SCENES: readonly Scene[] = [
     open: "save-breaking",
   }),
   scene({
+    // 0.4.1 -> 0.5.1 skips the save-breaking 0.5.0: the target carries no notice of its own (#213).
+    key: "save-breaking-skipped",
+    label: "Save-breaking (skipped release)",
+    state: base({
+      installed: installed("0.4.1"),
+      recommended: summary("0.5.1"),
+      readiness: { status: "update_available" },
+    }),
+    notes: [r("0.5.1", 1, NOTES_050), r("0.4.1", 21, NOTES_041)],
+    open: "save-breaking",
+    inspections: { update: { breaks_saves: true, save_breaking_notice: null } },
+  }),
+  scene({
     key: "blocked",
     label: "Blocked prerequisites",
     state: base({ readiness: { status: "build_unsupported", found: "3.3.1" } }),
@@ -448,6 +461,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
       backup_only: [],
       settings_reset: [],
       conflicts: [],
+      breaks_saves: release.save_breaking,
       save_breaking_notice: release.save_breaking
         ? "alpha 0.5.0 changes the save format. Characters from 0.4.x may not load."
         : null,
@@ -480,7 +494,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
     startOperation(request, insp) {
       record("startOperation", request, insp);
       if (insp.token !== `${request.kind}-token`) return refuse("release_changed", "Inspect again.");
-      if (insp.release.save_breaking && request.kind === "update" && !request.acknowledge_save_breaking) {
+      if (insp.breaks_saves && request.kind === "update" && !request.acknowledge_save_breaking) {
         return refuse("save_breaking_not_acknowledged", "Acknowledge the save-breaking release first.");
       }
       if (insp.conflicts.length > 0) {
@@ -581,6 +595,11 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
       return Promise.resolve(true);
     },
     showDiagnosticsInFolder: () => done("showDiagnosticsInFolder"),
+    copyLauncherLog() {
+      record("copyLauncherLog");
+      return Promise.resolve("[1760000000] launcher started by <you>\n");
+    },
+    openLogsFolder: () => done("openLogsFolder"),
     getStartWithWindows() {
       record("getStartWithWindows");
       return Promise.resolve(false);

@@ -114,6 +114,30 @@
   min-width: 200px;
 }
 
+/* Startup failed only (blocked and repair-needed keep full-size buttons): one row at every size, with compact buttons. */
+.act.act-failed {
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+/* The column is about 390px at the 1024 minimum: Try again, Repair and Export diagnostics fit it. */
+.act.act-failed .btn {
+  padding: 0 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.action-col .act.act-failed .btn.primary {
+  min-width: 0;
+  padding: 0 22px;
+  font-size: 12px;
+}
+
+/* The main action eases in when a tab opens (reduced motion turns this off in styles.css). */
+.action-col .act {
+  animation: lift 200ms ease-out;
+}
+
 .btn.primary.playing {
   opacity: 1;
   background: var(--panel);
@@ -329,12 +353,17 @@
   box-shadow: inset 0 -2px var(--accent);
 }
 
+/* Absolute, in the tab's right padding, so the dot never changes the tab's width. */
+.tabs [role="tab"] {
+  position: relative;
+}
+
 .attention {
-  display: inline-block;
+  position: absolute;
+  top: 8px;
+  right: 7px;
   width: 6px;
   height: 6px;
-  margin-left: 6px;
-  vertical-align: top;
   border-radius: 50%;
   background: var(--accent);
 }
@@ -623,6 +652,7 @@
   z-index: 3;
   top: 40px;
   left: 32px;
+  animation: drop 200ms ease-out;
 }
 
 .topact .act {
@@ -683,6 +713,7 @@
 }
 
 .ack {
+  font-size: var(--text-body);
   display: flex;
   gap: 10px;
   align-items: flex-start;
@@ -693,7 +724,7 @@
 }
 
 .tip {
-  font-size: 13px;
+  font-size: var(--text-small);
 }
 
 .kept {

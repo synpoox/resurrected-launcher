@@ -31,7 +31,7 @@ use crate::install::preflight::Host;
 use crate::install::transaction::Recovery;
 use crate::state::{InstalledRelease, StateStore};
 
-use super::game::{CatalogState, Desktop, StartupFailed};
+use super::game::{CatalogState, Desktop, StartupFailed, HANDOFF_GRACE, STARTUP_WINDOW};
 use super::settings::Exported;
 
 /// Byte and file counts are emitted at most this often, plus the final one.
@@ -212,6 +212,12 @@ pub struct Launcher {
     pub(super) detected: Mutex<Vec<GameLocation>>,
     /// Products whose last Play ended within the startup window.
     pub(super) startup: Mutex<HashMap<ProductId, StartupFailed>>,
+    /// How long a Play's watcher waits for the game after the loader exited
+    /// cleanly: [`HANDOFF_GRACE`] unless a test shortens it.
+    pub handoff_grace: Duration,
+    /// A game gone this soon after Play failed to start: [`STARTUP_WINDOW`]
+    /// unless a test shortens it.
+    pub startup_window: Duration,
     /// Recent operation errors, oldest first, for diagnostics.
     pub(super) recent_errors: Mutex<Vec<LauncherError>>,
     /// The last previewed and the last saved diagnostics report.
@@ -328,6 +334,7 @@ struct Resolved {
     release: Release,
     installed: Option<Release>,
     earlier: Vec<ReleaseManifest>,
+    history: Vec<ReleaseManifest>,
     acknowledge_save_breaking: bool,
     consent_clean_install: bool,
 }
@@ -341,6 +348,7 @@ impl Resolved {
             release_sha256: self.release.sha256,
             installed: self.installed.as_ref().map(|r| &r.manifest),
             earlier: &self.earlier,
+            history: &self.history,
             acknowledge_save_breaking: self.acknowledge_save_breaking,
             consent_clean_install: self.consent_clean_install,
         }
@@ -375,6 +383,8 @@ impl Launcher {
             exit_watches: AtomicUsize::new(0),
             detected: Mutex::default(),
             startup: Mutex::default(),
+            handoff_grace: HANDOFF_GRACE,
+            startup_window: STARTUP_WINDOW,
             recent_errors: Mutex::default(),
             exported: Mutex::default(),
         }
@@ -466,12 +476,20 @@ impl Launcher {
         } else {
             Vec::new()
         };
+        let history = if installed.is_some() && matches!(req.kind, Install | Update | CleanInstall)
+        {
+            let id = &release.manifest.release_id;
+            self.releases.earlier(&mut state, &req.product_id, id)
+        } else {
+            Vec::new()
+        };
         Ok(Resolved {
             kind: req.kind,
             d2r,
             release,
             installed,
             earlier,
+            history,
             acknowledge_save_breaking: req.acknowledge_save_breaking,
             consent_clean_install: req.consent_clean_install,
         })
@@ -497,7 +515,7 @@ impl Launcher {
             ),
             (&insp.preserved, &insp.backup_only, &insp.conflicts),
             &insp.settings_reset,
-            (&insp.save_breaking_notice, &insp.expect),
+            (&insp.save_breaking_notice, insp.breaks_saves, &insp.expect),
         );
         let digest = Sha256::digest(format!("{stable:?}"));
         let token = digest.iter().map(|b| format!("{b:02x}")).collect();
@@ -561,6 +579,9 @@ pub struct InspectionView {
     /// Non-empty: start is refused until resolved.
     pub conflicts: Vec<ConflictView>,
     pub save_breaking_notice: Option<String>,
+    /// The target release is save-breaking or the update skips over a save-breaking
+    /// release: the player must acknowledge before the update starts (#213).
+    pub breaks_saves: bool,
     pub space_needed: u64,
     pub token: String,
 }
@@ -579,6 +600,7 @@ impl InspectionView {
             settings_reset: insp.settings_reset.into_iter().map(view).collect(),
             conflicts: insp.conflicts.into_iter().map(view).collect(),
             save_breaking_notice: insp.save_breaking_notice,
+            breaks_saves: insp.breaks_saves,
             space_needed: insp.plan.space.total(),
             token,
         }

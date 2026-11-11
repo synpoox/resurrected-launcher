@@ -51,6 +51,7 @@ One per release, published as a durable public asset next to the archive. See `f
 | `release_date` | `YYYY-MM-DD`. |
 | `status` | `alpha`, `beta` or `release`. |
 | `release_notes` | Non-empty text, shown as Patch Notes. Inline so they work offline. A Markdown subset: ATX headings (the shallowest level used starts a section, deeper ones are sub-headings), `-`/`*`/`+` and numbered lists nested by indent (up to three levels), `>` quotes, paragraphs, fenced code, `**strong**`, `*em*`/`_em_` and `` `code` ``. An opening paragraph is the summary. HTML is shown as text; links and images show only their text. Patch Notes parse at most the first 100,000 characters (cut at a line break) and then say the notes were too long to show in full. |
+| `release_notes_header_image` | Optional. The Patch Notes banner for this release: an `https` URL on `github.com` or `objects.githubusercontent.com` (exact host; otherwise `metadata_invalid`), usually a release asset. The launcher shows the newest release's image, and the product's hero art when the field is absent or the image fails to load. |
 | `min_launcher_version` | `MAJOR.MINOR.PATCH`. Newer than this launcher: a launcher update is required. |
 
 ### Payload and installation
@@ -97,6 +98,7 @@ Unknown game/loader combinations block Play.
 | `saves.folder` | One folder name under D2R's per-user mod save directory. Saves are never part of the payload. |
 | `saves.save_breaking` | Whether characters from the previous release may not load (ADR 0001). |
 | `saves.incompatibility_notice` | Non-empty text exactly when `save_breaking` is true, otherwise `null`. Shown and acknowledged before updating. |
+| `saves.save_format_version` | Optional integer >= 1: the release's character-save format, which only rises. The launcher prompts before an update when the target's value differs from the installed release's, so a save-breaking release the update skips over is still caught. Also prompts on a lower value (downgrade) and when any cached release between the installed one and the target is `save_breaking` or declares a different value. Absent on either side counts as compatible. **Rollout:** launchers before this field was added reject unknown keys (`metadata_invalid`), and `schema_version` stays 3, so the toolkit must not emit it until the minimum supported launcher parses it (#213). |
 | `saves.loader_save_format` | Optional `{file, key, value}`, same rules as a required setting. |
 
 ### Loader

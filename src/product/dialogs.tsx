@@ -157,25 +157,18 @@ export function SaveBreakingDialog({ product, inspection, installedVersion, onCo
       onClose={onClose}
       actions={
         <>
-          <button type="button" className="btn primary" disabled={!ack} aria-describedby="ack-why" onClick={onConfirm}>
+          <button type="button" className="btn primary" disabled={!ack} onClick={onConfirm}>
             Update to {version}
           </button>
           <button type="button" className="btn ghost" onClick={onClose} data-autofocus="">
             Not now
           </button>
-          {!ack && (
-            <span id="ack-why" className="why">
-              Tick the box above to update
-            </span>
-          )}
         </>
       }
     >
-      {inspection.save_breaking_notice && (
-        <p>
-          <b>{inspection.save_breaking_notice}</b>
-        </p>
-      )}
+      <p>
+        <b>{inspection.save_breaking_notice ?? `Your character saves won't be compatible with the latest patch (${version}).`}</b>
+      </p>
       <p>
         Your characters stay in the same folder, and the launcher won't convert or delete them. {version} may refuse to load
         them, or change them the first time you play.
