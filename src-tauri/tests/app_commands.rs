@@ -1384,6 +1384,33 @@ fn a_game_that_exits_soon_after_play_is_a_startup_failure_until_the_next_play() 
 }
 
 #[test]
+fn a_loader_that_exits_before_the_game_appears_is_not_a_startup_failure() {
+    // #200: the loader hands off to D2R.exe and exits; the watch used to end the
+    // moment nothing ran under the root, flagging a startup failure while the
+    // game was starting (or running).
+    let rig = Rig::new();
+    rig.install(PD2R_1);
+    rig.start_up();
+    rig.play().unwrap();
+    rig.host.exit_all();
+    std::thread::sleep(Duration::from_millis(1500));
+    let game = rig.game.d2r().join("D2R.exe");
+    rig.host.processes.lock().unwrap().push(RunningGame {
+        pid: 5151,
+        image: game,
+        since: 1_700_000_001,
+    });
+    // Past the poll that would have ended the old watch.
+    std::thread::sleep(Duration::from_millis(2500));
+    assert_eq!(rig.state().startup_failed, None, "the game is running");
+    assert!(rig.states.try_recv().is_err(), "the watch has not ended");
+    // A game that dies right away is still a startup failure.
+    rig.host.exit_all();
+    rig.state_event();
+    assert!(rig.state().startup_failed.is_some());
+}
+
+#[test]
 fn a_successful_repair_clears_the_startup_failure() {
     // #171: after "The game closed while starting", Repair succeeded but the
     // product kept startup_failed, so the page kept Try again instead of Play.

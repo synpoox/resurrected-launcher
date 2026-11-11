@@ -66,6 +66,41 @@ pub fn wait_until_exited(
     Ok(())
 }
 
+/// Like [`wait_until_exited`], for a Play: the loader may hand off to the game and
+/// exit before the game's process shows up under `root` (#200), so once nothing
+/// runs, it keeps looking for up to `grace` and watches whatever appears. `seen`
+/// gets every listing that found something, so a report can say which images ran.
+pub fn wait_until_exited_after_handoff(
+    root: &Path,
+    host: &dyn GameHost,
+    poll: Duration,
+    grace: Duration,
+    seen: &mut dyn FnMut(&[RunningGame]),
+) -> Result<(), LauncherError> {
+    loop {
+        loop {
+            let running = running_under(root, host)?;
+            if running.is_empty() {
+                break;
+            }
+            seen(&running);
+            std::thread::sleep(poll);
+        }
+        let deadline = std::time::Instant::now() + grace;
+        let mut appeared = false;
+        while std::time::Instant::now() < deadline {
+            std::thread::sleep(poll.min(grace));
+            if !running_under(root, host)?.is_empty() {
+                appeared = true;
+                break;
+            }
+        }
+        if !appeared {
+            return Ok(());
+        }
+    }
+}
+
 /// See [`GameHost::processes`]: Toolhelp32 snapshot plus
 /// `QueryFullProcessImageNameW` and the process creation time.
 #[cfg(windows)]

@@ -20,7 +20,7 @@ use crate::contract::{
     ErrorCode, GameLocation, LauncherError, LoaderGuidance, OperationKind, ProductId, Readiness,
     RunningGame, Versioned, LOADER_DOWNLOAD_PAGE,
 };
-use crate::game::process::wait_until_exited;
+use crate::game::process::{wait_until_exited, wait_until_exited_after_handoff};
 use crate::game::readiness::{self, Facts};
 use crate::game::{detect, launch, loader_setup};
 use crate::install::journal::refuse_pending_journal;
@@ -38,6 +38,10 @@ const EXIT_POLL: Duration = Duration::from_secs(1);
 
 /// How often the game watcher looks for a game started outside Play (#153).
 const START_POLL: Duration = Duration::from_secs(2);
+
+/// How long a Play's watcher keeps looking for the game after the loader exited
+/// cleanly (it hands off to D2R.exe, which may show up after the loader is gone).
+const HANDOFF_GRACE: Duration = Duration::from_secs(4);
 
 /// A game that exits this soon after Play failed to start.
 /// shortcut: a fixed threshold; make it configurable only if real crashes show otherwise.
@@ -446,12 +450,51 @@ impl Launcher {
         self.exit_watches.fetch_add(1, Ordering::SeqCst);
         std::thread::spawn(move || {
             // An enumeration failure ends the watch; the UI then reads the state.
-            let exited = wait_until_exited(&root, &*launcher.game, EXIT_POLL).is_ok();
+            let mut images = Vec::new();
+            let exited = match &tracked {
+                // The loader exits 0 once it has started the game (#200); only a
+                // loader that crashed (non-zero) ends the watch without a hand-off.
+                Some(t) => wait_until_exited_after_handoff(
+                    &root,
+                    &*launcher.game,
+                    EXIT_POLL,
+                    if t.process
+                        .as_ref()
+                        .and_then(|p| p.exit_code())
+                        .is_some_and(|c| c != 0)
+                    {
+                        Duration::ZERO
+                    } else {
+                        HANDOFF_GRACE
+                    },
+                    &mut |running| {
+                        for g in running {
+                            let name = g
+                                .image
+                                .file_name()
+                                .map(|n| n.to_string_lossy().into_owned());
+                            if let Some(name) = name.filter(|n| !images.contains(n)) {
+                                images.push(name);
+                            }
+                        }
+                    },
+                ),
+                None => wait_until_exited(&root, &*launcher.game, EXIT_POLL),
+            }
+            .is_ok();
             launcher.exit_watches.fetch_sub(1, Ordering::SeqCst);
             if let Some(t) = tracked.filter(|t| exited && t.started.elapsed() < STARTUP_WINDOW) {
                 let failed = StartupFailed {
                     exit_code: t.process.and_then(|p| p.exit_code()),
                 };
+                // So a report shows what ran under the root before it ended (#200).
+                launcher.log(&format!(
+                    "{} closed {}s after Play (exit code {:?}); processes seen: {}",
+                    t.product.0,
+                    t.started.elapsed().as_secs(),
+                    failed.exit_code,
+                    images.join(", ")
+                ));
                 if let Ok(mut startup) = locked(&launcher.startup) {
                     startup.insert(t.product, failed);
                 }
