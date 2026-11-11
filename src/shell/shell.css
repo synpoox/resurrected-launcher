@@ -8,9 +8,9 @@
 
 .window {
   position: relative;
-  /* Fills the client area exactly. The native window enforces the 1024x640
-     minimum; a CSS minimum here overflows a client area a few pixels short of
-     it (resize borders, fractional DPI) and clips the close button. */
+  /* Fills the client area exactly. The native window is a fixed size (1600x900,
+     or 1280x720 on a smaller work area, #203); a CSS minimum here could overflow
+     a client area a few pixels short of it (fractional DPI) and clip the close button. */
   width: 100%;
   height: 100%;
   display: grid;

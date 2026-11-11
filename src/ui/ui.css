@@ -13,17 +13,26 @@
   text-transform: uppercase;
   transition:
     background 150ms,
+    box-shadow 150ms,
     transform 150ms;
 }
 
 .btn.primary {
-  background: var(--button);
+  background: linear-gradient(135deg, var(--button), var(--button-coral));
+  box-shadow: 0 0 18px var(--glow);
   color: var(--white);
 }
 
 .btn.primary:not([disabled], [aria-disabled="true"]):hover {
-  background: var(--button-hover);
+  background: linear-gradient(135deg, var(--button-hover), var(--button-hover-coral));
+  box-shadow: 0 0 24px var(--glow-hover);
   transform: translateY(-2px);
+}
+
+.btn.primary[disabled],
+.btn.primary[aria-disabled="true"],
+.btn.primary[aria-busy="true"] {
+  box-shadow: none;
 }
 
 .btn.ghost {

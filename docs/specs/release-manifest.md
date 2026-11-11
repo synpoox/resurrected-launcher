@@ -51,6 +51,7 @@ One per release, published as a durable public asset next to the archive. See `f
 | `release_date` | `YYYY-MM-DD`. |
 | `status` | `alpha`, `beta` or `release`. |
 | `release_notes` | Non-empty text, shown as Patch Notes. Inline so they work offline. A Markdown subset: ATX headings (the shallowest level used starts a section, deeper ones are sub-headings), `-`/`*`/`+` and numbered lists nested by indent (up to three levels), `>` quotes, paragraphs, fenced code, `**strong**`, `*em*`/`_em_` and `` `code` ``. An opening paragraph is the summary. HTML is shown as text; links and images show only their text. Patch Notes parse at most the first 100,000 characters (cut at a line break) and then say the notes were too long to show in full. |
+| `release_notes_header_image` | Optional. The Patch Notes banner for this release: an `https` URL on `github.com` or `objects.githubusercontent.com` (exact host; otherwise `metadata_invalid`), usually a release asset. The launcher shows the newest release's image, and the product's hero art when the field is absent or the image fails to load. |
 | `min_launcher_version` | `MAJOR.MINOR.PATCH`. Newer than this launcher: a launcher update is required. |
 
 ### Payload and installation

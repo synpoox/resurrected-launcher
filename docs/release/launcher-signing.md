@@ -20,6 +20,8 @@ It never creates, drafts or publishes a GitHub release, and it never writes a ta
 
 The bundle is named after `productName` (`Project Resurrected`, #151), so Tauri writes `Project Resurrected_<version>_x64-setup.exe`. The workflow renames it and its `.sig` to `Project-Resurrected_<version>_x64-setup.exe` before writing `latest.json` (the release and gate URLs both use the renamed file), because GitHub would otherwise rename a spaced asset on upload and the URL would break. Publish the renamed files as they are.
 
+What's new (#189): put the launcher's release notes in `docs/release/notes/<version>.md` (the patch-notes Markdown subset) before tagging. The workflow copies them into `latest.json`'s `notes`; after the self-update installs, the launcher shows them once in a What's new dialog. With no file, `notes` is empty and no dialog opens.
+
 ## Gate builds (#89)
 
 A tag `launcher-v<version>-gate` (same `tauri.conf.json` version) makes a slice 5 gate build instead. It differs from a release build in one way only, checked by `src-tauri/tests/slice5_gate/gate_build.rs` (both set `VITE_SELF_UPDATE=1`, so both check for updates):

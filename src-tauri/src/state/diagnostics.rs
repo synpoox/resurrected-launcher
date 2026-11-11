@@ -436,6 +436,18 @@ impl StateStore {
     }
 }
 
+impl StateStore {
+    /// "Copy log": the end of the launcher log, capped like the report's log
+    /// section and redacted the same way. Empty when there is no log yet.
+    pub fn launcher_log_excerpt(&self, redactor: &Redactor) -> Result<String, std::io::Error> {
+        match read_log_tail(&self.log_path()) {
+            Ok(log) => Ok(redactor.redact(&log)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+            Err(e) => Err(e),
+        }
+    }
+}
+
 impl DiagnosticsReport {
     /// "Save as file…": writes the reviewed text to the path the player chose in
     /// the native save dialog.
@@ -662,6 +674,24 @@ mod tests {
         assert!(with
             .text
             .contains("started by <you>\npassword=<redacted>\n"));
+    }
+
+    #[test]
+    fn copied_log_is_capped_and_redacted_like_the_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = StateStore::open(dir.path());
+        assert_eq!(store.launcher_log_excerpt(&micah()).unwrap(), "");
+        let mut log: String = (0..5000).map(|i| format!("line {i:05} pad\n")).collect();
+        log.push_str("C:\\Users\\micah\\x token=abc\n");
+        fs::write(store.log_path(), &log).unwrap();
+        let copied = store.launcher_log_excerpt(&micah()).unwrap();
+        // Capped before redaction, which may lengthen a line slightly.
+        assert!((copied.len() as u64) < LOG_TAIL_BYTES + 64);
+        assert!(copied.starts_with("line ") && !copied.contains("line 00000"));
+        assert!(
+            copied.ends_with("C:\\Users\\<you>\\x token=<redacted>\n"),
+            "{copied}"
+        );
     }
 
     #[test]

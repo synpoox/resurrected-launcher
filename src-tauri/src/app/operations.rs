@@ -31,7 +31,7 @@ use crate::install::preflight::Host;
 use crate::install::transaction::Recovery;
 use crate::state::{InstalledRelease, StateStore};
 
-use super::game::{CatalogState, Desktop, StartupFailed};
+use super::game::{CatalogState, Desktop, StartupFailed, HANDOFF_GRACE, STARTUP_WINDOW};
 use super::settings::Exported;
 
 /// Byte and file counts are emitted at most this often, plus the final one.
@@ -212,6 +212,12 @@ pub struct Launcher {
     pub(super) detected: Mutex<Vec<GameLocation>>,
     /// Products whose last Play ended within the startup window.
     pub(super) startup: Mutex<HashMap<ProductId, StartupFailed>>,
+    /// How long a Play's watcher waits for the game after the loader exited
+    /// cleanly: [`HANDOFF_GRACE`] unless a test shortens it.
+    pub handoff_grace: Duration,
+    /// A game gone this soon after Play failed to start: [`STARTUP_WINDOW`]
+    /// unless a test shortens it.
+    pub startup_window: Duration,
     /// Recent operation errors, oldest first, for diagnostics.
     pub(super) recent_errors: Mutex<Vec<LauncherError>>,
     /// The last previewed and the last saved diagnostics report.
@@ -377,6 +383,8 @@ impl Launcher {
             exit_watches: AtomicUsize::new(0),
             detected: Mutex::default(),
             startup: Mutex::default(),
+            handoff_grace: HANDOFF_GRACE,
+            startup_window: STARTUP_WINDOW,
             recent_errors: Mutex::default(),
             exported: Mutex::default(),
         }

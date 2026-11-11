@@ -595,6 +595,11 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
       return Promise.resolve(true);
     },
     showDiagnosticsInFolder: () => done("showDiagnosticsInFolder"),
+    copyLauncherLog() {
+      record("copyLauncherLog");
+      return Promise.resolve("[1760000000] launcher started by <you>\n");
+    },
+    openLogsFolder: () => done("openLogsFolder"),
     getStartWithWindows() {
       record("getStartWithWindows");
       return Promise.resolve(false);

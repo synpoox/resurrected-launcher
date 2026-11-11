@@ -75,6 +75,9 @@ export interface LauncherApi {
   previewDiagnostics(includeLog: boolean): Promise<DiagnosticsPreview>;
   saveDiagnostics(includeLog: boolean): Promise<boolean>;
   showDiagnosticsInFolder(): Promise<void>;
+  /** Redacted, size-capped launcher log text (#186); empty when there is none. */
+  copyLauncherLog(): Promise<string>;
+  openLogsFolder(): Promise<void>;
   getStartWithWindows(): Promise<boolean>;
   setStartWithWindows(enabled: boolean): Promise<void>;
 

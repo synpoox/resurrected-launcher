@@ -66,6 +66,46 @@ pub fn wait_until_exited(
     Ok(())
 }
 
+/// Like [`wait_until_exited`], for a Play: the loader may hand off to the game and
+/// exit before the game's process shows up under `root` (#200), so once nothing
+/// runs, it keeps looking for up to `grace` and watches whatever appears. `seen`
+/// gets every listing that found something, so a report can say which images ran.
+/// `grace` is asked each time nothing runs, so it can depend on how the loader
+/// ended. Returns when nothing ran for the last time, before the grace that
+/// confirmed it.
+pub fn wait_until_exited_after_handoff(
+    root: &Path,
+    host: &dyn GameHost,
+    poll: Duration,
+    grace: &mut dyn FnMut() -> Duration,
+    seen: &mut dyn FnMut(&[RunningGame]),
+) -> Result<std::time::Instant, LauncherError> {
+    loop {
+        loop {
+            let running = running_under(root, host)?;
+            if running.is_empty() {
+                break;
+            }
+            seen(&running);
+            std::thread::sleep(poll);
+        }
+        let emptied = std::time::Instant::now();
+        let grace = grace();
+        let deadline = emptied + grace;
+        let mut appeared = false;
+        while std::time::Instant::now() < deadline {
+            std::thread::sleep(poll.min(grace));
+            if !running_under(root, host)?.is_empty() {
+                appeared = true;
+                break;
+            }
+        }
+        if !appeared {
+            return Ok(emptied);
+        }
+    }
+}
+
 /// See [`GameHost::processes`]: Toolhelp32 snapshot plus
 /// `QueryFullProcessImageNameW` and the process creation time.
 #[cfg(windows)]

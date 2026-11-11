@@ -13,6 +13,10 @@ use super::CatalogError;
 /// for any non-empty one.
 const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
+/// The only hosts a Patch Notes header image may load from (#179). Exact match;
+/// the launcher CSP's `img-src` lists the same hosts.
+pub const HEADER_IMAGE_HOSTS: [&str; 2] = ["github.com", "objects.githubusercontent.com"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReleaseStatus {
@@ -125,6 +129,9 @@ pub struct ReleaseManifest {
     pub status: ReleaseStatus,
     /// Shown as Patch Notes.
     pub release_notes: String,
+    /// Optional Patch Notes banner (#179): `https` on [`HEADER_IMAGE_HOSTS`]. The
+    /// launcher shows the product's hero art when absent or when it fails to load.
+    pub release_notes_header_image: Option<String>,
     pub min_launcher_version: String,
     /// `mods/<folder>`, relative to the D2R installation root.
     pub install_root: RelativePath,
@@ -253,6 +260,9 @@ struct RawManifest {
     release_date: String,
     status: ReleaseStatus,
     release_notes: String,
+    /// Added after schema 3 shipped (#179), so manifests without it still parse.
+    #[serde(default)]
+    release_notes_header_image: Option<String>,
     min_launcher_version: String,
     install_root: String,
     archive: RawArchive,
@@ -338,6 +348,18 @@ fn invalid(field: impl Into<String>, reason: &'static str) -> CatalogError {
         field: field.into(),
         reason,
     }
+}
+
+/// `https` (the catalog's rule) on one of [`HEADER_IMAGE_HOSTS`].
+fn header_image(field: &str, url: String) -> Result<String, CatalogError> {
+    let (url, host) = check::https_host(field, url)?;
+    if !HEADER_IMAGE_HOSTS.contains(&host.as_str()) {
+        return Err(invalid(
+            field,
+            "host must be github.com or objects.githubusercontent.com",
+        ));
+    }
+    Ok(url)
 }
 
 impl RawManifest {
@@ -563,6 +585,10 @@ impl RawManifest {
             release_date: check::date("release_date", self.release_date)?,
             status: self.status,
             release_notes: check::text("release_notes", self.release_notes)?,
+            release_notes_header_image: self
+                .release_notes_header_image
+                .map(|u| header_image("release_notes_header_image", u))
+                .transpose()?,
             min_launcher_version: self.min_launcher_version,
             install_root,
             archive,
