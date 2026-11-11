@@ -320,6 +320,9 @@ export interface ReleaseNotes {
   status: "alpha" | "beta" | "release";
   /** null: a newer release whose manifest isn't cached (offline). */
   notes: string | null;
+  /** The manifest's `release_notes_header_image` (#179): an https URL on github.com or
+   *  objects.githubusercontent.com, or null for the product's hero art. */
+  header_image?: string | null;
 }
 
 /** Newest first: the recommended release (if newer) and the installed release.
@@ -356,6 +359,17 @@ export async function saveDiagnostics(includeLog: boolean): Promise<boolean> {
 /** Opens Explorer with the last saved report selected. */
 export async function showDiagnosticsInFolder(): Promise<void> {
   await invoke("show_diagnostics_in_folder");
+}
+
+/** The end of the launcher log (64 KiB), redacted like the diagnostics report;
+ *  empty when there is no log yet. */
+export async function copyLauncherLog(): Promise<string> {
+  return current(await invoke<Versioned<string>>("copy_launcher_log"));
+}
+
+/** Opens Explorer on the folder holding launcher.log. */
+export async function openLogsFolder(): Promise<void> {
+  await invoke("open_logs_folder");
 }
 
 export async function getStartWithWindows(): Promise<boolean> {

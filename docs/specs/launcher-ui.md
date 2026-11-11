@@ -69,7 +69,7 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 - Hero copy sits left at about 44% height: ribbon tag, a **title that is always exactly two lines** (scaling between 30px and 50px instead of wrapping), and one line of description.
 - The bottom-left holds the action row. Play is solid red, at least 260px × 60px, with a plain uppercase label. Next to it is the square `⋯` **Manage** menu (Repair, Open saves folder, Open settings folder, divider, Uninstall… in `--detail`) and one readiness line ("● Ready · alpha 0.4.2 (latest)"). When a secondary button shares the row, the primary narrows to 200px.
 - **Notices** sit directly above the action row: a panel with a 2px left rule, muted for information and accent for errors.
-- The bottom-right holds a text-only news feed of cards stacked vertically ([#139](https://github.com/synpoox/resurrected-launcher/issues/139)), `clamp(300px, 32vw, 440px)` wide (about 330px at 1024, 410px at 1280). Each card is one link on a `--scrim` panel with a 1px `--line` border and 18px × 20px padding: tag · relative date, an 18px headline with ↗, and the item's optional 14px summary in up to two lines. The hero copy narrows so it stays left of the feed. It has no images and no in-launcher article view. **The feed shows announcements and guides only; release notes live in Patch Notes.** An empty feed reads "Nothing yet." Source, format and link rules: `docs/specs/news-feed.md`.
+- The bottom-right holds a text-only news feed of cards stacked vertically ([#139](https://github.com/synpoox/resurrected-launcher/issues/139)), `clamp(300px, 32vw, 440px)` wide (about 330px at 1024, 410px at 1280). Each card is one link on a `--scrim` panel with a 1px `--line` border and 18px × 20px padding: tag · relative date, an 18px headline with ↗, and the item's optional 14px summary in up to two lines. The hero copy narrows so it stays left of the feed. It has no images and no in-launcher article view. **The feed shows announcements and guides only; release notes live in Patch Notes.** An empty feed renders nothing: no NEWS heading and no placeholder ([#183](https://github.com/synpoox/resurrected-launcher/issues/183)). Source, format and link rules: `docs/specs/news-feed.md`.
 
 **Product page, Patch Notes tab** (approved in #20):
 - Fills the whole main area except the sidebar, with no hero art. It scrolls with a dark scrollbar, and content passes under a solid top fade.
@@ -80,7 +80,7 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
   - **Release head**, centred in a 760px column, newest release first: a 32px uppercase title in two lines, the product name over "Patch 0.2.0 notes". The patch version drops a leading or trailing status; the status becomes the tag. Then the notes' opening paragraph as the summary (17px), a 3px double `--line` divider, and the meta row: tag (`--detail`: Alpha, Beta or Release) · date.
   - **Table of contents**: a full-width row between rules, "TABLE OF CONTENTS" with `+`/`−` in `--detail`, collapsed by default. Opened, it lists every section heading as a ruled row. Choosing one jumps to that section (instantly, no smooth scrolling) and moves focus to its heading. Entries are buttons, because the webview has no links.
   - **Sections**: a 32px bold italic uppercase heading, then a 1px `--line` box on `--bg`. In the box: an optional description or `>` quote (quotation marks in `--muted`), a divider, `###` sub-headings (21px uppercase) and bullets nested up to three levels (disc, then circle). Body text is 17px at line height 1.7.
-- Notes are a Markdown subset (`docs/specs/release-manifest.md`). It is parsed into data and rendered as React text: HTML, links and images are never interpreted, so the CSP stays `img-src 'self'`.
+- Notes are a Markdown subset (`docs/specs/release-manifest.md`). It is parsed into data and rendered as React text: HTML, links and images are never interpreted, so notes never load an image. The only remote image is the optional `release_notes_header_image` banner (#179), whose hosts `img-src` lists; it falls back to the hero art when absent or failing to load.
 - The installed release's notes ship with it and display offline. Newer releases offline show "Patch notes for newer releases need a connection. Retry".
 
 **Rules for both tabs:**
@@ -97,7 +97,6 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 - **Launcher**: **Start with Windows** switch, off by default, which opens to the tray.
 - **Launcher → Launcher version** (#28): the version and its update status, with **Check for updates**. When an update is ready or has failed, the control becomes Restart to update or Try again (see [Launcher self-update](#launcher-self-update)).
 - **Launcher → Download launcher updates automatically** (#28): switch, on by default. Hint when on: "Updates download in the background and install when you restart or Quit." Hint when off: "You'll be told when an update is available. Nothing downloads until you choose Download."
-- **Launcher → About and credits** (new, #20): lists each hero image with its name, source and "Promotional art, not mod gameplay".
 - **Folders and plugins**:
   - A PD2R group: saves, settings and filters, and **PD2R plugins** ("Loads only with PD2R", with the `core-*` note).
   - An All products group: **Global plugins** ("Loads for every product").
@@ -208,7 +207,7 @@ Subtle only, with no video and no hero rotation: the hero changes only when the 
 Target **WCAG 2.2 AA**: 4.5:1 for text, 3:1 for large text (24px, or 18.66px bold) and UI components. Measurements: [launcher shell contrast](../research/launcher-shell-contrast.md).
 - Every token pair on `--bg`/`--rail`/`--panel` passes (5.21–17.47:1), as do white on `--button` (5.44) and `--ribbon` (6.25), and text over the hero art (worst 6.35). The tightest pass is the window-control glyphs over art (4.54).
 - 10px labels are never large text and need 4.5:1.
-- Hero art has no visible credit line. Each hero has an accessible name (e.g. "Reign of the Warlock key art (official D2R promotional art)"), and credits live in Settings.
+- Hero art has no visible credit line. Each hero has an accessible name (e.g. "Reign of the Warlock key art (official D2R promotional art)"). The art credit is not shown in the launcher.
 
 **Keyboard and focus** (drafted in #20; check them in implementation):
 - Tab order: window controls (minimise, close) → sidebar → tabs → main action and its row (or the Patch Notes action) → main content → news feed.
@@ -221,7 +220,7 @@ Target **WCAG 2.2 AA**: 4.5:1 for text, 3:1 for large text (24px, or 18.66px bol
 
 ## Artwork
 
-Official D2R promotional art, © Blizzard Entertainment, **never presented as mod gameplay**. The images match resurrected-web's hero set and are bundled in `src/art` as optimised WebP ([#165](https://github.com/synpoox/resurrected-launcher/issues/165)), credited in Settings → About and credits as "Official D2R promotional artwork © Blizzard Entertainment", the website's credit.
+Official D2R promotional art, © Blizzard Entertainment, **never presented as mod gameplay**. The images match resurrected-web's hero set and are bundled in `src/art` as optimised WebP ([#165](https://github.com/synpoox/resurrected-launcher/issues/165)). The launcher shows no credit list (#199).
 
 | Product | Image | Framing |
 | --- | --- | --- |

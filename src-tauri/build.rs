@@ -22,6 +22,8 @@ fn main() {
         "preview_diagnostics",
         "save_diagnostics",
         "show_diagnostics_in_folder",
+        "copy_launcher_log",
+        "open_logs_folder",
         "get_start_with_windows",
         "set_start_with_windows",
         "minimize_window",

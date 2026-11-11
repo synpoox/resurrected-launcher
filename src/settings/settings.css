@@ -140,21 +140,6 @@
   color: var(--hero-copy);
 }
 
-.credits {
-  list-style: none;
-}
-
-.credits li {
-  display: grid;
-  gap: 2px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.credits b {
-  color: var(--text);
-}
-
 .dialog .report {
   max-height: 220px;
   overflow: auto;
