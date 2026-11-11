@@ -60,6 +60,7 @@ export const readyText = (next: string, hold: RestartHold | null) => {
     : `Launcher ${next} is ready. ${holdText(hold)}. After that, it also installs when you Quit.`;
 };
 export const updatedText = (version: string) => `Updated to launcher ${version}`;
+export const whatsNewTitle = (version: string) => `What's new in launcher ${version}`;
 export const downloadFailedText = (current: string) =>
   `Couldn't download the launcher update. Launcher ${current} keeps working.`;
 export const rejectedText = (next: string, current: string) =>
