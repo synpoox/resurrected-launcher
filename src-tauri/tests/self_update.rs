@@ -30,6 +30,7 @@ use resurrected_launcher_lib::contract::{
 use resurrected_launcher_lib::game::{GameHost, SystemGameHost};
 use resurrected_launcher_lib::install::download::Downloader;
 use resurrected_launcher_lib::install::preflight::SystemHost;
+use resurrected_launcher_lib::lifecycle;
 use resurrected_launcher_lib::state::{InstalledRelease, Preferences, StateStore};
 use serde_json::{json, Value};
 use support::{DisposableGame, FixtureServer, Reply};
@@ -294,6 +295,9 @@ impl Rig {
             .invoke_handler(app::invoke_handler())
             .manage(Arc::clone(&launcher))
             .manage(Arc::clone(&updater))
+            .manage(resurrected_launcher_lib::lifecycle::notice::Dir(
+                data.path().to_path_buf(),
+            ))
             .build(context)
             .unwrap();
         let (tx, phases) = channel();
@@ -778,6 +782,23 @@ fn an_unreachable_endpoint_fails_the_check_and_changes_nothing() {
 }
 
 // ---- held restart ----
+
+#[test]
+fn restart_to_update_keeps_the_window_position() {
+    let (server, key) = (FixtureServer::start(), TestKey::generate());
+    publish(&server, INSTALLER, &key.sign(INSTALLER, NEXT));
+    let rig = Rig::new(&server, &key);
+    rig.check(false).unwrap();
+    rig.download().unwrap();
+    rig.phases_until("ready");
+    let saved = rig._data.path().join(lifecycle::position::FILE);
+    assert!(!saved.exists());
+    rig.restart().unwrap();
+    assert!(
+        lifecycle::position::read(rig._data.path()).is_some(),
+        "the position is saved before the installer takes over"
+    );
+}
 
 #[test]
 fn restart_waits_while_a_game_runs() {

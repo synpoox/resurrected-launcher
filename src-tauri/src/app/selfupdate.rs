@@ -466,6 +466,8 @@ impl SelfUpdater {
     ) -> Result<(), LauncherError> {
         let ready = self.ready()?;
         launcher.begin_self_update_install()?;
+        // The installer relaunches the launcher: keep the window's spot (#188).
+        crate::lifecycle::position::save(app);
         self.install(app, ready, true)
             .inspect_err(|_| launcher.end_self_update_install())
     }
