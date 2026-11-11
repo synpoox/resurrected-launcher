@@ -32,3 +32,10 @@
   --glow: #e3353d59; /* primary button outer glow: --accent at 35% */
   --glow-hover: #e3353d8c; /* hover glow: --accent at 55% */
 }
+
+/* Type scale for dialogs. */
+:root {
+  --text-body: 16px;
+  --text-small: 14px;
+  --text-title: 24px;
+}

@@ -25,6 +25,7 @@ import { existingOf, hasNotice, journeyOf, type Journey } from "./journey";
 import { NewsFeed } from "./NewsFeed";
 import { PatchNotes } from "./PatchNotes";
 import { Progress } from "./Progress";
+import { rememberSaveBreakingAck, saveBreakingAcked } from "./saveAck";
 import { progressStats } from "./stats";
 import { asError, type ProductData } from "./store";
 
@@ -315,7 +316,13 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         fail(e);
         return;
       }
-      if (kind === "update" && inspection.release.save_breaking) {
+      if (kind === "update" && inspection.breaks_saves) {
+        // Acknowledged once per target release (issue 213): a retry after a cancel or failure
+        // doesn't ask again.
+        if (saveBreakingAcked(product.id, inspection.release.release_id)) {
+          await start(kind, inspection, { acknowledge_save_breaking: true });
+          return;
+        }
         setDialog({ kind: "save-breaking", inspection });
         return;
       }
@@ -800,6 +807,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           onClose={closeDialog}
           onConfirm={() => {
             closeDialog();
+            rememberSaveBreakingAck(product.id, dialog.inspection.release.release_id);
             void pending.run("update", () => start("update", dialog.inspection, { acknowledge_save_breaking: true }));
           }}
         />

@@ -89,6 +89,7 @@ impl Rig {
             release_sha256: sha256(&release.manifest_json),
             installed,
             earlier: &[],
+            history: &[],
             acknowledge_save_breaking: false,
             consent_clean_install: false,
         }
@@ -487,6 +488,30 @@ fn save_breaking_release_is_refused_without_acknowledgement_and_saves_are_untouc
     // The untouched config default moves to fixture 3's save format; the save's
     // bytes are exactly what they were (no conversion).
     assert_eq!(tree(&root), with_file(release_tree(&r3), SAVE, &save));
+    assert_eq!(rig.installed_release().as_deref(), Some(PD2R_3));
+}
+
+/// #213: a higher save format is refused without acknowledgement even when the
+/// target is not itself flagged `save_breaking`, and goes ahead with it.
+#[test]
+fn higher_save_format_is_refused_without_acknowledgement() {
+    let rig = Rig::new();
+    let (r2, mut m2) = rig.served(PD2R_2);
+    let root = rig.game.installed(&r2);
+    m2.saves.save_format_version = Some(1);
+    rig.run(&rig.request(Adopt, &r2, &m2, None)).unwrap();
+    let (r3, mut m3) = rig.served(PD2R_3);
+    m3.saves.incompatibility_notice = None;
+    m3.saves.save_format_version = Some(2);
+    let before = tree(&root);
+
+    let refused = rig.run(&rig.request(Update, &r3, &m3, Some(&m2)));
+    assert_eq!(code(refused), ErrorCode::SaveBreakingNotAcknowledged);
+    assert_eq!(tree(&root), before);
+
+    let mut ack = rig.request(Update, &r3, &m3, Some(&m2));
+    ack.acknowledge_save_breaking = true;
+    rig.run(&ack).unwrap();
     assert_eq!(rig.installed_release().as_deref(), Some(PD2R_3));
 }
 

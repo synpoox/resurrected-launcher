@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { ApiContext } from "../api/context";
 import { createFixtureApi, sceneByKey, type FixtureApi } from "../api/fixtures";
+import { resetSaveBreakingAcks } from "../product/saveAck";
 import { ProductPage, seenKey } from "../product/ProductPage";
 import { productById } from "../products";
 import type { NewsState } from "../api/types";
@@ -33,7 +34,10 @@ const names = (a: FixtureApi) => a.calls.map((c) => c.name);
 const focused = () => document.activeElement as HTMLElement;
 const loaded = () => screen.findByRole("tablist");
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  resetSaveBreakingAcks();
+});
 afterEach(() => {
   cleanup();
   api?.dispose();

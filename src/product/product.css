@@ -707,6 +707,7 @@
 }
 
 .ack {
+  font-size: var(--text-body);
   display: flex;
   gap: 10px;
   align-items: flex-start;
@@ -717,7 +718,7 @@
 }
 
 .tip {
-  font-size: 13px;
+  font-size: var(--text-small);
 }
 
 .kept {

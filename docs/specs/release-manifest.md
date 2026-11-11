@@ -98,6 +98,7 @@ Unknown game/loader combinations block Play.
 | `saves.folder` | One folder name under D2R's per-user mod save directory. Saves are never part of the payload. |
 | `saves.save_breaking` | Whether characters from the previous release may not load (ADR 0001). |
 | `saves.incompatibility_notice` | Non-empty text exactly when `save_breaking` is true, otherwise `null`. Shown and acknowledged before updating. |
+| `saves.save_format_version` | Optional integer >= 1: the release's character-save format, which only rises. The launcher prompts before an update when the target's value differs from the installed release's, so a save-breaking release the update skips over is still caught. Also prompts on a lower value (downgrade) and when any cached release between the installed one and the target is `save_breaking` or declares a different value. Absent on either side counts as compatible. **Rollout:** launchers before this field was added reject unknown keys (`metadata_invalid`), and `schema_version` stays 3, so the toolkit must not emit it until the minimum supported launcher parses it (#213). |
 | `saves.loader_save_format` | Optional `{file, key, value}`, same rules as a required setting. |
 
 ### Loader

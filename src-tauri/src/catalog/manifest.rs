@@ -111,6 +111,11 @@ pub struct Saves {
     pub folder: RelativePath,
     /// Present exactly when the release is save-breaking; shown before updating.
     pub incompatibility_notice: Option<String>,
+    /// The release's character-save format, a number that only ever rises. Absent
+    /// (older manifests) means unknown, which counts as compatible. Comparing the
+    /// installed and target values catches a save-breaking release that an update
+    /// skips over (#213).
+    pub save_format_version: Option<u32>,
     pub loader_save_format: Option<Setting>,
 }
 
@@ -157,6 +162,43 @@ impl ReleaseManifest {
 
     pub fn is_save_breaking(&self) -> bool {
         self.saves.incompatibility_notice.is_some()
+    }
+
+    /// Whether moving from `installed` to this release may leave character saves
+    /// unusable (#213). True when this release is itself save-breaking, or when the
+    /// installed release declares a save format and this release declares a
+    /// different one (higher: a breaking release may have been skipped; lower: a
+    /// downgrade), or when any release in `history` between the installed one
+    /// (exclusive) and this one (inclusive of its date) is save-breaking or declares
+    /// a format other than the installed one's. Missing data counts as compatible.
+    pub fn breaks_saves_from(
+        &self,
+        installed: Option<&ReleaseManifest>,
+        history: &[ReleaseManifest],
+    ) -> bool {
+        if self.is_save_breaking() {
+            return true;
+        }
+        let Some(installed) = installed else {
+            return false;
+        };
+        let differs = |m: &ReleaseManifest| {
+            matches!(
+                (installed.saves.save_format_version, m.saves.save_format_version),
+                (Some(from), Some(to)) if from != to
+            )
+        };
+        if differs(self) {
+            return true;
+        }
+        history.iter().any(|m| {
+            m.product_id == self.product_id
+                && m.release_id != self.release_id
+                && m.release_id != installed.release_id
+                && m.release_date >= installed.release_date
+                && m.release_date <= self.release_date
+                && (m.is_save_breaking() || differs(m))
+        })
     }
 
     /// Ownership of a path relative to `install_root`, compared as Windows does.
@@ -297,6 +339,7 @@ struct RawSaves {
     folder: String,
     save_breaking: bool,
     incompatibility_notice: Option<String>,
+    save_format_version: Option<u32>,
     loader_save_format: Option<RawSetting>,
 }
 
@@ -525,6 +568,10 @@ impl RawManifest {
         let saves = Saves {
             folder,
             incompatibility_notice,
+            save_format_version: match s.save_format_version {
+                Some(0) => return Err(invalid("saves.save_format_version", "must be at least 1")),
+                v => v,
+            },
             loader_save_format: s
                 .loader_save_format
                 .map(|l| setting("saves.loader_save_format", l))

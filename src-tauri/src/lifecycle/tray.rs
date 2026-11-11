@@ -480,6 +480,13 @@ impl Model {
         };
         let started = block_on(async {
             let plan = app::inspect_operation(app.state(), Versioned::new(req.clone())).await?;
+            // An update that skips a save-breaking release is only known to the
+            // inspection (installed vs target save format; #213).
+            if plan.data.breaks_saves
+                && matches!(kind, OperationKind::Install | OperationKind::Update)
+            {
+                return Ok(false);
+            }
             app::start_operation(
                 app.clone(),
                 app.state(),
@@ -487,11 +494,17 @@ impl Model {
                 plan.data.token,
             )
             .await
+            .map(|()| true)
         });
         // A refused start shows as an error; Show what happened opens the window.
         match started {
-            Ok(()) => self.failed.remove(&product),
-            Err(e) => self.failed.insert(product, (kind, Some(e))),
+            Ok(false) => request(app, TrayAction::SaveBreaking, &product, None),
+            Ok(true) => {
+                self.failed.remove(&product);
+            }
+            Err(e) => {
+                self.failed.insert(product, (kind, Some(e)));
+            }
         };
     }
 }
