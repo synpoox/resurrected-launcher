@@ -372,6 +372,28 @@ describe("toasts", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("updated with notes already seen falls back to the Updated toast (#189)", async () => {
+    localStorage.setItem("launcher.whatsNewSeen", "1.3.0");
+    mount("updated-notes");
+    await within(notifications()).findByText("Updated to launcher 1.3.0");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("updated with notes falls back to the Updated toast when storage throws (#189)", async () => {
+    const real = Storage.prototype.getItem;
+    const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key: string) {
+      if (key === "launcher.whatsNewSeen") throw new Error("denied");
+      return real.call(this, key);
+    });
+    try {
+      mount("updated-notes");
+      await within(notifications()).findByText("Updated to launcher 1.3.0");
+      expect(screen.queryByRole("dialog")).toBeNull();
+    } finally {
+      get.mockRestore();
+    }
+  });
+
   it("updated without notes keeps the Updated toast and opens no dialog", async () => {
     mount("updated");
     await within(notifications()).findByText("Updated to launcher 1.3.0");

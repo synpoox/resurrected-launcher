@@ -68,11 +68,18 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
   /** Counts statuses, so a request that answers after its next status already arrived still frees. */
   const statusSeq = useRef(0);
 
+  /** The version whose What's new dialog opened, so its Updated toast stays suppressed. */
+  const notesOpened = useRef<string | null>(null);
+
   useEffect(() => {
     let live = true;
     // The first start of a new version opens its notes once, instead of the Updated toast.
+    // When the dialog doesn't open (already seen, storage failing), the toast shows as usual.
     const openNotes = (s: SelfUpdateStatus) => {
-      if (s.phase === "updated" && s.notes?.trim() && takeWhatsNew(s.current)) setNotes({ version: s.current, notes: s.notes });
+      if (s.phase === "updated" && s.notes?.trim() && takeWhatsNew(s.current)) {
+        notesOpened.current = s.current;
+        setNotes({ version: s.current, notes: s.notes });
+      }
     };
     const unlisten = api.onPhase((s) => {
       if (!live) return;
@@ -157,7 +164,7 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
   useEffect(() => {
     if (!status) return;
     const key = toastKey(status);
-    const input = withNotesPhase(status) ? null : toastFor(status, hold, { download, restart, whatsNew, later, diagnostics: () => setDiagnostics(true) });
+    const input = notesReplaceToast(status, notesOpened.current) ? null : toastFor(status, hold, { download, restart, whatsNew, later, diagnostics: () => setDiagnostics(true) });
     const current = openToast.current;
     if (current?.key === key) {
       // Same phase and release, new details (a restart hold began or ended).
@@ -223,8 +230,9 @@ export function SelfUpdateProvider({ api, children }: { api: SelfUpdateApi; chil
   );
 }
 
-/** Updated with release notes: the What's new dialog is its notice, not a toast. */
-const withNotesPhase = (s: SelfUpdateStatus) => s.phase === "updated" && !!s.notes?.trim();
+/** Updated with release notes whose What's new dialog opened: the dialog is its notice, not a toast. */
+const notesReplaceToast = (s: SelfUpdateStatus, opened: string | null) =>
+  s.phase === "updated" && !!s.notes?.trim() && opened === s.current;
 
 interface OpenToast {
   id: number;

@@ -153,7 +153,8 @@ jobs:
           # (Markdown subset, as in product patch notes) becomes latest.json's notes.
           # With no file, the notes are empty and the launcher shows no dialog.
           $notesFile = "docs/release/notes/$env:VERSION.md"
-          $notes = if (Test-Path -LiteralPath $notesFile) { (Get-Content -LiteralPath $notesFile -Raw -Encoding utf8).Trim() } else { "" }
+          $notes = if (Test-Path -LiteralPath $notesFile) { "$(Get-Content -LiteralPath $notesFile -Raw -Encoding utf8)".Trim() } else { "" }
+          if (-not $notes) { Write-Output "::warning::No release notes in $notesFile; the launcher will show no What's new dialog." }
           $latest = [ordered]@{
             version  = $env:VERSION
             notes    = $notes
