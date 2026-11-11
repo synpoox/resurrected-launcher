@@ -6,9 +6,9 @@
   inset: 0;
 }
 
-/* News feed column width (issue 139): about 330px at the 1024 minimum, up to 440px on wide windows. */
+/* News feed column width (issues 139, 216): about 307px at the 1024 minimum, up to 380px on wide windows. */
 .page {
-  --feed-width: clamp(300px, 32vw, 440px);
+  --feed-width: clamp(290px, 30vw, 380px);
 }
 
 /* Hero */
@@ -246,10 +246,6 @@
   display: grid;
 }
 
-.feed h2 {
-  padding: 0 0 10px;
-}
-
 .feed-list {
   list-style: none;
   display: grid;
@@ -285,8 +281,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  letter-spacing: 1px;
+  font-size: 14px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -300,6 +296,7 @@
   font-size: 18px;
   font-weight: 700;
   line-height: 1.3;
+  text-wrap: balance;
 }
 
 /* At most two lines; the full text is still in the button's accessible name. */
@@ -311,9 +308,13 @@
   font-size: 14px;
   line-height: 1.5;
   color: var(--hero-copy);
+  text-wrap: pretty;
 }
 
 .feed-empty {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
   padding: 18px 20px;
   font-size: 14px;
   color: var(--muted);
