@@ -23,6 +23,8 @@ export function createLiveApi() {
     previewDiagnostics: ipc.previewDiagnostics,
     saveDiagnostics: ipc.saveDiagnostics,
     showDiagnosticsInFolder: ipc.showDiagnosticsInFolder,
+    copyLauncherLog: ipc.copyLauncherLog,
+    openLogsFolder: ipc.openLogsFolder,
     getStartWithWindows: ipc.getStartWithWindows,
     setStartWithWindows: ipc.setStartWithWindows,
 

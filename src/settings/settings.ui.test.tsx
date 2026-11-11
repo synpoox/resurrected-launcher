@@ -297,6 +297,16 @@ describe("Folders and plugins", () => {
 });
 
 describe("Troubleshooting", () => {
+  it("copies the redacted launcher log and opens the logs folder (#186)", async () => {
+    const { api, user } = await openSettings("ready");
+    await user.click(tab("Troubleshooting"));
+    await user.click(within(panel()).getByRole("button", { name: "Copy log" }));
+    await screen.findByText(/Copied the end of the launcher log/);
+    expect(await navigator.clipboard.readText()).toContain("started by <you>");
+    await user.click(within(panel()).getByRole("button", { name: "Open logs folder" }));
+    await waitFor(() => expect(names(api)).toContain("openLogsFolder"));
+  });
+
   it("reviews the full report, re-previews with the log, and saves with Show in folder", async () => {
     const { api, user } = await openSettings("ready");
     await user.click(tab("Troubleshooting"));
