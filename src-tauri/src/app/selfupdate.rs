@@ -774,6 +774,26 @@ mod tests {
     }
 
     #[test]
+    fn updated_serializes_notes_only_when_present() {
+        let with = SelfUpdateStatus::Updated {
+            current: "1.1.0".into(),
+            notes: Some("Fixes".into()),
+        };
+        assert_eq!(
+            serde_json::to_value(&with).unwrap(),
+            serde_json::json!({ "phase": "updated", "current": "1.1.0", "notes": "Fixes" })
+        );
+        let without = SelfUpdateStatus::Updated {
+            current: "1.1.0".into(),
+            notes: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&without).unwrap(),
+            serde_json::json!({ "phase": "updated", "current": "1.1.0" })
+        );
+    }
+
+    #[test]
     fn download_path_stays_in_the_update_dir() {
         struct NoHost;
         impl UpdateHost for NoHost {
