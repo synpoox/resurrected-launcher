@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Inspection, ProgressEvent } from "../api/types";
-import { formatBytes, formatTimeLeft, patchVersion, relativeDate, releaseLabel, startedAgo, statusTag } from "./format";
+import { formatBytes, formatTimeLeft, operationFailureText, patchVersion, relativeDate, releaseLabel, startedAgo, statusTag } from "./format";
 import { badgeOf, existingOf, hasNotice } from "./journey";
 import { heading, MAX_LIST_DEPTH, MAX_NOTES_CHARS, parseBlocks, parseInline, parseNotes } from "./notesMarkdown";
 import { progressStats, type Sample } from "./stats";
@@ -74,6 +74,18 @@ describe("format", () => {
     expect(releaseLabel("r", "0.2.0-alpha", notes)).toBe("0.2.0-alpha");
     expect(releaseLabel("r", "Alpha 3", notes)).toBe("Alpha 3");
     expect(releaseLabel("r", "alphabet 1", notes)).toBe("alpha alphabet 1");
+  });
+});
+
+describe("operationFailureText", () => {
+  it("says Windows blocked the change, with no path, on access denied", () => {
+    const message = String.raw`moving \\?\C:\Games\D2R\mods\PD2Resurrected: Access is denied. (os error 5)`;
+    const text = operationFailureText({ code: "access_denied", message }, "PD2R");
+    expect(text).toBe("Windows blocked a change to the PD2R folder; close Explorer windows in it and try again.");
+  });
+  it("never shows the extended-length path prefix", () => {
+    const text = operationFailureText({ code: "internal", message: String.raw`creating \\?\C:\x: boom` }, "PD2R");
+    expect(text).toBe(String.raw`creating C:\x: boom`);
   });
 });
 

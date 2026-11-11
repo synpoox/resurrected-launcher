@@ -70,7 +70,7 @@ pub fn play(
 /// with handle inheritance on, so the launcher's own std handles (pipes when it
 /// was started by a script, CI or `tauri dev`) are made non-inheritable first;
 /// otherwise a parent reading such a pipe would wait for the game to exit (#71).
-/// The game gets null stdio, and dropping the `Child` closes our handle without killing
+/// The game gets null stdio and the environment of [`game_command`] (#169), and dropping the `Child` closes our handle without killing
 /// it. If the launcher runs in a job object that kills its processes on close, the
 /// game is created with `CREATE_BREAKAWAY_FROM_JOB`; a job that forbids breakaway
 /// makes that fail with access denied, and the game is started inside it instead.
@@ -82,12 +82,7 @@ pub(super) fn system_spawn(exe: &Path, args: &[String], cwd: &Path) -> io::Resul
     #[cfg(windows)]
     stop_inheriting_std_handles();
     let spawn = |flags: u32| {
-        let mut cmd = Command::new(exe);
-        cmd.args(args)
-            .current_dir(cwd)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+        let mut cmd = game_command(exe, args, cwd);
         #[cfg(windows)]
         std::os::windows::process::CommandExt::creation_flags(&mut cmd, flags);
         #[cfg(not(windows))]
@@ -101,6 +96,34 @@ pub(super) fn system_spawn(exe: &Path, args: &[String], cwd: &Path) -> io::Resul
 }
 
 const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+
+/// Variables the launcher may have inherited that a game started from Explorer
+/// does not get, which the game must not see either (#169). A launcher started by
+/// an installer run from a Firefox download inherits Firefox's environment:
+/// `__COMPAT_LAYER` (e.g. `DetectorsAppHealth`) applies Windows compatibility
+/// shims to every descendant, and under it D2R fails its offline licence check
+/// ("not been online in the last 30 days"); `MOZ_*` is Firefox's own state.
+fn not_inherited(name: &str) -> bool {
+    let name = name.to_ascii_uppercase();
+    name == "__COMPAT_LAYER" || name.starts_with("MOZ_")
+}
+
+/// The game's command: exe, args, working directory, null stdio, and the
+/// launcher's environment without the variables [`not_inherited`] names.
+fn game_command(exe: &Path, args: &[String], cwd: &Path) -> Command {
+    let mut cmd = Command::new(exe);
+    cmd.args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    for (name, _) in std::env::vars_os() {
+        if not_inherited(&name.to_string_lossy()) {
+            cmd.env_remove(name);
+        }
+    }
+    cmd
+}
 
 /// Clears `HANDLE_FLAG_INHERIT` on this process's std handles. Missing or
 /// unusable handles (a GUI build started from Explorer has none) are skipped.
