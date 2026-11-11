@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
@@ -231,7 +231,7 @@ describe("product page", () => {
     await waitFor(() => expect(names(api).filter((n) => n === "getNews")).toHaveLength(2));
   });
 
-  it("news: only the latest request's reply is shown", async () => {
+  it("news: Retry shows Retrying, disables the button, then Still offline on another failure", async () => {
     const replies: ((s: NewsState) => void)[] = [];
     mount("offline", (a) => {
       a.getNews = () => new Promise<NewsState>((resolve) => replies.push(resolve));
@@ -239,14 +239,21 @@ describe("product page", () => {
     await waitFor(() => expect(replies).toHaveLength(1));
     replies[0]({ status: "offline" });
     const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(screen.getByText(/News needs a connection/)).toBeTruthy();
     await userEvent.click(retry);
+    await waitFor(() => expect(replies).toHaveLength(2));
+    expect(screen.getByText(/Retrying/)).toBeTruthy();
+    expect((retry as HTMLButtonElement).disabled).toBe(true);
     await userEvent.click(retry);
+    expect(replies).toHaveLength(2);
+    await act(async () => replies[1]({ status: "offline" }));
+    expect(screen.getByText(/Still offline \(tried at /)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(replies).toHaveLength(3));
-    const item = (title: string): NewsState => ({ status: "ok", items: [{ tag: "Guide", title, published: "2026-11-01" }] });
-    await act(async () => replies[2](item("Latest")));
-    await act(async () => replies[1](item("Stale")));
+    await act(async () => replies[2]({ status: "ok", items: [{ tag: "Guide", title: "Latest", published: "2026-11-01" }] }));
     expect(screen.getByText(/Latest/)).toBeTruthy();
-    expect(screen.queryByText(/Stale/)).toBeNull();
+    expect(screen.queryByText(/Still offline/)).toBeNull();
   });
 
   it("About shows why when opening the page is refused", async () => {
@@ -314,6 +321,22 @@ describe("product page", () => {
     const banner = (await screen.findAllByRole("img")).find((i) => i.classList.contains("notes-banner"));
     expect(banner?.getAttribute("alt")).toMatch(/The Warlock seated on a throne/);
     expect(banner?.getAttribute("src")).not.toMatch(/^(https?:)?\/\//);
+  });
+
+  it("Patch Notes show the newest release's header image, and the hero art when it fails to load (#179)", async () => {
+    const url = "https://github.com/synpoox/pd2r/releases/download/v0.2.0/header.png";
+    const { user } = mount("ready", (a) => {
+      a.scene.notes = [
+        { ...a.scene.notes[0], release_id: "old", release_date: "2026-10-01", header_image: "https://github.com/old.png" },
+        { ...a.scene.notes[0], release_id: "new", release_date: "2026-11-04", header_image: url },
+      ];
+    });
+    await user.click(within(await loaded()).getByRole("tab", { name: "Patch Notes" }));
+    const banner = () => (screen.getAllByRole("img") as HTMLImageElement[]).find((i) => i.classList.contains("notes-banner"));
+    await waitFor(() => expect(banner()?.getAttribute("src")).toBe(url));
+    fireEvent.error(banner()!);
+    await waitFor(() => expect(banner()?.getAttribute("src")).not.toMatch(/^(https?:)?\/\//));
+    expect(banner()?.getAttribute("alt")).toMatch(/The Warlock seated on a throne/);
   });
 
   it("each release: two-line title, summary, divider and tag · date", async () => {

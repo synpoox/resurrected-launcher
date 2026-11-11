@@ -2,7 +2,6 @@ import { useEffect, useId, useState } from "react";
 import { useApi } from "../api/context";
 import type { Folder, ProductState } from "../api/types";
 import { isLauncherError } from "../api/types";
-import { HERO_ART } from "../art";
 import { LocationDialog } from "../product/dialogs";
 import { PRODUCTS, type Product } from "../products";
 import { Notice } from "../ui/Notice";
@@ -140,26 +139,6 @@ export function LauncherPanel() {
         </Row>
         <SelfUpdateRows />
       </Section>
-      <Section title="About and credits">
-        <ul className="credits">
-          {PRODUCTS.map((p) => {
-            const art = HERO_ART[p.hero];
-            return (
-              <li key={p.id}>
-                <b>{p.name}</b>
-                <span>
-                  {art.name} · {art.source}
-                </span>
-                <span className="hint">
-                  {art.placeholder
-                    ? "Placeholder art, not game art. It is replaced before a public release."
-                    : "Promotional art, not mod gameplay."}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </Section>
     </>
   );
 }
@@ -253,7 +232,36 @@ function joinNames(names: string[]): string {
 // ---- Troubleshooting ----
 
 export function TroubleshootingPanel({ product }: { product: Product }) {
+  const api = useApi();
+  const toast = useToast();
   const [reviewing, setReviewing] = useState(false);
+  const pending = usePending();
+
+  const copyLog = async () => {
+    try {
+      const text = await api.copyLauncherLog();
+      if (!text) {
+        toast.show({ tone: "info", text: "The launcher log is empty, so there was nothing to copy." });
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      toast.show({
+        tone: "info",
+        text: "Copied the end of the launcher log. Your Windows user name and any credentials were removed.",
+      });
+    } catch {
+      toast.show({ tone: "error", text: "The launcher log couldn't be copied. Try Open logs folder instead." });
+    }
+  };
+
+  const openLogs = async () => {
+    try {
+      await api.openLogsFolder();
+    } catch {
+      toast.show({ tone: "error", text: "The logs folder couldn't be opened." });
+    }
+  };
+
   return (
     <Section title="Troubleshooting">
       <Row
@@ -263,6 +271,27 @@ export function TroubleshootingPanel({ product }: { product: Product }) {
         <button type="button" className="btn ghost small" onClick={() => setReviewing(true)}>
           Export diagnostics…
         </button>
+      </Row>
+      <Row
+        label="Launcher log"
+        hint="Copy log puts the end of the log on your clipboard, with your user name and credentials removed like in Export diagnostics."
+      >
+        <BusyButton
+          className="ghost small"
+          busy={pending.key === "copy"}
+          blocked={pending.key !== null}
+          onClick={() => void pending.run("copy", copyLog)}
+        >
+          Copy log
+        </BusyButton>
+        <BusyButton
+          className="ghost small"
+          busy={pending.key === "open"}
+          blocked={pending.key !== null}
+          onClick={() => void pending.run("open", openLogs)}
+        >
+          Open logs folder
+        </BusyButton>
       </Row>
       <p className="fine">
         For game problems, Repair is in {product.short}'s ⋯ Manage menu next to Play.

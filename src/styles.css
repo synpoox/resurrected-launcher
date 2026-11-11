@@ -63,7 +63,7 @@ code,
   color: var(--muted);
 }
 
-/* Motion (spec: Motion). Switching tabs and scrolling are instant. */
+/* Motion (spec: Motion). Scrolling is instant; the main action eases in when a tab opens. */
 html {
   scroll-behavior: auto;
 }
@@ -78,6 +78,13 @@ html {
   from {
     opacity: 0;
     transform: translateY(8px);
+  }
+}
+
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
   }
 }
 

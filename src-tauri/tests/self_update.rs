@@ -548,7 +548,9 @@ fn a_signed_update_downloads_into_app_data_and_installs_on_restart() {
     assert_eq!(
         after.status(),
         SelfUpdateStatus::Updated {
-            current: NEXT.into()
+            current: NEXT.into(),
+            // latest.json's notes ride the marker, so What's new shows once (#189).
+            notes: Some(format!("Launcher {NEXT}")),
         }
     );
     assert!(!kept.exists());

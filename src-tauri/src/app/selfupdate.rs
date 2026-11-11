@@ -42,7 +42,7 @@ pub const SELF_UPDATE_EVENT: &str = "self-update-phase";
 /// The folder under the launcher's app local data that holds downloaded updates.
 pub const UPDATE_DIR: &str = "launcher-updates";
 
-/// Written right before the installer runs: `{ "from": ..., "to": ... }`.
+/// Written right before the installer runs: `{ "from": ..., "to": ..., "notes": ... }`.
 const INSTALLING_MARKER: &str = "installing.json";
 
 /// What's new opens this page plus a version. Fixed here; the frontend sends nothing.
@@ -79,9 +79,12 @@ pub enum SelfUpdateStatus {
         current: String,
         next: String,
     },
-    /// After the restart that installed it: `current` is the new version.
+    /// After the restart that installed it: `current` is the new version, and
+    /// `notes` the release notes `latest.json` gave it (#189), shown once.
     Updated {
         current: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        notes: Option<String>,
     },
     DownloadFailed {
         current: String,
@@ -186,6 +189,9 @@ fn failed(code: ErrorCode, what: &str, e: impl std::fmt::Display) -> LauncherErr
 struct Installing {
     from: String,
     to: String,
+    /// The release notes `latest.json` gave the update being installed (#189).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    notes: Option<String>,
 }
 
 struct Inner {
@@ -211,12 +217,13 @@ impl SelfUpdater {
         let installed = std::fs::read(&marker)
             .ok()
             .and_then(|b| serde_json::from_slice::<Installing>(&b).ok())
-            .is_some_and(|m| m.to == current && m.from != current);
-        let status = if installed {
+            .filter(|m| m.to == current && m.from != current);
+        let status = if let Some(m) = installed {
             // The installer it ran is spent.
             let _ = std::fs::remove_dir_all(&dir);
             SelfUpdateStatus::Updated {
                 current: current.clone(),
+                notes: m.notes.filter(|n| !n.trim().is_empty()),
             }
         } else {
             let _ = std::fs::remove_file(&marker);
@@ -521,6 +528,7 @@ impl SelfUpdater {
         let marker = Installing {
             from: current.clone(),
             to: next.clone(),
+            notes: update.body.clone(),
         };
         let written = serde_json::to_vec(&marker)
             .map_err(io::Error::other)
@@ -766,6 +774,26 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&r).unwrap()["phase"],
             "signature_rejected"
+        );
+    }
+
+    #[test]
+    fn updated_serializes_notes_only_when_present() {
+        let with = SelfUpdateStatus::Updated {
+            current: "1.1.0".into(),
+            notes: Some("Fixes".into()),
+        };
+        assert_eq!(
+            serde_json::to_value(&with).unwrap(),
+            serde_json::json!({ "phase": "updated", "current": "1.1.0", "notes": "Fixes" })
+        );
+        let without = SelfUpdateStatus::Updated {
+            current: "1.1.0".into(),
+            notes: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&without).unwrap(),
+            serde_json::json!({ "phase": "updated", "current": "1.1.0" })
         );
     }
 

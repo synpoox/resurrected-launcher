@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useApi } from "../api/context";
 import { subscribe } from "../api/subscribe";
 import type { SceneOpen } from "../api/fixtures";
@@ -74,18 +74,32 @@ function useNews(productId: string) {
   const api = useApi();
   const toast = useToast();
   const [news, setNews] = useState<NewsState | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [failedAt, setFailedAt] = useState<Date | null>(null);
   const latest = useRef(0);
-  const load = useCallback(() => {
-    const request = ++latest.current;
-    const show = (s: NewsState) => {
-      if (request === latest.current) setNews(s);
-    };
-    api.getNews(productId).then(show, () => show({ status: "offline" }));
-  }, [api, productId]);
-  useEffect(load, [load]);
+  const load = useCallback(
+    (manual = false) => {
+      const request = ++latest.current;
+      const show = (s: NewsState) => {
+        if (request !== latest.current) return;
+        setNews(s);
+        setRetrying(false);
+        // A manual Retry that fails again says so, with when (issue 201).
+        setFailedAt(manual && s.status === "offline" ? new Date() : null);
+      };
+      api.getNews(productId).then(show, () => show({ status: "offline" }));
+    },
+    [api, productId],
+  );
+  useEffect(() => load(), [load]);
   return {
     news,
-    retry: load,
+    retrying,
+    failedAt,
+    retry: () => {
+      setRetrying(true);
+      load(true);
+    },
     open: (i: number) =>
       void api.openNewsLink(productId, i).catch((e: unknown) => {
         toast.show({ tone: "error", text: asError(e).message });
@@ -122,7 +136,7 @@ function ComingSoon({ product }: { product: Product }) {
             )}
           </div>
         </div>
-        <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} />
+        <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} retrying={feed.retrying} failedAt={feed.failedAt} />
       </div>
     </div>
   );
@@ -208,7 +222,9 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   useEffect(loadNotes, [loadNotes, installedId, recommendedId]);
 
   // The first launch after an update opens Patch Notes once, on the new release (see initialTab).
-  useEffect(() => {
+  // A layout effect, so the release is recorded in the same commit that first shows the page:
+  // a passive effect could still be pending when the page is already visible (issue 191).
+  useLayoutEffect(() => {
     if (installedId) localStorage.setItem(seenKey(product.id), installedId);
   }, [installedId, product.id]);
 
@@ -761,9 +777,9 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
                 </Notice>
               )}
               {notice()}
-              <div className="act">{actions(false)}</div>
+              <div className={journey === "startup-failed" ? "act act-failed" : "act"}>{actions(false)}</div>
             </div>
-            <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} />
+            <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} retrying={feed.retrying} failedAt={feed.failedAt} />
           </div>
         </div>
       )}

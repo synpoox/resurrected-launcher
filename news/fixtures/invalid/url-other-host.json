@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "T",
+      "published": "2026-11-01",
+      "url": "https://evil.example/x"
+    }
+  ]
+}
