@@ -217,6 +217,9 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   const backups = shownBackups ?? [];
   const last = samples.at(-1)?.event ?? null;
   const journey: Journey = journeyOf(state, last);
+  // The main action eases in after a tab opens or its state changes, never on a page's first paint.
+  const firstJourney = useRef(journey);
+  const lifts = switched || journey !== firstJourney.current;
   const stats = progressStats(samples);
 
   const fail = useCallback((e: unknown) => toast.show({ tone: "error", text: asError(e).message }), [toast]);
@@ -766,7 +769,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
       {reading ? (
         <Ghosted key="notes" className={`tabpanel${switched ? " enter-notes" : ""}`} role="tabpanel" id={ids.notes} aria-labelledby={`${ids.notes}-tab`}>
           <div className="topact">
-            <div className="act">{actions(true)}</div>
+            <div className={lifts ? "act lifts" : "act"}>{actions(true)}</div>
           </div>
           <PatchNotes product={product} releases={releases} onRetry={loadNotes} />
           <div className="fade" aria-hidden="true" />
@@ -793,7 +796,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
                 </Notice>
               )}
               {notice()}
-              <div className={journey === "startup-failed" ? "act act-failed" : "act"}>{actions(false)}</div>
+              <div className={`act${journey === "startup-failed" ? " act-failed" : ""}${lifts ? " lifts" : ""}`}>{actions(false)}</div>
             </div>
             <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} retrying={feed.retrying} failedAt={feed.failedAt} />
           </div>

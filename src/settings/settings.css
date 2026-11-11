@@ -61,7 +61,6 @@
   overflow-y: auto;
   padding: calc(48px - var(--titlebar-height)) 48px 40px;
   scrollbar-color: var(--line) var(--bg);
-  animation: fade var(--dur-base) var(--ease-out);
 }
 
 .spanel > * {

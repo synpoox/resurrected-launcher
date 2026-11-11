@@ -134,17 +134,15 @@ html {
   }
 }
 
-/* Tabs: the panel that opens slides in from its side. */
+/* Tabs: the panel that opens slides in from its side. Transform only: the panels are opaque. */
 @keyframes slide-from-right {
   from {
-    opacity: 0;
     transform: translateX(24px);
   }
 }
 
 @keyframes slide-from-left {
   from {
-    opacity: 0;
     transform: translateX(-24px);
   }
 }
@@ -169,6 +167,11 @@ html {
 .ghost-out {
   pointer-events: none;
   animation: fade-out var(--dur-base) var(--ease-in) forwards !important;
+}
+
+/* A left tab panel (Ghosted) stays fully opaque beneath the new one until its entrance ends; no fade. */
+.ghost-out.ghost-hold {
+  animation: none !important;
 }
 
 .ghost-out * {

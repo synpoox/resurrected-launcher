@@ -40,6 +40,13 @@ export function useExitGhost(ref: RefObject<HTMLElement | null>, active = true, 
         if (below) parent.insertBefore(ghost, parent.firstChild);
         else parent.appendChild(ghost);
         const done = () => ghost.remove();
+        if (below) {
+          // A view switch never fades anything: the left view stays fully opaque beneath the new,
+          // opaque one while it slides in, then goes.
+          ghost.classList.add("ghost-hold");
+          setTimeout(done, MOTION.base);
+          return;
+        }
         ghost.addEventListener("animationend", (e) => e.target === ghost && done());
         setTimeout(done, GHOST_MAX_MS);
       });
@@ -47,7 +54,7 @@ export function useExitGhost(ref: RefObject<HTMLElement | null>, active = true, 
   }, [ref, active, below]);
 }
 
-/** A div whose departure fades out (see `useExitGhost`): a tab's panel, a whole product page. */
+/** A div for a view switch (see `useExitGhost`): a tab's panel, a whole product page. It is opaque; it never fades. */
 export function Ghosted(props: ComponentProps<"div">) {
   const ref = useRef<HTMLDivElement>(null);
   useExitGhost(ref, true, true);
