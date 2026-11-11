@@ -28,3 +28,10 @@
   --hover-tint: #ffffff0f; /* selected radio row */
   --white: #fff; /* text on --button and --ribbon */
 }
+
+/* Type scale for dialogs. */
+:root {
+  --text-body: 16px;
+  --text-small: 14px;
+  --text-title: 24px;
+}

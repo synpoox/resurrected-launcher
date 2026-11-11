@@ -137,7 +137,7 @@
 }
 
 .dialog {
-  width: 520px;
+  width: 600px;
   max-width: calc(100% - 48px);
   max-height: calc(100% - 96px);
   overflow-y: auto;
@@ -146,7 +146,7 @@
   padding: 26px 28px;
   background: var(--panel);
   border-top: 2px solid var(--muted);
-  font-size: 14px;
+  font-size: var(--text-body);
   line-height: 1.6;
   color: var(--hero-copy);
 }
@@ -157,10 +157,11 @@
 
 .dialog h2 {
   color: var(--text);
-  font-size: 20px;
+  font-size: var(--text-title);
   font-weight: 900;
   letter-spacing: -0.4px;
   line-height: 1.2;
+  text-wrap: balance;
 }
 
 .dialog b,

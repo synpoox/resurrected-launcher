@@ -157,17 +157,12 @@ export function SaveBreakingDialog({ product, inspection, installedVersion, onCo
       onClose={onClose}
       actions={
         <>
-          <button type="button" className="btn primary" disabled={!ack} aria-describedby="ack-why" onClick={onConfirm}>
+          <button type="button" className="btn primary" disabled={!ack} onClick={onConfirm}>
             Update to {version}
           </button>
           <button type="button" className="btn ghost" onClick={onClose} data-autofocus="">
             Not now
           </button>
-          {!ack && (
-            <span id="ack-why" className="why">
-              Tick the box above to update
-            </span>
-          )}
         </>
       }
     >
