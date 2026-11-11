@@ -12,9 +12,17 @@
   letter-spacing: 0.4px;
   text-transform: uppercase;
   transition:
-    background 150ms,
-    box-shadow 150ms,
-    transform 150ms;
+    background var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard),
+    opacity var(--dur-base) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+/* Press: a small dip, instantly under the pointer. */
+.btn:not([disabled], [aria-disabled="true"]):active {
+  transform: scale(0.97);
 }
 
 .btn.primary {
@@ -27,6 +35,10 @@
   background: linear-gradient(135deg, var(--button-hover), var(--button-hover-coral));
   box-shadow: 0 0 24px var(--glow-hover);
   transform: translateY(-2px);
+}
+
+.btn.primary:not([disabled], [aria-disabled="true"]):active {
+  transform: translateY(0) scale(0.97);
 }
 
 .btn.primary[disabled],
@@ -83,7 +95,7 @@
   height: 14px;
   border: 2px solid;
   border-right-color: transparent;
-  animation: spin 800ms linear infinite;
+  animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
@@ -103,6 +115,11 @@
   color: var(--text);
   text-decoration: underline;
   text-underline-offset: 3px;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+
+.link:not([aria-disabled="true"]):hover {
+  color: var(--detail);
 }
 
 .why {
@@ -143,6 +160,7 @@
   display: grid;
   place-items: center;
   background: var(--backdrop);
+  animation: fade var(--dur-base) var(--ease-out);
 }
 
 .dialog {
@@ -158,6 +176,7 @@
   font-size: var(--text-body);
   line-height: 1.6;
   color: var(--hero-copy);
+  animation: pop var(--dur-base) var(--ease-out);
 }
 
 .dialog.risk {
@@ -217,6 +236,8 @@
   background: var(--panel);
   border: 1px solid var(--line);
   border-top: 2px solid var(--accent);
+  transform-origin: bottom right;
+  animation: pop var(--dur-fast) var(--ease-out);
 }
 
 .menu [role="menuitem"] {
@@ -224,6 +245,7 @@
   text-align: left;
   padding: 10px 16px;
   font-size: 13px;
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 
 .menu [role="menuitem"]:hover,
@@ -276,6 +298,7 @@
   font-size: 17px;
   line-height: 1.5;
   color: var(--hero-copy);
+  animation: toast-in var(--dur-base) var(--ease-out);
 }
 
 .toast.error {
@@ -284,14 +307,21 @@
 
 /* Closing (issue 156): fades and drops away, then leaves. Off under reduced motion. */
 .toast.leaving {
-  animation: toast-out 200ms ease-in forwards;
+  animation: toast-out var(--dur-base) var(--ease-in) forwards;
   pointer-events: none;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
 }
 
 @keyframes toast-out {
   to {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateX(24px);
   }
 }
 
@@ -316,6 +346,9 @@
   height: 22px;
   background: var(--rail);
   border: 1px solid var(--muted);
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
 }
 
 .switch .knob {
@@ -325,7 +358,9 @@
   width: 16px;
   height: 16px;
   background: var(--muted);
-  transition: transform 150ms;
+  transition:
+    transform var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
 }
 
 .switch[aria-checked="true"] {

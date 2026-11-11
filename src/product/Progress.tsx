@@ -23,7 +23,8 @@ export function Progress({ label, percent, detail, cancelLabel, onCancel, stripe
   const value = percent ?? 0;
   useEffect(() => {
     // CSSOM, not a style attribute: the CSP has `style-src 'self'`.
-    fill.current?.style.setProperty("width", `${value}%`);
+    // A clip, not a scale or width: the stripes keep their size, and nothing relayouts.
+    fill.current?.style.setProperty("--p", String(value / 100));
   }, [value]);
   return (
     <div className={`progress${compact ? " compact" : ""}`}>

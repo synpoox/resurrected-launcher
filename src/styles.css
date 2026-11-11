@@ -80,7 +80,9 @@ code,
   color: var(--muted);
 }
 
-/* Motion (spec: Motion). Scrolling is instant; the main action eases in when a tab opens. */
+/* Motion (spec: Motion; issue 204). Durations and easings are the --dur-* and --ease-* tokens.
+   Scrolling is instant. Only transform and opacity animate (the table of contents also eases its
+   height, once, on a short list). No animation delays an action: exits are inert copies. */
 html {
   scroll-behavior: auto;
 }
@@ -109,6 +111,85 @@ html {
   50% {
     opacity: 0.3;
   }
+}
+
+/* Dialogs and menus: fade and scale. */
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+}
+
+@keyframes pop-out {
+  to {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* Tabs: the panel that opens slides in from its side. Transform only: the panels are opaque. */
+@keyframes slide-from-right {
+  from {
+    transform: translateX(24px);
+  }
+}
+
+@keyframes slide-from-left {
+  from {
+    transform: translateX(-24px);
+  }
+}
+
+/* Table of contents: the list drops down and back up. */
+@keyframes toc-open {
+  from {
+    opacity: 0;
+    grid-template-rows: 0fr;
+  }
+}
+
+@keyframes toc-close {
+  to {
+    opacity: 0;
+    grid-template-rows: 0fr;
+  }
+}
+
+/* A view that has just been left fades away as an inert copy (useExitGhost). Nothing inside it
+   plays its own entrance again. */
+.ghost-out {
+  pointer-events: none;
+  animation: fade-out var(--dur-base) var(--ease-in) forwards !important;
+}
+
+/* A left tab panel (Ghosted) stays fully opaque beneath the new one until its entrance ends; no fade. */
+.ghost-out.ghost-hold {
+  animation: none !important;
+  /* Its own stacking context: its z-indexed children (copy, news) must not paint over the new panel. */
+  isolation: isolate;
+}
+
+.ghost-out * {
+  animation: none !important;
+}
+
+.ghost-out.backdrop {
+  animation-duration: var(--dur-fast) !important;
+}
+
+.ghost-out .dialog {
+  animation: pop-out var(--dur-fast) var(--ease-in) forwards !important;
+}
+
+.ghost-out.menu {
+  animation: pop-out var(--dur-fast) var(--ease-in) forwards !important;
 }
 
 /* Under prefers-reduced-motion: reduce, every animation and transition is off. */

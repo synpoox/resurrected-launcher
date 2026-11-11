@@ -1,3 +1,4 @@
+import { MOTION, motionAllowed } from "./motion";
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 export interface ToastAction {
@@ -45,12 +46,7 @@ const ToastContext = createContext<ToastApi | null>(null);
 
 export const TOAST_MS = 6000;
 /** The exit animation's length (`.toast.leaving` in ui.css). */
-export const TOAST_EXIT_MS = 200;
-
-/** Under reduced motion (or without matchMedia) a closing toast leaves at once. */
-function animatesExit(): boolean {
-  return typeof window.matchMedia === "function" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
+export const TOAST_EXIT_MS = MOTION.base;
 
 export function useToast(): ToastApi {
   const api = useContext(ToastContext);
@@ -65,7 +61,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const remove = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
   const dismiss = useCallback(
     (id: number) => {
-      if (!animatesExit()) return remove(id);
+      if (!motionAllowed()) return remove(id);
       setToasts((t) => t.map((x) => (x.id === id ? { ...x, leaving: true } : x)));
       setTimeout(() => remove(id), TOAST_EXIT_MS);
     },

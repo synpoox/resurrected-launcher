@@ -37,6 +37,10 @@
   font-size: 17px;
   font-weight: 700;
   color: var(--hero-copy);
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    background var(--dur-base) var(--ease-standard),
+    box-shadow var(--dur-base) var(--ease-standard);
 }
 
 .subnav [role="tab"]:hover {

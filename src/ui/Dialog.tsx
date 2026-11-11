@@ -1,5 +1,6 @@
 import { useId, useRef, type ReactNode } from "react";
 import { useFocusTrap } from "./focus";
+import { useExitGhost } from "./motion";
 
 export interface DialogProps {
   title: string;
@@ -17,8 +18,10 @@ export function Dialog({ title, tone = "info", onClose, children, actions }: Dia
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useFocusTrap(ref);
+  const backdrop = useRef<HTMLDivElement>(null);
+  useExitGhost(backdrop);
   return (
-    <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
+    <div ref={backdrop} className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
       <div
         ref={ref}
         className={`dialog ${tone}`}

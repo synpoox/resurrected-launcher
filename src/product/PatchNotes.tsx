@@ -1,7 +1,8 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { ReleaseNotes } from "../api/types";
 import { HERO_ART } from "../art";
 import type { Product } from "../products";
+import { MOTION, motionAllowed } from "../ui/motion";
 import { patchVersion, statusTag } from "./format";
 import { type Block, type Inline, type List, type NotesSection, parseNotes } from "./notesMarkdown";
 
@@ -111,7 +112,16 @@ export function NotesSections({ releaseKey, sections }: { releaseKey: string; se
 
 /** Collapsed by default; each entry scrolls to its section and moves focus to its heading. */
 function TableOfContents({ releaseKey, sections }: { releaseKey: string; sections: NotesSection[] }) {
-  const [open, setOpen] = useState(false);
+  // Closing: the list drops back up (height and opacity) before it is hidden; it is already out of reach.
+  // Opening and closing clip the list (product.css); steady open doesn't, so focus rings show whole.
+  const [phase, setPhase] = useState<"closed" | "opening" | "open" | "closing">("closed");
+  const open = phase === "open" || phase === "opening";
+  useEffect(() => {
+    if (phase !== "closing" && phase !== "opening") return;
+    const t = setTimeout(() => setPhase(phase === "closing" ? "closed" : "open"), MOTION.base);
+    return () => clearTimeout(t);
+  }, [phase]);
+  const toggle = () => setPhase(open ? (motionAllowed() ? "closing" : "closed") : motionAllowed() ? "opening" : "open");
   const listId = useId();
   const entries = sections.flatMap((s, i) => (s.heading ? [{ i, heading: s.heading }] : []));
   if (entries.length === 0) return null;
@@ -124,25 +134,27 @@ function TableOfContents({ releaseKey, sections }: { releaseKey: string; section
   };
   return (
     <nav className="notes-toc" aria-label="Table of contents">
-      <button type="button" className="notes-toc-toggle" aria-expanded={open} aria-controls={listId} onClick={() => setOpen(!open)}>
+      <button type="button" className="notes-toc-toggle" aria-expanded={open} aria-controls={listId} onClick={toggle}>
         <span>Table of contents</span>
         <span className="notes-toc-icon" aria-hidden="true">
           {open ? "−" : "+"}
         </span>
       </button>
-      <ol id={listId} hidden={!open}>
-        {entries.map(({ i, heading }) => {
-          const id = sectionId(releaseKey, i);
-          return (
-            <li key={i}>
-              {/* A button, not a link: the webview has no anchors (remote.gate). In-page only. */}
-              <button type="button" onClick={() => go(id)}>
-                <Text inlines={heading} />
-              </button>
-            </li>
-          );
-        })}
-      </ol>
+      <div className={`notes-toc-panel${phase === "closing" ? " closing" : ""}${phase === "opening" || phase === "closing" ? " animating" : ""}`} hidden={phase === "closed"} inert={!open || undefined}>
+        <ol id={listId}>
+          {entries.map(({ i, heading }) => {
+            const id = sectionId(releaseKey, i);
+            return (
+              <li key={i}>
+                {/* A button, not a link: the webview has no anchors (remote.gate). In-page only. */}
+                <button type="button" onClick={() => go(id)}>
+                  <Text inlines={heading} />
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+        </div>
     </nav>
   );
 }

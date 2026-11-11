@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { arrowKeys } from "./focus";
+import { useExitGhost } from "./motion";
 
 export interface MenuItem {
   label: string;
@@ -39,6 +40,7 @@ export function Menu({ label, items, defaultOpen = false, className = "", blocke
   const trigger = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const id = useId();
+  useExitGhost(list, open);
 
   useEffect(() => {
     if (open) list.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();

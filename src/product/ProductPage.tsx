@@ -20,6 +20,7 @@ import { BUSY_SAFETY_MS, BusyButton, usePending } from "../ui/pending";
 import { useToast } from "../ui/Toast";
 import { CleanInstallDialog, LocationDialog, SaveBreakingDialog, UninstallDialog, type SaveBreakingOp } from "./dialogs";
 import { formatBytes, formatCount, operationFailureText, formatTimeLeft, releaseLabel, startedAgo } from "./format";
+import { Ghosted } from "../ui/motion";
 import { HeroArt, HeroCopy } from "./Hero";
 import { existingOf, hasNotice, journeyOf, type Journey } from "./journey";
 import { NewsFeed } from "./NewsFeed";
@@ -193,6 +194,8 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   const toast = useToast();
   const feed = useNews(product.id);
   const installedId = state.installed?.release_id;
+  // Once a tab was chosen, the panel that opens slides in; the first paint of a page doesn't.
+  const [switched, setSwitched] = useState(false);
   const [tab, setTab] = useState<Tab>(() => forcedTab ?? initialTab(product.id, installedId));
   const [releases, setReleases] = useState<ReleaseNotes[] | null>(null);
   const [dialog, setDialog] = useState<DialogState>(() => (open === "d2r-choose" ? { kind: "locate" } : null));
@@ -214,6 +217,9 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   const backups = shownBackups ?? [];
   const last = samples.at(-1)?.event ?? null;
   const journey: Journey = journeyOf(state, last);
+  // The main action eases in after a tab opens or its state changes, never on a page's first paint.
+  const [firstJourney] = useState(journey);
+  const lifts = switched || journey !== firstJourney;
   const stats = progressStats(samples);
 
   const fail = useCallback((e: unknown) => toast.show({ tone: "error", text: asError(e).message }), [toast]);
@@ -742,7 +748,10 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           aria-selected={tab === t}
           aria-controls={ids[t]}
           tabIndex={tab === t ? 0 : -1}
-          onClick={() => setTab(t)}
+          onClick={() => {
+            setSwitched(true);
+            setTab(t);
+          }}
         >
           {t === "overview" ? "Overview" : "Patch Notes"}
           {t === "overview" && reading && hasNotice(journey) && (
@@ -758,15 +767,15 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
     <div className={`page ${reading ? "reading" : "overview"}`}>
       {tabs}
       {reading ? (
-        <div className="tabpanel" role="tabpanel" id={ids.notes} aria-labelledby={`${ids.notes}-tab`}>
+        <Ghosted key="notes" className={`tabpanel${switched ? " enter-notes" : ""}`} role="tabpanel" id={ids.notes} aria-labelledby={`${ids.notes}-tab`}>
           <div className="topact">
-            <div className="act">{actions(true)}</div>
+            <div className={lifts ? "act lifts" : "act"}>{actions(true)}</div>
           </div>
           <PatchNotes product={product} releases={releases} onRetry={loadNotes} />
           <div className="fade" aria-hidden="true" />
-        </div>
+        </Ghosted>
       ) : (
-        <div className="tabpanel" role="tabpanel" id={ids.overview} aria-labelledby={`${ids.overview}-tab`}>
+        <Ghosted key="overview" className={`tabpanel${switched ? " enter-overview" : ""}`} role="tabpanel" id={ids.overview} aria-labelledby={`${ids.overview}-tab`}>
           <HeroArt product={product} />
           <HeroCopy product={product} />
           <div className="bottom">
@@ -787,11 +796,11 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
                 </Notice>
               )}
               {notice()}
-              <div className={journey === "startup-failed" ? "act act-failed" : "act"}>{actions(false)}</div>
+              <div className={`act${journey === "startup-failed" ? " act-failed" : ""}${lifts ? " lifts" : ""}`}>{actions(false)}</div>
             </div>
             <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} retrying={feed.retrying} failedAt={feed.failedAt} />
           </div>
-        </div>
+        </Ghosted>
       )}
       {dialog?.kind === "locate" && (
         <LocationDialog

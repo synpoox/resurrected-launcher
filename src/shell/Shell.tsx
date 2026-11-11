@@ -102,21 +102,23 @@ export function Shell({ product, open, tab }: ShellProps) {
       <TitleBar />
       <Sidebar view={view} badges={badges} onSelect={select} />
       <main className="main" aria-label={current ? current.name : "Settings"}>
-        {current ? (
-          <ProductPage
-            key={current.id}
-            product={current}
-            data={products[current.id]}
-            refresh={refresh}
-            open={sceneOpen}
-            tab={sceneOpen === open ? tab : undefined}
-            trayFocus={trayFocus?.product_id === current.id ? trayFocus : undefined}
-            onOpenSettings={() => select({ kind: "settings" })}
-            onDismissBackups={dismissBackups}
-          />
-        ) : (
-          <Settings />
-        )}
+        {/* Switching product or Settings swaps at once; only the hero art crossfades (Hero.tsx). */}
+        <div key={current ? current.id : "settings"} className="view">
+          {current ? (
+            <ProductPage
+              product={current}
+              data={products[current.id]}
+              refresh={refresh}
+              open={sceneOpen}
+              tab={sceneOpen === open ? tab : undefined}
+              trayFocus={trayFocus?.product_id === current.id ? trayFocus : undefined}
+              onOpenSettings={() => select({ kind: "settings" })}
+              onDismissBackups={dismissBackups}
+            />
+          ) : (
+            <Settings />
+          )}
+        </div>
         <RestartingScreen />
         {quit && busy && (
           <QuitDialog

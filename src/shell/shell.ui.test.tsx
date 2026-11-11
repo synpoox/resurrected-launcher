@@ -468,6 +468,41 @@ describe("product page", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("the table of contents drops back up before it hides, out of reach meanwhile; reduced motion hides it at once", async () => {
+    const notes = ["## Items", "- a", "## Skills", "- b"].join("\n");
+    const { user } = mount("ready", (a) => {
+      a.scene.notes = [{ ...a.scene.notes[0], notes }];
+    });
+    await user.click(within(await loaded()).getByRole("tab", { name: "Patch Notes" }));
+    const toc = await screen.findByRole("navigation", { name: "Table of contents" });
+    const toggle = within(toc).getByRole("button", { name: /Table of contents/ });
+    const panel = toc.querySelector<HTMLElement>(".notes-toc-panel")!;
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: false, media: q }));
+    try {
+      // Closed: not rendered, so nothing to clip.
+      expect(panel.hidden).toBe(true);
+      await user.click(toggle);
+      expect(panel.hidden).toBe(false);
+      // Clipped only while it opens; steady open shows the entries' focus rings whole.
+      expect(panel.classList.contains("animating")).toBe(true);
+      await waitFor(() => expect(panel.classList.contains("animating")).toBe(false));
+      expect(panel.hidden).toBe(false);
+      await user.click(toggle);
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(panel.hidden).toBe(false);
+      expect(panel.classList.contains("closing")).toBe(true);
+      expect(panel.classList.contains("animating")).toBe(true);
+      expect(panel.hasAttribute("inert")).toBe(true);
+      await waitFor(() => expect(panel.hidden).toBe(true));
+      vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("reduce"), media: q }));
+      await user.click(toggle);
+      await user.click(toggle);
+      expect(panel.hidden).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("a section box: its description or quote, a divider, then sub-headings and nested bullets", async () => {
     const notes = [
       "## Large changes",

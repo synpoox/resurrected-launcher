@@ -126,14 +126,22 @@ describe("motion", () => {
     expect(block).toMatch(/transition: none !important;/);
   });
 
-  it("uses the specified durations", () => {
-    const css = sources.filter((s) => s.name.endsWith(".css")).map((s) => s.text).join("\n");
-    expect(css).toContain("animation: fade 450ms ease-out");
-    expect(css).toContain("animation: lift 450ms ease-out");
-    expect(css).toContain("transform 150ms");
-    expect(css).toContain("transition: width 300ms");
+  it("takes every duration and easing from the motion tokens", () => {
+    const css = sources.filter((s) => s.name.endsWith(".css") && !s.name.endsWith("tokens.css")).map((s) => stripComments(s.text)).join("\n");
+    const tokens = stripComments(read("src/tokens.css"));
+    for (const t of ["--dur-fast: 150ms", "--dur-base: 200ms", "--dur-slow: 300ms", "--ease-standard:", "--ease-out:", "--ease-in:"]) {
+      expect(tokens).toContain(t);
+    }
+    // No literal millisecond durations or cubic-beziers outside tokens.css (loops use seconds).
+    expect(css).not.toMatch(/\b\d+ms\b/);
+    expect(css).not.toMatch(/cubic-bezier|\bease-out;|\bease-in;/);
     expect(css).toContain("pulse 1.6s");
     expect(css).not.toMatch(/scroll-behavior:\s*smooth/);
+  });
+
+  it("transitions only compositor properties and colour, never layout", () => {
+    const css = sources.filter((s) => s.name.endsWith(".css")).map((s) => stripComments(s.text)).join("\n");
+    expect(css).not.toMatch(/transition:[^;]*\b(?:width|height|top|left|right|bottom|margin|padding)\b/);
   });
 });
 
