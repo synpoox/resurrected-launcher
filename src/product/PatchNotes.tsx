@@ -113,14 +113,15 @@ export function NotesSections({ releaseKey, sections }: { releaseKey: string; se
 /** Collapsed by default; each entry scrolls to its section and moves focus to its heading. */
 function TableOfContents({ releaseKey, sections }: { releaseKey: string; sections: NotesSection[] }) {
   // Closing: the list drops back up (height and opacity) before it is hidden; it is already out of reach.
-  const [phase, setPhase] = useState<"closed" | "open" | "closing">("closed");
-  const open = phase === "open";
+  // Opening and closing clip the list (product.css); steady open doesn't, so focus rings show whole.
+  const [phase, setPhase] = useState<"closed" | "opening" | "open" | "closing">("closed");
+  const open = phase === "open" || phase === "opening";
   useEffect(() => {
-    if (phase !== "closing") return;
-    const t = setTimeout(() => setPhase("closed"), MOTION.base);
+    if (phase !== "closing" && phase !== "opening") return;
+    const t = setTimeout(() => setPhase(phase === "closing" ? "closed" : "open"), MOTION.base);
     return () => clearTimeout(t);
   }, [phase]);
-  const toggle = () => setPhase(open ? (motionAllowed() ? "closing" : "closed") : "open");
+  const toggle = () => setPhase(open ? (motionAllowed() ? "closing" : "closed") : motionAllowed() ? "opening" : "open");
   const listId = useId();
   const entries = sections.flatMap((s, i) => (s.heading ? [{ i, heading: s.heading }] : []));
   if (entries.length === 0) return null;
@@ -139,7 +140,7 @@ function TableOfContents({ releaseKey, sections }: { releaseKey: string; section
           {open ? "−" : "+"}
         </span>
       </button>
-      <div className={`notes-toc-panel${phase === "closing" ? " closing" : ""}`} hidden={phase === "closed"} inert={!open || undefined}>
+      <div className={`notes-toc-panel${phase === "closing" ? " closing" : ""}${phase === "opening" || phase === "closing" ? " animating" : ""}`} hidden={phase === "closed"} inert={!open || undefined}>
         <ol id={listId}>
           {entries.map(({ i, heading }) => {
             const id = sectionId(releaseKey, i);

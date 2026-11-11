@@ -17,7 +17,7 @@ export const GHOST_MAX_MS = MOTION.slow + 100;
  * `.ghost-out` (ui.css) and fades away. The real UI is gone at once, so clicks, focus and state
  * act immediately; the ghost can't be reached. Skipped under reduced motion.
  */
-export function useExitGhost(ref: RefObject<HTMLElement | null>, active = true): void {
+export function useExitGhost(ref: RefObject<HTMLElement | null>, active = true, below = false): void {
   useEffect(() => {
     const el = ref.current;
     const parent = el?.parentNode;
@@ -30,21 +30,26 @@ export function useExitGhost(ref: RefObject<HTMLElement | null>, active = true):
         if (el.isConnected || !parent.isConnected) return;
         ghost.removeAttribute("id");
         ghost.querySelectorAll("[id]").forEach((n) => n.removeAttribute("id"));
+        // Nameless, a copied radio can't join (or uncheck) a live group; it keeps its look.
+        ghost.querySelectorAll("[name]").forEach((n) => n.removeAttribute("name"));
         ghost.setAttribute("inert", "");
         ghost.setAttribute("aria-hidden", "true");
         ghost.classList.add("ghost-out");
-        parent.appendChild(ghost);
+        // `below`: first child, so it paints beneath the live view that replaced it (absolute siblings
+        // stack by DOM order). Dialogs and menus stay last, on top.
+        if (below) parent.insertBefore(ghost, parent.firstChild);
+        else parent.appendChild(ghost);
         const done = () => ghost.remove();
         ghost.addEventListener("animationend", (e) => e.target === ghost && done());
         setTimeout(done, GHOST_MAX_MS);
       });
     };
-  }, [ref, active]);
+  }, [ref, active, below]);
 }
 
 /** A div whose departure fades out (see `useExitGhost`): a tab's panel, a whole product page. */
 export function Ghosted(props: ComponentProps<"div">) {
   const ref = useRef<HTMLDivElement>(null);
-  useExitGhost(ref);
+  useExitGhost(ref, true, true);
   return <div {...props} ref={ref} />;
 }
