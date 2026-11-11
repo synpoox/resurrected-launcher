@@ -38,6 +38,10 @@ pub struct Request<'a> {
     /// clean install: a file holding bytes one of them published is an older
     /// release's, not the player's (#134). May be empty.
     pub earlier: &'a [ReleaseManifest],
+    /// Other manifests of this product the launcher has, for the save-format check:
+    /// a save-breaking release between the installed one and the target still
+    /// warns (#213). May be empty.
+    pub history: &'a [ReleaseManifest],
     /// The player acknowledged the save-incompatibility notice (ADR 0001).
     pub acknowledge_save_breaking: bool,
     /// Explicit consent for [`OperationKind::CleanInstall`].
@@ -202,7 +206,7 @@ pub fn inspect(
         settings_reset: Vec::new(),
         kept: 0,
         save_breaking_notice: new.saves.incompatibility_notice.clone(),
-        breaks_saves: new.breaks_saves_from(req.installed),
+        breaks_saves: new.breaks_saves_from(req.installed, req.history),
         expect: Vec::new(),
         expect_backup: Vec::new(),
     };

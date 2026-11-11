@@ -52,6 +52,7 @@ pub(crate) fn crash_mid_repair_removing(rig: &Rig, managed: &str) {
         release_sha256: installed.sha256,
         installed: Some(&installed.manifest),
         earlier: &[],
+        history: &[],
         acknowledge_save_breaking: false,
         consent_clean_install: false,
     };

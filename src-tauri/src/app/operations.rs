@@ -328,6 +328,7 @@ struct Resolved {
     release: Release,
     installed: Option<Release>,
     earlier: Vec<ReleaseManifest>,
+    history: Vec<ReleaseManifest>,
     acknowledge_save_breaking: bool,
     consent_clean_install: bool,
 }
@@ -341,6 +342,7 @@ impl Resolved {
             release_sha256: self.release.sha256,
             installed: self.installed.as_ref().map(|r| &r.manifest),
             earlier: &self.earlier,
+            history: &self.history,
             acknowledge_save_breaking: self.acknowledge_save_breaking,
             consent_clean_install: self.consent_clean_install,
         }
@@ -466,12 +468,20 @@ impl Launcher {
         } else {
             Vec::new()
         };
+        let history = if installed.is_some() && matches!(req.kind, Install | Update | CleanInstall)
+        {
+            let id = &release.manifest.release_id;
+            self.releases.earlier(&mut state, &req.product_id, id)
+        } else {
+            Vec::new()
+        };
         Ok(Resolved {
             kind: req.kind,
             d2r,
             release,
             installed,
             earlier,
+            history,
             acknowledge_save_breaking: req.acknowledge_save_breaking,
             consent_clean_install: req.consent_clean_install,
         })

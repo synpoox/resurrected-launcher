@@ -158,18 +158,40 @@ impl ReleaseManifest {
     }
 
     /// Whether moving from `installed` to this release may leave character saves
-    /// unusable: this release is itself save-breaking, or its save format is newer
-    /// than the installed one (so a breaking release in between was skipped). A
-    /// missing format version on either side is compatible (#213).
-    pub fn breaks_saves_from(&self, installed: Option<&ReleaseManifest>) -> bool {
-        let newer = match (
-            installed.and_then(|i| i.saves.save_format_version),
-            self.saves.save_format_version,
-        ) {
-            (Some(from), Some(to)) => to > from,
-            _ => false,
+    /// unusable (#213). True when this release is itself save-breaking, or when the
+    /// installed release declares a save format and this release declares a
+    /// different one (higher: a breaking release may have been skipped; lower: a
+    /// downgrade), or when any release in `history` between the installed one
+    /// (exclusive) and this one (inclusive of its date) is save-breaking or declares
+    /// a format other than the installed one's. Missing data counts as compatible.
+    pub fn breaks_saves_from(
+        &self,
+        installed: Option<&ReleaseManifest>,
+        history: &[ReleaseManifest],
+    ) -> bool {
+        if self.is_save_breaking() {
+            return true;
+        }
+        let Some(installed) = installed else {
+            return false;
         };
-        self.is_save_breaking() || newer
+        let differs = |m: &ReleaseManifest| {
+            matches!(
+                (installed.saves.save_format_version, m.saves.save_format_version),
+                (Some(from), Some(to)) if from != to
+            )
+        };
+        if differs(self) {
+            return true;
+        }
+        history.iter().any(|m| {
+            m.product_id == self.product_id
+                && m.release_id != self.release_id
+                && m.release_id != installed.release_id
+                && m.release_date >= installed.release_date
+                && m.release_date <= self.release_date
+                && (m.is_save_breaking() || differs(m))
+        })
     }
 
     /// Ownership of a path relative to `install_root`, compared as Windows does.

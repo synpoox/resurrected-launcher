@@ -37,4 +37,6 @@ pub use sync::{
 pub const SCHEMA_VERSION: u32 = 3;
 
 #[cfg(test)]
+mod save_format_tests;
+#[cfg(test)]
 mod tests;
