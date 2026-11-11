@@ -100,6 +100,8 @@ type Spawned = (PathBuf, Vec<String>, PathBuf);
 /// command and adds a running process under the exe's folder.
 #[derive(Clone, Default)]
 struct FakeGame {
+    /// The pid `spawn` reports instead of [`FAKE_PID`], e.g. a real child's.
+    spawn_pid: Arc<Mutex<Option<u32>>>,
     processes: Arc<Mutex<Vec<RunningGame>>>,
     /// Set: listing processes fails.
     fail_listing: Arc<AtomicBool>,
@@ -137,12 +139,13 @@ impl GameHost for FakeGame {
     fn spawn(&self, exe: &Path, args: &[String], cwd: &Path) -> std::io::Result<u32> {
         let mut spawned = self.spawned.lock().unwrap();
         spawned.push((exe.to_owned(), args.to_vec(), cwd.to_owned()));
+        let pid = self.spawn_pid.lock().unwrap().unwrap_or(FAKE_PID);
         self.processes.lock().unwrap().push(RunningGame {
-            pid: FAKE_PID,
+            pid,
             image: exe.to_owned(),
             since: 1_700_000_000,
         });
-        Ok(FAKE_PID)
+        Ok(pid)
     }
 }
 
@@ -341,13 +344,18 @@ impl Rig {
     }
 
     fn on(host: Box<dyn Host>) -> Self {
+        Self::tuned(host, |_| {})
+    }
+
+    /// Like [`Rig::on`], with `tune` applied to the launcher before it is mounted.
+    fn tuned(host: Box<dyn Host>, tune: impl FnOnce(&mut Launcher)) -> Self {
         let server = FixtureServer::start();
         let game = DisposableGame::new();
         fake_game_files(game.d2r());
         let state_dir = tempfile::tempdir().unwrap();
         let releases = Arc::new(FixtureReleases::default());
         let (fake, desktop) = (FakeGame::default(), FakeDesktop::default());
-        let l = launcher_on(
+        let mut l = launcher_on(
             state_dir.path(),
             game.d2r(),
             Box::new(Shared(releases.clone())),
@@ -356,6 +364,7 @@ impl Rig {
             &fake,
             &desktop,
         );
+        tune(&mut l);
         let (webview, outcomes, progress, states) = mount(l);
         Self {
             game,
@@ -1405,6 +1414,52 @@ fn a_loader_that_exits_before_the_game_appears_is_not_a_startup_failure() {
     assert_eq!(rig.state().startup_failed, None, "the game is running");
     assert!(rig.states.try_recv().is_err(), "the watch has not ended");
     // A game that dies right away is still a startup failure.
+    rig.host.exit_all();
+    rig.state_event();
+    assert!(rig.state().startup_failed.is_some());
+}
+
+#[test]
+fn a_crashed_loader_with_nothing_following_is_flagged_without_the_grace() {
+    // The grace is for a loader that exited 0 after handing off; a non-zero exit
+    // is a crash, so the watch must not wait the grace out. The exit code is only
+    // known once the loader has exited, so it is decided when the root empties.
+    let rig = Rig::tuned(Box::new(SystemHost), |l| {
+        l.handoff_grace = Duration::from_secs(20)
+    });
+    rig.install(PD2R_1);
+    rig.start_up();
+    let mut loader = std::process::Command::new("cmd")
+        .args(["/c", "ping -n 2 127.0.0.1 >nul & exit 3"])
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    *rig.host.spawn_pid.lock().unwrap() = Some(loader.id());
+    rig.play().unwrap();
+    assert_eq!(loader.wait().unwrap().code(), Some(3));
+    rig.host.exit_all();
+    let begun = std::time::Instant::now();
+    rig.state_event();
+    assert!(begun.elapsed() < Duration::from_secs(10), "no grace waited");
+    assert_eq!(
+        rig.state().startup_failed,
+        Some(StartupFailed { exit_code: Some(3) })
+    );
+}
+
+#[test]
+fn a_crash_inside_the_startup_window_is_flagged_even_when_the_grace_runs_past_it() {
+    // The window runs from the moment the root went empty, not from the end of
+    // the grace: with a 3 s grace and a 3 s window, a game gone after about 1 s
+    // is flagged (it used to be measured at about 4 s).
+    let rig = Rig::tuned(Box::new(SystemHost), |l| {
+        l.handoff_grace = Duration::from_secs(3);
+        l.startup_window = Duration::from_secs(3);
+    });
+    rig.install(PD2R_1);
+    rig.start_up();
+    rig.play().unwrap();
+    std::thread::sleep(Duration::from_millis(500));
     rig.host.exit_all();
     rig.state_event();
     assert!(rig.state().startup_failed.is_some());

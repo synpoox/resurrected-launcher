@@ -41,11 +41,11 @@ const START_POLL: Duration = Duration::from_secs(2);
 
 /// How long a Play's watcher keeps looking for the game after the loader exited
 /// cleanly (it hands off to D2R.exe, which may show up after the loader is gone).
-const HANDOFF_GRACE: Duration = Duration::from_secs(4);
+pub(super) const HANDOFF_GRACE: Duration = Duration::from_secs(4);
 
 /// A game that exits this soon after Play failed to start.
 /// shortcut: a fixed threshold; make it configurable only if real crashes show otherwise.
-const STARTUP_WINDOW: Duration = Duration::from_secs(30);
+pub(super) const STARTUP_WINDOW: Duration = Duration::from_secs(30);
 
 /// The native UI the commands use. Production: [`SystemDesktop`]; tests a fake.
 pub trait Desktop: Send + Sync {
@@ -454,18 +454,22 @@ impl Launcher {
             let exited = match &tracked {
                 // The loader exits 0 once it has started the game (#200); only a
                 // loader that crashed (non-zero) ends the watch without a hand-off.
+                // Its exit code is only known once it has exited, so the grace is
+                // decided each time the root goes empty, not at spawn.
                 Some(t) => wait_until_exited_after_handoff(
                     &root,
                     &*launcher.game,
                     EXIT_POLL,
-                    if t.process
-                        .as_ref()
-                        .and_then(|p| p.exit_code())
-                        .is_some_and(|c| c != 0)
-                    {
-                        Duration::ZERO
-                    } else {
-                        HANDOFF_GRACE
+                    &mut || {
+                        if t.process
+                            .as_ref()
+                            .and_then(|p| p.exit_code())
+                            .is_some_and(|c| c != 0)
+                        {
+                            Duration::ZERO
+                        } else {
+                            launcher.handoff_grace
+                        }
                     },
                     &mut |running| {
                         for g in running {
@@ -479,11 +483,19 @@ impl Launcher {
                         }
                     },
                 ),
-                None => wait_until_exited(&root, &*launcher.game, EXIT_POLL),
+                None => {
+                    wait_until_exited(&root, &*launcher.game, EXIT_POLL).map(|()| Instant::now())
+                }
             }
-            .is_ok();
+            .ok();
             launcher.exit_watches.fetch_sub(1, Ordering::SeqCst);
-            if let Some(t) = tracked.filter(|t| exited && t.started.elapsed() < STARTUP_WINDOW) {
+            // The window runs to the moment the root went empty, not to the end of
+            // the grace that confirmed it.
+            let window = launcher.startup_window;
+            if let Some((t, emptied)) = tracked
+                .zip(exited)
+                .filter(|(t, at)| at.saturating_duration_since(t.started) < window)
+            {
                 let failed = StartupFailed {
                     exit_code: t.process.and_then(|p| p.exit_code()),
                 };
@@ -491,7 +503,7 @@ impl Launcher {
                 launcher.log(&format!(
                     "{} closed {}s after Play (exit code {:?}); processes seen: {}",
                     t.product.0,
-                    t.started.elapsed().as_secs(),
+                    emptied.saturating_duration_since(t.started).as_secs(),
                     failed.exit_code,
                     images.join(", ")
                 ));

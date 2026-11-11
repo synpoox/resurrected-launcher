@@ -70,13 +70,16 @@ pub fn wait_until_exited(
 /// exit before the game's process shows up under `root` (#200), so once nothing
 /// runs, it keeps looking for up to `grace` and watches whatever appears. `seen`
 /// gets every listing that found something, so a report can say which images ran.
+/// `grace` is asked each time nothing runs, so it can depend on how the loader
+/// ended. Returns when nothing ran for the last time, before the grace that
+/// confirmed it.
 pub fn wait_until_exited_after_handoff(
     root: &Path,
     host: &dyn GameHost,
     poll: Duration,
-    grace: Duration,
+    grace: &mut dyn FnMut() -> Duration,
     seen: &mut dyn FnMut(&[RunningGame]),
-) -> Result<(), LauncherError> {
+) -> Result<std::time::Instant, LauncherError> {
     loop {
         loop {
             let running = running_under(root, host)?;
@@ -86,7 +89,9 @@ pub fn wait_until_exited_after_handoff(
             seen(&running);
             std::thread::sleep(poll);
         }
-        let deadline = std::time::Instant::now() + grace;
+        let emptied = std::time::Instant::now();
+        let grace = grace();
+        let deadline = emptied + grace;
         let mut appeared = false;
         while std::time::Instant::now() < deadline {
             std::thread::sleep(poll.min(grace));
@@ -96,7 +101,7 @@ pub fn wait_until_exited_after_handoff(
             }
         }
         if !appeared {
-            return Ok(());
+            return Ok(emptied);
         }
     }
 }
