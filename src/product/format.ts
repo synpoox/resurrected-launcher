@@ -1,4 +1,4 @@
-import type { ReleaseNotes } from "../api/types";
+import type { LauncherError, ReleaseNotes } from "../api/types";
 
 const UNITS = ["B", "KB", "MB", "GB", "TB"];
 
@@ -79,3 +79,12 @@ export function patchVersion(version: string, status: ReleaseNotes["status"]): s
 export const statusTag = (status: ReleaseNotes["status"]) => status[0].toUpperCase() + status.slice(1);
 
 export const formatCount = (n: number) => n.toLocaleString("en-US");
+
+/** The red toast after an operation fails (#170): plain copy for a Windows refusal, and
+ *  never a raw `\\?\` extended-length path prefix. */
+export function operationFailureText(error: LauncherError, short: string): string {
+  if (error.code === "access_denied") {
+    return `Windows blocked a change to the ${short} folder; close Explorer windows in it and try again.`;
+  }
+  return error.message.replaceAll("\\\\?\\", "");
+}
