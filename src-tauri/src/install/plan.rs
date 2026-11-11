@@ -97,6 +97,8 @@ pub struct Inspection {
     pub kept: usize,
     /// Shown, and acknowledged, before installing a save-breaking release.
     pub save_breaking_notice: Option<String>,
+    /// The release is save-breaking, or the update skips over one (#213).
+    pub breaks_saves: bool,
     /// `/`-separated path -> what `LiveVerified` requires.
     pub(crate) expect: Vec<(String, Want)>,
     /// `to_backup` path -> the bytes inspection found; `LiveVerified` requires them
@@ -200,6 +202,7 @@ pub fn inspect(
         settings_reset: Vec::new(),
         kept: 0,
         save_breaking_notice: new.saves.incompatibility_notice.clone(),
+        breaks_saves: new.breaks_saves_from(req.installed),
         expect: Vec::new(),
         expect_backup: Vec::new(),
     };

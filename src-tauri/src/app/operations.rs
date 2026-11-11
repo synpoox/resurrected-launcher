@@ -497,7 +497,7 @@ impl Launcher {
             ),
             (&insp.preserved, &insp.backup_only, &insp.conflicts),
             &insp.settings_reset,
-            (&insp.save_breaking_notice, &insp.expect),
+            (&insp.save_breaking_notice, insp.breaks_saves, &insp.expect),
         );
         let digest = Sha256::digest(format!("{stable:?}"));
         let token = digest.iter().map(|b| format!("{b:02x}")).collect();
@@ -561,6 +561,9 @@ pub struct InspectionView {
     /// Non-empty: start is refused until resolved.
     pub conflicts: Vec<ConflictView>,
     pub save_breaking_notice: Option<String>,
+    /// The target release is save-breaking or the update skips over a save-breaking
+    /// release: the player must acknowledge before the update starts (#213).
+    pub breaks_saves: bool,
     pub space_needed: u64,
     pub token: String,
 }
@@ -579,6 +582,7 @@ impl InspectionView {
             settings_reset: insp.settings_reset.into_iter().map(view).collect(),
             conflicts: insp.conflicts.into_iter().map(view).collect(),
             save_breaking_notice: insp.save_breaking_notice,
+            breaks_saves: insp.breaks_saves,
             space_needed: insp.plan.space.total(),
             token,
         }

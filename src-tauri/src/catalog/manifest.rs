@@ -107,6 +107,11 @@ pub struct Saves {
     pub folder: RelativePath,
     /// Present exactly when the release is save-breaking; shown before updating.
     pub incompatibility_notice: Option<String>,
+    /// The release's character-save format, a number that only ever rises. Absent
+    /// (older manifests) means unknown, which counts as compatible. Comparing the
+    /// installed and target values catches a save-breaking release that an update
+    /// skips over (#213).
+    pub save_format_version: Option<u32>,
     pub loader_save_format: Option<Setting>,
 }
 
@@ -150,6 +155,21 @@ impl ReleaseManifest {
 
     pub fn is_save_breaking(&self) -> bool {
         self.saves.incompatibility_notice.is_some()
+    }
+
+    /// Whether moving from `installed` to this release may leave character saves
+    /// unusable: this release is itself save-breaking, or its save format is newer
+    /// than the installed one (so a breaking release in between was skipped). A
+    /// missing format version on either side is compatible (#213).
+    pub fn breaks_saves_from(&self, installed: Option<&ReleaseManifest>) -> bool {
+        let newer = match (
+            installed.and_then(|i| i.saves.save_format_version),
+            self.saves.save_format_version,
+        ) {
+            (Some(from), Some(to)) => to > from,
+            _ => false,
+        };
+        self.is_save_breaking() || newer
     }
 
     /// Ownership of a path relative to `install_root`, compared as Windows does.
@@ -287,6 +307,7 @@ struct RawSaves {
     folder: String,
     save_breaking: bool,
     incompatibility_notice: Option<String>,
+    save_format_version: Option<u32>,
     loader_save_format: Option<RawSetting>,
 }
 
@@ -503,6 +524,10 @@ impl RawManifest {
         let saves = Saves {
             folder,
             incompatibility_notice,
+            save_format_version: match s.save_format_version {
+                Some(0) => return Err(invalid("saves.save_format_version", "must be at least 1")),
+                v => v,
+            },
             loader_save_format: s
                 .loader_save_format
                 .map(|l| setting("saves.loader_save_format", l))

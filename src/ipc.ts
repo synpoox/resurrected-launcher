@@ -189,6 +189,9 @@ export interface Inspection {
   settings_reset: Conflict[];
   conflicts: Conflict[];
   save_breaking_notice: string | null;
+  /** The target is save-breaking, or the update skips over a save-breaking release (installed vs
+   *  target save format). Acknowledge before starting (issue 213). */
+  breaks_saves: boolean;
   space_needed: number;
   token: string;
 }

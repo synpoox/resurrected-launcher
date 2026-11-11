@@ -246,7 +246,10 @@ pub fn run(env: &Env, req: &Request) -> Result<Report, LauncherError> {
     }
     // ADR 0001: warn and require acknowledgement; saves are never converted.
     let installs_new = matches!(req.kind, Install | Update | CleanInstall);
-    if installs_new && req.release.is_save_breaking() && !req.acknowledge_save_breaking {
+    if installs_new
+        && req.release.breaks_saves_from(req.installed)
+        && !req.acknowledge_save_breaking
+    {
         return Err(LauncherError::new(
             ErrorCode::SaveBreakingNotAcknowledged,
             format!("{} is save-breaking", req.release.release_id),

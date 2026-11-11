@@ -23,6 +23,7 @@ describe("fixtures", () => {
       "d2r-choose": "d2r-missing",
       "loader-modified": "loader-missing",
       "save-breaking": "update",
+      "save-breaking-skipped": "update",
       repair: "ready",
       manage: "ready",
       uninstall: "ready",
