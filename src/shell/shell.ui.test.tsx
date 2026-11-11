@@ -198,10 +198,43 @@ describe("product page", () => {
     });
     await screen.findByText("N1");
     const feed = screen.getByRole("region", { name: "News" });
-    const items = within(feed).getAllByRole("button");
+    const items = within(feed).getAllByRole("button", { name: /N\d/ });
     expect(items.map((b) => b.textContent!.match(/N\d/)![0])).toEqual(["N1", "N3", "N0"]);
     await user.click(items[0]);
     expect(api.calls.at(-1)).toEqual({ name: "openNewsLink", args: ["pd2r", 1] });
+  });
+
+  it("news: See all lists every item newest first, in-app (issue 192)", async () => {
+    const { api, user } = mount("ready", (a) => {
+      a.scene.news.pd2r = {
+        status: "ok",
+        items: ["2026-11-01", "2026-11-05", "2026-10-01", "2026-11-03"].map((d, i) => ({ tag: "Guide", title: `N${i}`, published: d })),
+      };
+    });
+    await screen.findByText("N1");
+    const seeAll = within(screen.getByRole("region", { name: "News" })).getByRole("button", { name: "See all (4)" });
+    await user.click(seeAll);
+    const dialog = screen.getByRole("dialog", { name: "All news" });
+    // Outside .feed/.bottom, so its backdrop is not trapped under their stacking context.
+    expect(dialog.closest(".feed")).toBeNull();
+    const items = within(dialog).getAllByRole("button", { name: /N\d/ });
+    expect(items.map((b) => b.textContent!.match(/N\d/)![0])).toEqual(["N1", "N3", "N0", "N2"]);
+    await user.click(items[3]);
+    expect(api.calls.at(-1)).toEqual({ name: "openNewsLink", args: ["pd2r", 2] });
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(seeAll);
+  });
+
+  it("news: three items or fewer have no See all", async () => {
+    mount("ready", (a) => {
+      a.scene.news.pd2r = {
+        status: "ok",
+        items: ["2026-11-01", "2026-11-05", "2026-10-01"].map((d, i) => ({ tag: "Guide", title: `N${i}`, published: d })),
+      };
+    });
+    await screen.findByText("N1");
+    expect(screen.queryByRole("button", { name: /See all/ })).toBeNull();
   });
 
   it("news cards show tag, date, title and an optional summary, inside the link (issue 139)", async () => {
