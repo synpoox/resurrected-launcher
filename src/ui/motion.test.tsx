@@ -139,6 +139,7 @@ describe("view switches are never see-through", () => {
     const copy = document.querySelector(".ghost-out")!;
     expect(copy.classList.contains("ghost-hold")).toBe(true);
     expect(block(read("src/styles.css"), ".ghost-out.ghost-hold")).toContain("animation: none");
+    expect(block(read("src/styles.css"), ".ghost-out.ghost-hold")).toContain("isolation: isolate");
     act(() => void vi.advanceTimersByTime(MOTION.base - 100));
     expect(ghosts()).toHaveLength(1);
     act(() => void vi.advanceTimersByTime(120));

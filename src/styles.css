@@ -172,6 +172,8 @@ html {
 /* A left tab panel (Ghosted) stays fully opaque beneath the new one until its entrance ends; no fade. */
 .ghost-out.ghost-hold {
   animation: none !important;
+  /* Its own stacking context: its z-indexed children (copy, news) must not paint over the new panel. */
+  isolation: isolate;
 }
 
 .ghost-out * {
