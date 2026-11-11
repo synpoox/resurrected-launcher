@@ -12,8 +12,11 @@ export type SelfUpdateStatus =
   | { phase: "restarting"; current: string; next: string }
   /** Quit is installing the ready update; the launcher closes and doesn't relaunch. */
   | { phase: "quitting"; current: string; next: string }
-  /** After the restart that installed it: `current` is the new version. */
-  | { phase: "updated"; current: string }
+  /**
+   * After the restart that installed it: `current` is the new version. `notes` are the release notes
+   * latest.json gave it (#189); What's new opens them once.
+   */
+  | { phase: "updated"; current: string; notes?: string }
   | { phase: "download_failed"; current: string; next: string }
   /** The downloaded update failed its signature check; it was deleted and nothing was installed. */
   | { phase: "signature_rejected"; current: string; next: string };
@@ -39,6 +42,16 @@ export interface SelfUpdateApi {
 
 export const FIXTURE_CURRENT = "1.2.0";
 export const FIXTURE_NEXT = "1.3.0";
+export const FIXTURE_NOTES = `Faster patch checks and a clearer restart prompt.
+
+## Improvements
+
+- Patch checks reuse the last answer for a minute.
+- **Restart to update** says which game holds it.
+
+## Fixes
+
+- The window opens centred.`;
 
 export interface SelfUpdateFixture {
   key: string;
@@ -61,6 +74,12 @@ export const SELF_UPDATE_FIXTURES: readonly SelfUpdateFixture[] = [
   { key: "restarting", name: "Restarting", status: { phase: "restarting", ...v }, autoDownload: true },
   { key: "quitting", name: "Installing on Quit", status: { phase: "quitting", ...v }, autoDownload: true },
   { key: "updated", name: "Updated", status: { phase: "updated", current: FIXTURE_NEXT }, autoDownload: true },
+  {
+    key: "updated-notes",
+    name: "Updated, with What's new",
+    status: { phase: "updated", current: FIXTURE_NEXT, notes: FIXTURE_NOTES },
+    autoDownload: true,
+  },
   { key: "download-failed", name: "Download failed", status: { phase: "download_failed", ...v }, autoDownload: true },
   { key: "signature-rejected", name: "Signature rejected", status: { phase: "signature_rejected", ...v }, autoDownload: true },
 ];

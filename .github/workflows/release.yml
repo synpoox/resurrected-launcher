@@ -149,9 +149,15 @@ jobs:
           $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/$name"
           # Gate builds update from src-tauri/gate/serve-update.ps1 on this machine.
           if ($env:GATE -eq 'true') { $url = "http://127.0.0.1:8789/$name" }
+          # What's new after a self-update (#189): docs/release/notes/<version>.md
+          # (Markdown subset, as in product patch notes) becomes latest.json's notes.
+          # With no file, the notes are empty and the launcher shows no dialog.
+          $notesFile = "docs/release/notes/$env:VERSION.md"
+          $notes = if (Test-Path -LiteralPath $notesFile) { "$(Get-Content -LiteralPath $notesFile -Raw -Encoding utf8)".Trim() } else { "" }
+          if (-not $notes) { Write-Output "::warning::No release notes in $notesFile; the launcher will show no What's new dialog." }
           $latest = [ordered]@{
             version  = $env:VERSION
-            notes    = "Launcher $env:VERSION"
+            notes    = $notes
             pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
             platforms = [ordered]@{
               'windows-x86_64' = [ordered]@{

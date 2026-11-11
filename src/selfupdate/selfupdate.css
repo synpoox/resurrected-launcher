@@ -30,3 +30,22 @@
   font-size: 18px;
   color: var(--text);
 }
+
+/* What's new after a self-update (#189): the Patch Notes styles, sized for a dialog. */
+.su-notes {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.su-notes .notes-summary {
+  margin: 0 0 14px;
+  font-size: 15px;
+}
+
+.su-notes .notes-heading {
+  font-size: 17px;
+}
+
+.su-notes .notes-section + .notes-section {
+  margin-top: 18px;
+}

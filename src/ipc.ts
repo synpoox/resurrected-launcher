@@ -361,6 +361,17 @@ export async function showDiagnosticsInFolder(): Promise<void> {
   await invoke("show_diagnostics_in_folder");
 }
 
+/** The end of the launcher log (64 KiB), redacted like the diagnostics report;
+ *  empty when there is no log yet. */
+export async function copyLauncherLog(): Promise<string> {
+  return current(await invoke<Versioned<string>>("copy_launcher_log"));
+}
+
+/** Opens Explorer on the folder holding launcher.log. */
+export async function openLogsFolder(): Promise<void> {
+  await invoke("open_logs_folder");
+}
+
 export async function getStartWithWindows(): Promise<boolean> {
   return current(await invoke<Versioned<boolean>>("get_start_with_windows"));
 }
@@ -411,7 +422,7 @@ export type LauncherUpdateStatus =
   | { phase: "restarting"; current: string; next: string }
   /** Quit is installing the ready update; the launcher closes and doesn't relaunch. */
   | { phase: "quitting"; current: string; next: string }
-  | { phase: "updated"; current: string }
+  | { phase: "updated"; current: string; notes?: string }
   | { phase: "download_failed"; current: string; next: string }
   | { phase: "signature_rejected"; current: string; next: string };
 
