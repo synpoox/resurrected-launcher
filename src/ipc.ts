@@ -320,6 +320,9 @@ export interface ReleaseNotes {
   status: "alpha" | "beta" | "release";
   /** null: a newer release whose manifest isn't cached (offline). */
   notes: string | null;
+  /** The manifest's `release_notes_header_image` (#179): an https URL on github.com or
+   *  objects.githubusercontent.com, or null for the product's hero art. */
+  header_image?: string | null;
 }
 
 /** Newest first: the recommended release (if newer) and the installed release.

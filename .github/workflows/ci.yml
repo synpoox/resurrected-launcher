@@ -9,7 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  rust:
+  # Lint and test build separately and in parallel (#190). Before: one job,
+  # ~14-18 min, of which tests/failure_matrix alone ran ~700 s in one process.
+  clippy:
     runs-on: windows-latest
     defaults:
       run:
@@ -21,10 +23,51 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: src-tauri
+          shared-key: clippy
+          # PR caches are scoped to the PR and evict main's (10 GB repo limit).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
-      # --show-output makes SKIPPED lines from link tests visible.
-      - run: cargo test --locked -- --show-output
+
+  # Tests sharded across runners by cargo-nextest (hash partition).
+  test:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: src-tauri
+          shared-key: test
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.partition == 1 }}
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: nextest
+      # --success-output final keeps the SKIPPED lines from link tests visible.
+      - run: cargo nextest run --locked --partition hash:${{ matrix.partition }}/4 --success-output final --no-fail-fast
+
+  # Keeps the "rust" check name that branch protection requires.
+  rust:
+    needs: [clippy, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.clippy.result }}" = success && test "${{ needs.test.result }}" = success
+
+  # The schema half of the news fixtures check; the rust job runs the parser half.
+  news-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: pip install --disable-pip-version-check jsonschema==4.23.0
+      - run: python scripts/check-news.py
 
   frontend:
     runs-on: windows-latest
