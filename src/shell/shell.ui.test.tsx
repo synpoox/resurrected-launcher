@@ -269,9 +269,12 @@ describe("product page", () => {
     expect(await screen.findByText("opening the page failed")).toBeTruthy();
   });
 
-  it("news: empty reads Nothing yet; offline offers Retry", async () => {
+  it("news: empty renders nothing; offline offers Retry", async () => {
     mount("ready", (a) => (a.scene.news.pd2r = { status: "ok", items: [] }));
-    expect(await screen.findByText("Nothing yet.")).toBeTruthy();
+    await screen.findByRole("button", { name: /Play/ });
+    // While news is still loading the section shows its heading; it must vanish once the empty list lands.
+    await waitFor(() => expect(screen.queryByRole("region", { name: "News" })).toBeNull());
+    expect(screen.queryByText("Nothing yet.")).toBeNull();
     cleanup();
     localStorage.clear();
     const { api, user } = mount("offline");
