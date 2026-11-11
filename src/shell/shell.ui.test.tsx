@@ -231,7 +231,7 @@ describe("product page", () => {
     await waitFor(() => expect(names(api).filter((n) => n === "getNews")).toHaveLength(2));
   });
 
-  it("news: only the latest request's reply is shown", async () => {
+  it("news: Retry shows Retrying, disables the button, then Still offline on another failure", async () => {
     const replies: ((s: NewsState) => void)[] = [];
     mount("offline", (a) => {
       a.getNews = () => new Promise<NewsState>((resolve) => replies.push(resolve));
@@ -239,14 +239,21 @@ describe("product page", () => {
     await waitFor(() => expect(replies).toHaveLength(1));
     replies[0]({ status: "offline" });
     const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(screen.getByText(/News needs a connection/)).toBeTruthy();
     await userEvent.click(retry);
+    await waitFor(() => expect(replies).toHaveLength(2));
+    expect(screen.getByText(/Retrying/)).toBeTruthy();
+    expect((retry as HTMLButtonElement).disabled).toBe(true);
     await userEvent.click(retry);
+    expect(replies).toHaveLength(2);
+    await act(async () => replies[1]({ status: "offline" }));
+    expect(screen.getByText(/Still offline \(tried at /)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(replies).toHaveLength(3));
-    const item = (title: string): NewsState => ({ status: "ok", items: [{ tag: "Guide", title, published: "2026-11-01" }] });
-    await act(async () => replies[2](item("Latest")));
-    await act(async () => replies[1](item("Stale")));
+    await act(async () => replies[2]({ status: "ok", items: [{ tag: "Guide", title: "Latest", published: "2026-11-01" }] }));
     expect(screen.getByText(/Latest/)).toBeTruthy();
-    expect(screen.queryByText(/Stale/)).toBeNull();
+    expect(screen.queryByText(/Still offline/)).toBeNull();
   });
 
   it("About shows why when opening the page is refused", async () => {

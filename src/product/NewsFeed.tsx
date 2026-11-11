@@ -7,18 +7,32 @@ export interface NewsFeedProps {
   news: NewsState | null;
   onOpen: (index: number) => void;
   onRetry: () => void;
+  /** A Retry is in flight: the button is disabled and the line says so. */
+  retrying?: boolean;
+  /** When the last Retry failed again; shown as "Still offline". */
+  failedAt?: Date | null;
 }
 
 /** Bottom-right, text only: announcements and guides as cards stacked vertically (issue 139).
  *  Links open by index, never by URL. */
-export function NewsFeed({ news, onOpen, onRetry }: NewsFeedProps) {
+export function NewsFeed({ news, onOpen, onRetry, retrying = false, failedAt = null }: NewsFeedProps) {
   let body;
   if (news === null) body = null;
   else if (news.status === "offline") {
     body = (
-      <p className="feed-empty">
-        News needs a connection.{" "}
-        <button type="button" className="link" onClick={onRetry}>
+      <p className="feed-empty" role="status">
+        {retrying
+          ? "Retrying…"
+          : failedAt
+            ? `Still offline (tried at ${failedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}).`
+            : "News needs a connection."}{" "}
+        <button
+          type="button"
+          className="link"
+          disabled={retrying}
+          aria-busy={retrying || undefined}
+          onClick={onRetry}
+        >
           Retry
         </button>
       </p>

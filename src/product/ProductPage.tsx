@@ -74,18 +74,32 @@ function useNews(productId: string) {
   const api = useApi();
   const toast = useToast();
   const [news, setNews] = useState<NewsState | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [failedAt, setFailedAt] = useState<Date | null>(null);
   const latest = useRef(0);
-  const load = useCallback(() => {
-    const request = ++latest.current;
-    const show = (s: NewsState) => {
-      if (request === latest.current) setNews(s);
-    };
-    api.getNews(productId).then(show, () => show({ status: "offline" }));
-  }, [api, productId]);
-  useEffect(load, [load]);
+  const load = useCallback(
+    (manual = false) => {
+      const request = ++latest.current;
+      const show = (s: NewsState) => {
+        if (request !== latest.current) return;
+        setNews(s);
+        setRetrying(false);
+        // A manual Retry that fails again says so, with when (issue 201).
+        setFailedAt(manual && s.status === "offline" ? new Date() : null);
+      };
+      api.getNews(productId).then(show, () => show({ status: "offline" }));
+    },
+    [api, productId],
+  );
+  useEffect(() => load(), [load]);
   return {
     news,
-    retry: load,
+    retrying,
+    failedAt,
+    retry: () => {
+      setRetrying(true);
+      load(true);
+    },
     open: (i: number) =>
       void api.openNewsLink(productId, i).catch((e: unknown) => {
         toast.show({ tone: "error", text: asError(e).message });
@@ -122,7 +136,7 @@ function ComingSoon({ product }: { product: Product }) {
             )}
           </div>
         </div>
-        <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} />
+        <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} retrying={feed.retrying} failedAt={feed.failedAt} />
       </div>
     </div>
   );
@@ -763,7 +777,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
               {notice()}
               <div className="act">{actions(false)}</div>
             </div>
-            <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} />
+            <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} retrying={feed.retrying} failedAt={feed.failedAt} />
           </div>
         </div>
       )}
