@@ -81,7 +81,7 @@ fn capabilities_grant_only_the_allowlisted_commands_to_main() {
 }
 
 #[test]
-fn the_csp_allows_no_remote_connect_src_or_img_src() {
+fn the_csp_allows_no_remote_connect_src_and_img_src_only_for_github_header_images() {
     let conf: Value = serde_json::from_str(&root_file("tauri.conf.json")).unwrap();
     let csp = conf["app"]["security"]["csp"].as_str().unwrap();
     let directive = |name: &str| -> Option<Vec<&str>> {
@@ -91,7 +91,17 @@ fn the_csp_allows_no_remote_connect_src_or_img_src() {
         })
     };
     assert_eq!(directive("default-src").unwrap(), ["'self'"]);
-    assert_eq!(directive("img-src").unwrap(), ["'self'"]);
+    // Patch Notes header images (#179): the manifest's allowed hosts plus the
+    // host github.com release downloads redirect to.
+    assert_eq!(
+        directive("img-src").unwrap(),
+        [
+            "'self'",
+            "https://github.com",
+            "https://objects.githubusercontent.com",
+            "https://release-assets.githubusercontent.com"
+        ]
+    );
     assert_eq!(
         directive("connect-src").unwrap(),
         ["ipc:", "http://ipc.localhost"]
@@ -119,7 +129,7 @@ fn the_csp_allows_no_remote_connect_src_or_img_src() {
             "'unsafe-eval'",
         ];
         assert!(!wild.contains(&token), "CSP allows {token}: {csp}");
-        if token.contains("://") {
+        if token.contains("://") && !directive("img-src").unwrap().contains(&token) {
             assert_eq!(
                 token, "http://ipc.localhost",
                 "a remote source in the CSP: {csp}"
