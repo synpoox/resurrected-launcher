@@ -107,7 +107,10 @@ struct Rig {
 /// The fake game files every rig's D2R root holds.
 const D2R_BYTES: &[u8] = b"fake D2R.exe for #60";
 const LOADER: &str = "1.3.1-beta";
-const FAKE_PID: u32 = 4242;
+/// A pid no process can have (#226): `OpenProcess` ignores a pid's low two bits,
+/// so a small fake like 4242 opens whichever real process holds 4240 and yields
+/// an exit code the test expects to be unknown.
+const FAKE_PID: u32 = u32::MAX - 1;
 
 type Spawned = (PathBuf, Vec<String>, PathBuf);
 
