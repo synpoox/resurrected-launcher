@@ -19,7 +19,7 @@ import { Notice } from "../ui/Notice";
 import { BUSY_SAFETY_MS, BusyButton, usePending } from "../ui/pending";
 import { useToast } from "../ui/Toast";
 import { CleanInstallDialog, LocationDialog, SaveBreakingDialog, UninstallDialog } from "./dialogs";
-import { formatBytes, formatCount, formatTimeLeft, releaseLabel, startedAgo } from "./format";
+import { formatBytes, formatCount, operationFailureText, formatTimeLeft, releaseLabel, startedAgo } from "./format";
 import { HeroArt, HeroCopy } from "./Hero";
 import { existingOf, hasNotice, journeyOf, type Journey } from "./journey";
 import { NewsFeed } from "./NewsFeed";
@@ -233,7 +233,10 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
     return subscribe(
       api.onOutcome((o) => {
         if (o.product_id !== product.id) return;
-        if (o.status === "failed") outcomeToastsOf(toast, product.id).push(fail(o.error));
+        if (o.status === "failed") {
+          const text = operationFailureText(o.error, product.short);
+          outcomeToastsOf(toast, product.id).push(toast.show({ tone: "error", text }));
+        }
         if (o.kind === "uninstall") {
           uninstallAttempt.current++;
           // The report fills the dialog; a failed or cancelled uninstall frees its confirm again.
@@ -243,7 +246,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         void refresh();
       }),
     ).stop;
-  }, [api, product.id, fail, refresh, toast]);
+  }, [api, product.id, product.short, refresh, toast]);
 
   /** Starts an operation and re-reads state (which then shows it running). True if it started. */
   const start = useCallback(
