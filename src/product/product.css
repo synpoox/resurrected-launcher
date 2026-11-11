@@ -109,20 +109,25 @@
   min-height: 60px;
 }
 
-/* Rows of buttons only (no status line), like startup failed: one row at every size, with compact buttons. */
-.act:has(> .btn.ghost):not(:has(> .ready-line)) {
+/* With a secondary button beside it, the primary narrows so the row fits at 1024. */
+.act:has(> .btn.ghost) .btn.primary {
+  min-width: 200px;
+}
+
+/* Startup failed only (blocked and repair-needed keep full-size buttons): one row at every size, with compact buttons. */
+.act.act-failed {
   flex-wrap: nowrap;
-  gap: 10px;
+  gap: 8px;
 }
 
 /* The column is about 390px at the 1024 minimum: Try again, Repair and Export diagnostics fit it. */
-.act:has(> .btn.ghost):not(:has(> .ready-line)) .btn {
-  padding: 0 12px;
+.act.act-failed .btn {
+  padding: 0 10px;
   font-size: 11px;
   white-space: nowrap;
 }
 
-.act:has(> .btn.ghost):not(:has(> .ready-line)) .btn.primary {
+.action-col .act.act-failed .btn.primary {
   min-width: 0;
   padding: 0 22px;
   font-size: 12px;
@@ -131,11 +136,6 @@
 /* The main action eases in when a tab opens (reduced motion turns this off in styles.css). */
 .action-col .act {
   animation: lift 200ms ease-out;
-}
-
-/* With a secondary button beside it, the primary narrows so the row fits at 1024. */
-.act:has(> .btn.ghost) .btn.primary {
-  min-width: 200px;
 }
 
 .btn.primary.playing {
