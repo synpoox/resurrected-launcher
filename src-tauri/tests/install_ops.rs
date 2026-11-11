@@ -517,7 +517,9 @@ fn higher_save_format_is_refused_without_acknowledgement() {
 
 /// #215: the release history reaches the check in `ops::run`, so a skipped
 /// save-breaking release is refused without acknowledgement even when the target
-/// declares the installed format and is not flagged; without history it is not seen.
+/// declares the installed format and is not flagged. Only the history makes the
+/// target look breaking here; the run is not refused without it (target and
+/// installed formats match).
 #[test]
 fn skipped_save_breaking_release_in_history_is_refused_without_acknowledgement() {
     let rig = Rig::new();

@@ -151,7 +151,8 @@ pub enum OperationOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TrayAction {
-    /// Update was chosen for a save-breaking release: show its dialog (ADR 0001).
+    /// Install or Update was chosen for a save-breaking release: show its dialog
+    /// (ADR 0001). The event also carries `kind`, the operation chosen.
     SaveBreaking,
     /// Show what happened after a failure.
     ShowWhatHappened,

@@ -18,11 +18,11 @@ use tauri::{AppHandle, Emitter, Listener, Manager, Runtime};
 use super::icon::{self, Overlay};
 use super::{request, show_main};
 use crate::app::{
-    self, Launcher, ProductState, Refusal, OUTCOME_EVENT, PROGRESS_EVENT, STATE_EVENT,
+    self, Launcher, ProductState, Refusal, OUTCOME_EVENT, PROGRESS_EVENT, STATE_EVENT, TRAY_EVENT,
 };
 use crate::contract::{
     CancelRequest, LauncherError, OperationKind, OperationOutcome, OperationRequest, Phase,
-    ProductId, ProgressEvent, Readiness, TrayAction, Versioned, UMBRELLA_DISPLAY_NAME,
+    ProductId, ProgressEvent, Readiness, TrayAction, TrayRequest, Versioned, UMBRELLA_DISPLAY_NAME,
 };
 
 /// One menu entry for a product.
@@ -470,7 +470,7 @@ impl Model {
             .and_then(|s| s.recommended.as_ref())
             .is_some_and(|r| r.save_breaking);
         if save_breaking && matches!(kind, OperationKind::Install | OperationKind::Update) {
-            return request(app, TrayAction::SaveBreaking, &product, None);
+            return save_breaking_request(app, &product, kind);
         }
         let req = OperationRequest {
             product_id: product.clone(),
@@ -498,7 +498,7 @@ impl Model {
         });
         // A refused start shows as an error; Show what happened opens the window.
         match started {
-            Ok(false) => request(app, TrayAction::SaveBreaking, &product, None),
+            Ok(false) => save_breaking_request(app, &product, kind),
             Ok(true) => {
                 self.failed.remove(&product);
             }
@@ -507,6 +507,30 @@ impl Model {
             }
         };
     }
+}
+
+/// `tray-request` for the save-breaking dialog: a [`TrayRequest`] plus the
+/// operation to run, which the other actions never carry.
+#[derive(Clone, serde::Serialize)]
+struct SaveBreakingRequest {
+    #[serde(flatten)]
+    request: TrayRequest,
+    kind: OperationKind,
+}
+
+/// Shows the window and asks it for the save-breaking dialog of `kind`, so an
+/// Install shows Install wording and runs Install, not Update (#219).
+fn save_breaking_request<R: Runtime>(app: &AppHandle<R>, product: &ProductId, kind: OperationKind) {
+    show_main(app);
+    let request = SaveBreakingRequest {
+        request: TrayRequest {
+            action: TrayAction::SaveBreaking,
+            product_id: product.clone(),
+            error: None,
+        },
+        kind,
+    };
+    let _ = app.emit(TRAY_EVENT, Versioned::new(request));
 }
 
 /// What the tray last showed, with its product menu items for in-place updates.
@@ -645,6 +669,34 @@ mod tests {
             catalog: CatalogState::Refreshed,
             cancelling: false,
             startup_failed: None,
+        }
+    }
+
+    /// Tray Install/Update of a save-breaking release asks the window for that
+    /// operation's dialog, not always Update's (#219).
+    #[test]
+    fn save_breaking_request_carries_the_operation_kind() {
+        use std::sync::mpsc::channel;
+        use tauri::Listener;
+        let app = tauri::test::mock_app();
+        let (tx, rx) = channel();
+        app.listen_any(TRAY_EVENT, move |e| {
+            let _ = tx.send(serde_json::from_str::<serde_json::Value>(e.payload()).unwrap());
+        });
+        let mut s = state(Readiness::NotInstalled, None, "r3");
+        s.recommended = Some(release("r3", true));
+        let mut model = Model {
+            states: vec![s],
+            ..Model::default()
+        };
+        for (kind, name) in [
+            (OperationKind::Install, "install"),
+            (OperationKind::Update, "update"),
+        ] {
+            model.start(app.handle(), ProductId("pd2r".into()), kind);
+            let asked = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+            assert_eq!(asked["data"]["action"], "save_breaking");
+            assert_eq!(asked["data"]["kind"], name, "{asked}");
         }
     }
 
