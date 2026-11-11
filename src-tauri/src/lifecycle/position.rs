@@ -16,16 +16,24 @@ use super::notice;
 /// The file in app-local data holding the last position.
 pub const FILE: &str = "window-position";
 
-/// A connected monitor's rectangle, in physical pixels.
+/// A rectangle in physical pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Monitor {
+pub struct Rect {
     pub x: i32,
     pub y: i32,
     pub width: u32,
     pub height: u32,
 }
 
-impl Monitor {
+/// A connected monitor, in physical pixels: its full rectangle and its work area
+/// (the rectangle minus the taskbar).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Monitor {
+    pub full: Rect,
+    pub work: Rect,
+}
+
+impl Rect {
     fn contains(&self, x: i32, y: i32) -> bool {
         let (x, y) = (i64::from(x), i64::from(y));
         let (left, top) = (i64::from(self.x), i64::from(self.y));
@@ -37,15 +45,19 @@ impl Monitor {
 }
 
 /// The saved spot, if its top-left corner is on one of `monitors`, moved just far
-/// enough that the whole window (`size`, physical pixels) fits on that monitor. A
-/// window larger than the monitor is pinned to its top-left corner.
+/// enough that the whole window (`size`, physical pixels) fits in that monitor's
+/// work area. A window larger than that work area gets no spot (it opens centred
+/// on the primary monitor, where its size was chosen to fit).
 pub fn restorable(
     saved: Option<(i32, i32)>,
     size: (u32, u32),
     monitors: &[Monitor],
 ) -> Option<(i32, i32)> {
     let (x, y) = saved?;
-    let m = monitors.iter().find(|m| m.contains(x, y))?;
+    let m = monitors.iter().find(|m| m.full.contains(x, y))?.work;
+    if size.0 > m.width || size.1 > m.height {
+        return None;
+    }
     let fit = |pos: i32, start: i32, len: u32, extent: u32| {
         let max = i64::from(start) + i64::from(len) - i64::from(extent);
         let clamped = i64::from(pos).min(max).max(i64::from(start));
@@ -79,11 +91,22 @@ pub fn restore<R: Runtime>(window: &WebviewWindow<R>) {
         .available_monitors()
         .unwrap_or_default()
         .iter()
-        .map(|m| Monitor {
-            x: m.position().x,
-            y: m.position().y,
-            width: m.size().width,
-            height: m.size().height,
+        .map(|m| {
+            let work = m.work_area();
+            Monitor {
+                full: Rect {
+                    x: m.position().x,
+                    y: m.position().y,
+                    width: m.size().width,
+                    height: m.size().height,
+                },
+                work: Rect {
+                    x: work.position.x,
+                    y: work.position.y,
+                    width: work.size.width,
+                    height: work.size.height,
+                },
+            }
         })
         .collect();
     let size = window.outer_size().map_or((0, 0), |s| (s.width, s.height));
@@ -112,19 +135,27 @@ pub fn save<R: Runtime>(app: &AppHandle<R>) {
 mod tests {
     use super::*;
 
-    const PRIMARY: Monitor = Monitor {
-        x: 0,
-        y: 0,
-        width: 1920,
-        height: 1080,
-    };
+    const fn mon(x: i32, y: i32, width: u32, height: u32, taskbar: u32) -> Monitor {
+        Monitor {
+            full: Rect {
+                x,
+                y,
+                width,
+                height,
+            },
+            work: Rect {
+                x,
+                y,
+                width,
+                height: height - taskbar,
+            },
+        }
+    }
+
+    // 1920x1080 with a 48px taskbar: work area 1920x1032.
+    const PRIMARY: Monitor = mon(0, 0, 1920, 1080, 48);
     const WIN: (u32, u32) = (1600, 900);
-    const LEFT: Monitor = Monitor {
-        x: -2560,
-        y: -200,
-        width: 2560,
-        height: 1440,
-    };
+    const LEFT: Monitor = mon(-2560, -200, 2560, 1440, 0);
 
     #[test]
     fn a_spot_on_a_connected_monitor_is_restored() {
@@ -147,28 +178,27 @@ mod tests {
     }
 
     #[test]
-    fn a_window_hanging_off_its_monitor_is_pulled_back() {
-        // 1600x900 restored onto a 1366x768 secondary to the right of PRIMARY.
-        let small = Monitor {
-            x: 1920,
-            y: 0,
-            width: 1366,
-            height: 768,
-        };
-        assert_eq!(
-            restorable(Some((2000, 100)), WIN, &[PRIMARY, small]),
-            Some((1920, 0))
-        );
-        // Hanging off the bottom/right of a monitor the window does fit on.
+    fn a_window_hanging_off_its_monitor_is_pulled_back_into_the_work_area() {
+        // Hanging off the bottom/right: clamped to the work area, above the taskbar.
         assert_eq!(
             restorable(Some((1000, 700)), WIN, &[PRIMARY]),
-            Some((320, 180))
+            Some((320, 132))
         );
-        // Already fully on screen: untouched.
+        // Already fully inside the work area: untouched.
         assert_eq!(
-            restorable(Some((320, 180)), WIN, &[PRIMARY]),
-            Some((320, 180))
+            restorable(Some((320, 132)), WIN, &[PRIMARY]),
+            Some((320, 132))
         );
+    }
+
+    #[test]
+    fn a_window_larger_than_its_monitor_is_centred_instead() {
+        // 1600x900 on a 1366x768 secondary to the right of PRIMARY.
+        let small = mon(1920, 0, 1366, 768, 0);
+        assert_eq!(restorable(Some((2000, 100)), WIN, &[PRIMARY, small]), None);
+        // Fits the full monitor but not the work area (taskbar): also centred.
+        let tight = mon(0, 0, 1920, 1080, 200);
+        assert_eq!(restorable(Some((10, 10)), WIN, &[tight]), None);
     }
 
     #[test]
