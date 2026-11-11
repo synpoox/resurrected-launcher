@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Slice 4 gate (#81), clause "No remote content native privilege", in the window: news text renders as
 // text, links open only by index through `open_news_link`, the webview never builds a link, request or
-// markup from remote text, and the shipped CSP allows no remote `connect-src` or `img-src`. The native
+// markup from remote text, and the shipped CSP allows no remote `connect-src` and `img-src` only on GitHub (#179). The native
 // side (capabilities, URL refusals) is src-tauri/tests/slice4_gate/remote_content.rs.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -72,7 +72,7 @@ describe("the webview has no remote content path of its own", () => {
     expect(hits).toEqual([]);
   });
 
-  it("the CSP allows no remote connect-src or img-src", () => {
+  it("the CSP allows no remote connect-src, and remote img-src only for GitHub header images (#179)", () => {
     const conf = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
     const csp: string = conf.app.security.csp;
     const directive = (name: string) =>
@@ -82,13 +82,22 @@ describe("the webview has no remote content path of its own", () => {
         .find(([n]) => n === name)
         ?.slice(1);
     expect(directive("connect-src")).toEqual(["ipc:", "http://ipc.localhost"]);
-    expect(directive("img-src")).toEqual(["'self'"]);
+    // Patch Notes header images: the manifest's two allowed hosts, plus where
+    // github.com release downloads redirect to.
+    expect(directive("img-src")).toEqual([
+      "'self'",
+      "https://github.com",
+      "https://objects.githubusercontent.com",
+      "https://release-assets.githubusercontent.com",
+    ]);
     expect(directive("default-src")).toEqual(["'self'"]);
     for (const name of ["script-src", "frame-src", "object-src"]) {
       // Absent: falls back to default-src 'self'.
       expect(directive(name), name).toBeUndefined();
     }
-    expect(csp).not.toMatch(/https?:\/\/(?!ipc\.localhost)|\*|'unsafe-inline'|'unsafe-eval'|data:/);
+    const rest = csp.replace(/img-src[^;]*/, "");
+    expect(rest).not.toMatch(/https?:\/\/(?!ipc\.localhost)|\*|'unsafe-inline'|'unsafe-eval'|data:/);
+    expect(csp).not.toMatch(/\*|'unsafe-inline'|'unsafe-eval'|data:|http:\/\/(?!ipc\.localhost)/);
     expect(conf.app.security.dangerousDisableAssetCspModification).toBeUndefined();
     expect(conf.app.withGlobalTauri).toBeUndefined();
   });

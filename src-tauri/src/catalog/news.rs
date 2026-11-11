@@ -475,6 +475,25 @@ mod tests {
         assert!(one(item("pd2r", "", "T", "2026-11-01", GH)).is_err());
     }
 
+    /// `news/fixtures`: the same files `scripts/check-news.py` runs through
+    /// `news/news.schema.json`, so the schema and this parser cannot drift.
+    #[test]
+    fn news_fixtures() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../news/fixtures");
+        for (dir, valid) in [("valid", true), ("invalid", false)] {
+            let mut count = 0;
+            for entry in std::fs::read_dir(root.join(dir)).unwrap() {
+                let path = entry.unwrap().path();
+                if path.extension().is_some_and(|e| e == "json") {
+                    count += 1;
+                    let parsed = News::parse(&std::fs::read(&path).unwrap());
+                    assert_eq!(parsed.is_ok(), valid, "{}: {parsed:?}", path.display());
+                }
+            }
+            assert!(count > 0, "no fixtures in news/fixtures/{dir}");
+        }
+    }
+
     #[test]
     fn malformed_files_are_rejected() {
         let too_many = file(

@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "T",
+      "published": "2026-11-01",
+      "url": "https://github.com"
+    },
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "T",
+      "published": "2026-11-01",
+      "url": "https://github.com/x"
+    },
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "T",
+      "published": "2026-11-01",
+      "url": "https://discord.gg/mGpHT26Xak"
+    },
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "T",
+      "published": "2026-11-01",
+      "url": "https://discord.com/channels/1/2"
+    },
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "T",
+      "published": "2026-11-01",
+      "url": "https://github.com/synpoox/pd2-resurrected/wiki/A_b~c?q=1&r=%20#top"
+    },
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "T",
+      "published": "2026-11-01",
+      "url": "https://github.com/a/.b/c..d"
+    },
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "T",
+      "published": "2026-11-01",
+      "url": "https://github.com/x?a=../b"
+    },
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "T",
+      "published": "2026-11-01",
+      "url": "https://github.com/x#.."
+    },
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "T",
+      "published": "2026-11-01",
+      "url": "https://github.com/x?%2e"
+    }
+  ]
+}

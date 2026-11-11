@@ -16,6 +16,8 @@ export interface NewsFeedProps {
 /** Bottom-right, text only: announcements and guides as cards stacked vertically (issue 139).
  *  Links open by index, never by URL. */
 export function NewsFeed({ news, onOpen, onRetry, retrying = false, failedAt = null }: NewsFeedProps) {
+  // An empty list renders nothing: no heading, no placeholder (#183).
+  if (news?.status === "ok" && news.items.length === 0) return null;
   let body;
   if (news === null) body = null;
   else if (news.status === "offline") {
@@ -37,8 +39,7 @@ export function NewsFeed({ news, onOpen, onRetry, retrying = false, failedAt = n
         </button>
       </p>
     );
-  } else if (news.items.length === 0) body = <p className="feed-empty">Nothing yet.</p>;
-  else {
+  } else {
     const items = [...news.items]
       .map((item, index) => ({ item, index }))
       .sort((a, b) => b.item.published.localeCompare(a.item.published))

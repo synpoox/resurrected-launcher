@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useApi } from "../api/context";
 import { subscribe } from "../api/subscribe";
 import type { SceneOpen } from "../api/fixtures";
@@ -222,7 +222,9 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   useEffect(loadNotes, [loadNotes, installedId, recommendedId]);
 
   // The first launch after an update opens Patch Notes once, on the new release (see initialTab).
-  useEffect(() => {
+  // A layout effect, so the release is recorded in the same commit that first shows the page:
+  // a passive effect could still be pending when the page is already visible (issue 191).
+  useLayoutEffect(() => {
     if (installedId) localStorage.setItem(seenKey(product.id), installedId);
   }, [installedId, product.id]);
 
