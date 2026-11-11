@@ -218,8 +218,8 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   const last = samples.at(-1)?.event ?? null;
   const journey: Journey = journeyOf(state, last);
   // The main action eases in after a tab opens or its state changes, never on a page's first paint.
-  const firstJourney = useRef(journey);
-  const lifts = switched || journey !== firstJourney.current;
+  const [firstJourney] = useState(journey);
+  const lifts = switched || journey !== firstJourney;
   const stats = progressStats(samples);
 
   const fail = useCallback((e: unknown) => toast.show({ tone: "error", text: asError(e).message }), [toast]);
