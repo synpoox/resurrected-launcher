@@ -1,6 +1,6 @@
 # Publishes news/news.json as the news.json asset of the mutable `catalog`
 # release (#167). See docs/specs/news-feed.md. Edit the file on GitHub and
-# commit to main; this checks it with the launcher's own parser, then uploads it.
+# commit to main; this checks it against news/news.schema.json, then uploads it.
 # It touches no other release and never marks `catalog` as latest.
 name: Publish news
 
@@ -19,20 +19,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # The launcher's News::parse, through the test that includes news/news.json.
+  # Checks news/news.json against news/news.schema.json (never looser than the
+  # launcher's News::parse) and the 64 KB size cap, in seconds rather than a Rust
+  # build. It also checks news/fixtures, which the Rust test news_fixtures runs
+  # through News::parse, so the schema and the parser stay in sync.
   validate:
-    runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: src-tauri
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      # Installs the toolchain pinned in src-tauri/rust-toolchain.toml.
-      - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          workspaces: src-tauri
-      - run: cargo test --locked --lib app::news::tests::published_news_parses -- --exact
+      - run: pip install --disable-pip-version-check jsonschema==4.23.0
+      - run: python scripts/check-news.py
 
   publish:
     needs: validate

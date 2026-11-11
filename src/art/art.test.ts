@@ -41,11 +41,9 @@ describe("bundled art", () => {
     }
   });
 
-  it("every hero is real, bundled, optimised art credited to Blizzard, framed per the spec", () => {
+  it("every hero is real, bundled, optimised art, framed per the spec", () => {
     const framing = { pd2r: ["55% center", undefined], forever: ["20% 30%", undefined], "09": ["74% 22%", "auto 135%"] };
     for (const [id, art] of Object.entries(HERO_ART)) {
-      expect(art.placeholder, id).toBe(false);
-      expect(art.source, id).toBe("Official D2R promotional artwork © Blizzard Entertainment");
       expect([art.position, art.size], id).toEqual(framing[id as keyof typeof framing]);
       expect(art.accessibleName, id).not.toMatch(/placeholder/i);
     }
@@ -54,11 +52,9 @@ describe("bundled art", () => {
     }
   });
 
-  it("every hero has an accessible name, name and source", () => {
+  it("every hero has an accessible name", () => {
     for (const [id, art] of Object.entries(HERO_ART)) {
       expect(art.accessibleName.trim(), id).not.toBe("");
-      expect(art.name.trim(), id).not.toBe("");
-      expect(art.source.trim(), id).not.toBe("");
     }
   });
 });

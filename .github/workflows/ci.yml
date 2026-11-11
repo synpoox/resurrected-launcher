@@ -61,6 +61,14 @@ jobs:
     steps:
       - run: test "${{ needs.clippy.result }}" = success && test "${{ needs.test.result }}" = success
 
+  # The schema half of the news fixtures check; the rust job runs the parser half.
+  news-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: pip install --disable-pip-version-check jsonschema==4.23.0
+      - run: python scripts/check-news.py
+
   frontend:
     runs-on: windows-latest
     steps:

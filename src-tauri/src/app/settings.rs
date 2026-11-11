@@ -46,6 +46,10 @@ pub struct ReleaseNotes {
     /// manifests and a feed pointer has no version or date to list a newer release
     /// without one; `None` is reserved for listing such a release once it does.
     pub notes: Option<String>,
+    /// The manifest's `release_notes_header_image` (#179): an allowlisted `https`
+    /// URL, or `None` for the product's hero art.
+    #[serde(default)]
+    pub header_image: Option<String>,
 }
 
 impl ReleaseNotes {
@@ -62,6 +66,7 @@ impl ReleaseNotes {
             }
             .to_owned(),
             notes: Some(m.release_notes.clone()),
+            header_image: m.release_notes_header_image.clone(),
         }
     }
 }
