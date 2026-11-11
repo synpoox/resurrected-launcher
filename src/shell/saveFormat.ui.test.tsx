@@ -136,8 +136,11 @@ describe("save compatibility prompt (issue 213)", () => {
   });
 
   it("a tray save-breaking request without a kind still runs Update", async () => {
-    const { api } = mount("save-breaking");
-    await screen.findByRole("dialog");
+    const { api } = mount("update", (a) => {
+      a.scene.inspections = { ...a.scene.inspections, update: { ...a.scene.inspections?.update, breaks_saves: true } };
+    });
+    await screen.findByRole("button", { name: /^Update$/ });
+    expect(screen.queryByRole("dialog")).toBeNull();
     await act(async () => api.emitTrayRequest({ action: "save_breaking", product_id: "pd2r", error: null }));
     expect(await screen.findByRole("dialog", { name: /This update can't use your current characters/ })).toBeTruthy();
   });
