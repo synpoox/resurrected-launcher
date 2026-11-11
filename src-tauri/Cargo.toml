@@ -29,6 +29,9 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 [target.'cfg(windows)'.dependencies]
 # The first-close toast (#104), called directly so its error is seen.
 tauri-winrt-notification = "0.8.1"
+# WebView2 settings Tauri does not expose (#185); the versions wry already uses.
+webview2-com = "0.39"
+windows-core = "0.62"
 
 [dev-dependencies]
 base64 = "0.22"
