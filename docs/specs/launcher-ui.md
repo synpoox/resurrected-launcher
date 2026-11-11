@@ -97,7 +97,6 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 - **Launcher**: **Start with Windows** switch, off by default, which opens to the tray.
 - **Launcher → Launcher version** (#28): the version and its update status, with **Check for updates**. When an update is ready or has failed, the control becomes Restart to update or Try again (see [Launcher self-update](#launcher-self-update)).
 - **Launcher → Download launcher updates automatically** (#28): switch, on by default. Hint when on: "Updates download in the background and install when you restart or Quit." Hint when off: "You'll be told when an update is available. Nothing downloads until you choose Download."
-- **Launcher → About and credits** (new, #20): lists each hero image with its name, source and "Promotional art, not mod gameplay".
 - **Folders and plugins**:
   - A PD2R group: saves, settings and filters, and **PD2R plugins** ("Loads only with PD2R", with the `core-*` note).
   - An All products group: **Global plugins** ("Loads for every product").
@@ -208,7 +207,7 @@ Subtle only, with no video and no hero rotation: the hero changes only when the 
 Target **WCAG 2.2 AA**: 4.5:1 for text, 3:1 for large text (24px, or 18.66px bold) and UI components. Measurements: [launcher shell contrast](../research/launcher-shell-contrast.md).
 - Every token pair on `--bg`/`--rail`/`--panel` passes (5.21–17.47:1), as do white on `--button` (5.44) and `--ribbon` (6.25), and text over the hero art (worst 6.35). The tightest pass is the window-control glyphs over art (4.54).
 - 10px labels are never large text and need 4.5:1.
-- Hero art has no visible credit line. Each hero has an accessible name (e.g. "Reign of the Warlock key art (official D2R promotional art)"), and credits live in Settings.
+- Hero art has no visible credit line. Each hero has an accessible name (e.g. "Reign of the Warlock key art (official D2R promotional art)"). The art credit is not shown in the launcher.
 
 **Keyboard and focus** (drafted in #20; check them in implementation):
 - Tab order: window controls (minimise, close) → sidebar → tabs → main action and its row (or the Patch Notes action) → main content → news feed.
@@ -221,7 +220,7 @@ Target **WCAG 2.2 AA**: 4.5:1 for text, 3:1 for large text (24px, or 18.66px bol
 
 ## Artwork
 
-Official D2R promotional art, © Blizzard Entertainment, **never presented as mod gameplay**. The images match resurrected-web's hero set and are bundled in `src/art` as optimised WebP ([#165](https://github.com/synpoox/resurrected-launcher/issues/165)), credited in Settings → About and credits as "Official D2R promotional artwork © Blizzard Entertainment", the website's credit.
+Official D2R promotional art, © Blizzard Entertainment, **never presented as mod gameplay**. The images match resurrected-web's hero set and are bundled in `src/art` as optimised WebP ([#165](https://github.com/synpoox/resurrected-launcher/issues/165)). The launcher shows no credit list (#199).
 
 | Product | Image | Framing |
 | --- | --- | --- |

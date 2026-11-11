@@ -227,22 +227,6 @@ describe("Launcher", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(/Couldn't change Start with Windows/);
     expect(sw.getAttribute("aria-checked")).toBe("false");
   });
-
-  it("About and credits credits each hero as official D2R promotional art, not mod gameplay", async () => {
-    const { user } = await openSettings("ready");
-    await user.click(tab("Launcher"));
-    const credits = within(within(panel()).getByRole("region", { name: "About and credits" })).getAllByRole("listitem");
-    expect(credits.map((c) => c.querySelector("b")?.textContent)).toEqual([
-      "Project Diablo 2: Resurrected",
-      "Diablo II: Resurrected Forever",
-      "Diablo II: Resurrected 09",
-    ]);
-    for (const c of credits) {
-      expect(c.textContent).toContain("Official D2R promotional artwork © Blizzard Entertainment");
-      expect(c.textContent).toContain("Promotional art, not mod gameplay.");
-      expect(c.textContent).not.toMatch(/placeholder/i);
-    }
-  });
 });
 
 describe("Folders and plugins", () => {

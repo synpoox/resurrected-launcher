@@ -2,7 +2,6 @@ import { useEffect, useId, useState } from "react";
 import { useApi } from "../api/context";
 import type { Folder, ProductState } from "../api/types";
 import { isLauncherError } from "../api/types";
-import { HERO_ART } from "../art";
 import { LocationDialog } from "../product/dialogs";
 import { PRODUCTS, type Product } from "../products";
 import { Notice } from "../ui/Notice";
@@ -139,26 +138,6 @@ export function LauncherPanel() {
           <Switch label="Start with Windows" checked={startup ?? false} onChange={(on) => void change(on)} />
         </Row>
         <SelfUpdateRows />
-      </Section>
-      <Section title="About and credits">
-        <ul className="credits">
-          {PRODUCTS.map((p) => {
-            const art = HERO_ART[p.hero];
-            return (
-              <li key={p.id}>
-                <b>{p.name}</b>
-                <span>
-                  {art.name} · {art.source}
-                </span>
-                <span className="hint">
-                  {art.placeholder
-                    ? "Placeholder art, not game art. It is replaced before a public release."
-                    : "Promotional art, not mod gameplay."}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
       </Section>
     </>
   );
