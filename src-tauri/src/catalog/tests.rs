@@ -630,3 +630,56 @@ fn published_pd2r_0_1_0_alpha_manifest_matches_its_archive_listing() {
     assert_eq!(got.len(), 4, "{got:?}");
     assert!(got.contains(&format!("{} is missing from the archive", last.0)));
 }
+
+/// The valid manifest with `release_notes_header_image` set to `url`.
+fn with_header_image(url: &str) -> Result<ReleaseManifest, CatalogError> {
+    let mut v: serde_json::Value =
+        serde_json::from_slice(&fixture("valid/release-manifest.json")).unwrap();
+    v["release_notes_header_image"] = serde_json::Value::String(url.to_owned());
+    ReleaseManifest::parse(&serde_json::to_vec(&v).unwrap())
+}
+
+/// #179: the header image is optional, so older manifests still parse without it.
+#[test]
+fn release_manifest_without_header_image_still_parses() {
+    assert_eq!(valid_manifest().release_notes_header_image, None);
+    let m =
+        ReleaseManifest::parse(&fixture("real/pd2r-0.1.0-alpha/release-manifest.json")).unwrap();
+    assert_eq!(m.release_notes_header_image, None);
+}
+
+#[test]
+fn release_manifest_accepts_a_header_image_on_github_hosts() {
+    for url in [
+        "https://github.com/synpoox/pd2r/releases/download/v0.4.0/header.png",
+        "https://objects.githubusercontent.com/github-production-release-asset/1/header.png",
+        "https://GitHub.com/synpoox/pd2r/releases/download/v0.4.0/header.png",
+    ] {
+        let m = with_header_image(url).unwrap_or_else(|e| panic!("{url}: {e}"));
+        assert_eq!(m.release_notes_header_image.as_deref(), Some(url));
+    }
+}
+
+#[test]
+fn release_manifest_rejects_a_header_image_off_https_or_the_allowed_hosts() {
+    let f = "release_notes_header_image";
+    let host = invalid(
+        f,
+        "host must be github.com or objects.githubusercontent.com",
+    );
+    for (url, want) in [
+        ("http://github.com/a.png", not_https(f)),
+        ("header.png", not_https(f)),
+        ("https://github.com@evil.example/a.png", not_https(f)),
+        ("https://github.com:8443/a.png", not_https(f)),
+        ("https://evil.example/a.png", host.clone()),
+        ("https://raw.githubusercontent.com/a.png", host.clone()),
+        ("https://github.com.evil.example/a.png", host.clone()),
+        (
+            "https://github.com/../a.png",
+            invalid(f, "URL path must not contain dot segments"),
+        ),
+    ] {
+        assert_eq!(with_header_image(url).unwrap_err(), want, "{url}");
+    }
+}

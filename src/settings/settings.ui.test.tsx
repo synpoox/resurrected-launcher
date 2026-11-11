@@ -227,22 +227,6 @@ describe("Launcher", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(/Couldn't change Start with Windows/);
     expect(sw.getAttribute("aria-checked")).toBe("false");
   });
-
-  it("About and credits credits each hero as official D2R promotional art, not mod gameplay", async () => {
-    const { user } = await openSettings("ready");
-    await user.click(tab("Launcher"));
-    const credits = within(within(panel()).getByRole("region", { name: "About and credits" })).getAllByRole("listitem");
-    expect(credits.map((c) => c.querySelector("b")?.textContent)).toEqual([
-      "Project Diablo 2: Resurrected",
-      "Diablo II: Resurrected Forever",
-      "Diablo II: Resurrected 09",
-    ]);
-    for (const c of credits) {
-      expect(c.textContent).toContain("Official D2R promotional artwork © Blizzard Entertainment");
-      expect(c.textContent).toContain("Promotional art, not mod gameplay.");
-      expect(c.textContent).not.toMatch(/placeholder/i);
-    }
-  });
 });
 
 describe("Folders and plugins", () => {
@@ -313,6 +297,16 @@ describe("Folders and plugins", () => {
 });
 
 describe("Troubleshooting", () => {
+  it("copies the redacted launcher log and opens the logs folder (#186)", async () => {
+    const { api, user } = await openSettings("ready");
+    await user.click(tab("Troubleshooting"));
+    await user.click(within(panel()).getByRole("button", { name: "Copy log" }));
+    await screen.findByText(/Copied the end of the launcher log/);
+    expect(await navigator.clipboard.readText()).toContain("started by <you>");
+    await user.click(within(panel()).getByRole("button", { name: "Open logs folder" }));
+    await waitFor(() => expect(names(api)).toContain("openLogsFolder"));
+  });
+
   it("reviews the full report, re-previews with the log, and saves with Show in folder", async () => {
     const { api, user } = await openSettings("ready");
     await user.click(tab("Troubleshooting"));

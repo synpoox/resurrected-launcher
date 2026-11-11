@@ -1619,6 +1619,26 @@ fn saved_diagnostics_are_exactly_the_previewed_text() {
     assert_eq!(*rig.desktop.shown.lock().unwrap(), [file]);
 }
 
+/// #186: Copy log returns the redacted log tail; Open logs folder opens the state dir.
+#[test]
+fn copy_launcher_log_and_open_logs_folder() {
+    let rig = Rig::new();
+    let empty = rig.invoke("copy_launcher_log", json!({})).unwrap();
+    assert_eq!(empty["data"], "");
+    fs::write(
+        rig._state_dir.path().join("launcher.log"),
+        "started\npassword=pw\n",
+    )
+    .unwrap();
+    let copied = rig.invoke("copy_launcher_log", json!({})).unwrap();
+    assert_eq!(copied["data"], "started\npassword=<redacted>\n");
+    rig.invoke("open_logs_folder", json!({})).unwrap();
+    assert_eq!(
+        *rig.desktop.folders.lock().unwrap(),
+        [rig._state_dir.path().to_owned()]
+    );
+}
+
 /// #125: a release build has no console, so startup and its failures must reach
 /// `launcher.log` in the state dir, where the diagnostics report reads it.
 #[test]

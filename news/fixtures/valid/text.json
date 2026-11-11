@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "published": "2026-11-01",
+      "url": "https://github.com/synpoox/pd2-resurrected/discussions/1",
+      "summary": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+      "product_id": "pd2r",
+      "kind": "guide",
+      "title": "caf\u00e9 \u2014 \ud83d\ude00",
+      "published": "2026-11-01",
+      "url": "https://github.com/synpoox/pd2-resurrected/discussions/1",
+      "summary": "Back up before you patch."
+    }
+  ]
+}
