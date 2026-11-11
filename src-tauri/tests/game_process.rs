@@ -325,6 +325,34 @@ fn play_runs_the_loader_with_exactly_mod_folder_args_from_the_root() {
     assert_eq!(pids_under(&rig.root), vec![game.pid]);
 }
 
+/// #169: a launcher started from a Firefox download inherits `__COMPAT_LAYER`
+/// and `MOZ_*`; passed on, the compat shims make D2R fail the offline licence
+/// check. A game started from Explorer gets neither, so Play must not pass them on.
+#[test]
+fn play_does_not_pass_the_launchers_browser_environment_to_the_game() {
+    let rig = Rig::new();
+    let game = {
+        let _env = ENV.lock().unwrap_or_else(|p| p.into_inner());
+        std::env::set_var(OUT, rig.out());
+        std::env::set_var(SLEEP, LONG_MS);
+        std::env::set_var("__COMPAT_LAYER", "DetectorsAppHealth");
+        std::env::set_var("MOZ_CRASHREPORTER_DATA_DIRECTORY", rig.tmp.path());
+        let game = play(
+            &rig.location(),
+            &manifest(),
+            &Readiness::UpdateAvailable,
+            &SystemGameHost,
+        );
+        std::env::remove_var("__COMPAT_LAYER");
+        std::env::remove_var("MOZ_CRASHREPORTER_DATA_DIRECTORY");
+        Killer::open(game.unwrap().pid)
+    };
+    let record = read_record(&rig.out());
+    assert_eq!(record["compat_layer"], Value::Null);
+    assert_eq!(record["moz"], serde_json::json!([]));
+    drop(game);
+}
+
 #[test]
 fn play_refuses_every_unplayable_readiness_without_spawning() {
     let rig = Rig::new();
