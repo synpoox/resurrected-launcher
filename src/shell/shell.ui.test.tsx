@@ -208,14 +208,18 @@ describe("product page", () => {
       };
     });
     await screen.findByText("N1");
-    await user.click(within(screen.getByRole("region", { name: "News" })).getByRole("button", { name: "See all (4)" }));
+    const seeAll = within(screen.getByRole("region", { name: "News" })).getByRole("button", { name: "See all (4)" });
+    await user.click(seeAll);
     const dialog = screen.getByRole("dialog", { name: "All news" });
+    // Outside .feed/.bottom, so its backdrop is not trapped under their stacking context.
+    expect(dialog.closest(".feed")).toBeNull();
     const items = within(dialog).getAllByRole("button", { name: /N\d/ });
     expect(items.map((b) => b.textContent!.match(/N\d/)![0])).toEqual(["N1", "N3", "N0", "N2"]);
     await user.click(items[3]);
     expect(api.calls.at(-1)).toEqual({ name: "openNewsLink", args: ["pd2r", 2] });
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(seeAll);
   });
 
   it("news: three items or fewer have no See all", async () => {

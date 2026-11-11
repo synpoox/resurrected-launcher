@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import type { NewsItem, NewsState } from "../api/types";
 import { Dialog } from "../ui/Dialog";
 import { relativeDate } from "./format";
@@ -42,7 +43,10 @@ function NewsList({ items, onOpen }: { items: { item: NewsItem; index: number }[
  *  Links open by index, never by URL. More than NEWS_LIMIT items adds See all, which lists
  *  every item in a dialog, newest first (issue 192). */
 export function NewsFeed({ news, onOpen, onRetry }: NewsFeedProps) {
-  const [all, setAll] = useState(false);
+  const [allFor, setAllFor] = useState<NewsState | null>(null);
+  const all = allFor !== null && allFor === news;
+  const setAll = (open: boolean) => setAllFor(open ? news : null);
+  // Open only for the news object it was opened on: a refresh closes it for good.
   let body;
   if (news === null) body = null;
   else if (news.status === "offline") {
@@ -65,19 +69,22 @@ export function NewsFeed({ news, onOpen, onRetry }: NewsFeedProps) {
             See all ({items.length})
           </button>
         )}
-        {all && (
-          <Dialog
-            title="All news"
-            onClose={() => setAll(false)}
-            actions={
-              <button type="button" className="btn ghost" onClick={() => setAll(false)}>
-                Close
-              </button>
-            }
-          >
-            <NewsList items={items} onOpen={onOpen} />
-          </Dialog>
-        )}
+        {all &&
+          // Portaled out of .bottom, whose stacking context would leave .tabs and .topact above the backdrop.
+          createPortal(
+            <Dialog
+              title="All news"
+              onClose={() => setAll(false)}
+              actions={
+                <button type="button" className="btn ghost" onClick={() => setAll(false)}>
+                  Close
+                </button>
+              }
+            >
+              <NewsList items={items} onOpen={onOpen} />
+            </Dialog>,
+            document.body,
+          )}
       </>
     );
   }
