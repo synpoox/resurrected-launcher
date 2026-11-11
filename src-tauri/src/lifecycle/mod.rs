@@ -77,8 +77,12 @@ pub fn run() {
             .maximizable(false)
             // Built hidden and shown after the move, so it never flashes centred.
             .visible(false)
+            // No Ctrl+zoom by keys, wheel or pinch (#185); the layout has fixed sizes.
+            .zoom_hotkeys_enabled(false)
             .build()?;
         position::restore(&window);
+        #[cfg(all(windows, not(debug_assertions)))]
+        disable_browser_accelerator_keys(app);
         if !autostart {
             window.show()?;
         }
@@ -90,6 +94,32 @@ pub fn run() {
     .plugin(tauri_plugin_updater::Builder::new().build())
     .run(tauri::generate_context!())
     .expect("launcher failed to start");
+}
+
+/// Release builds turn off WebView2's browser keys (#185): F5/Ctrl+R reload, Ctrl+P,
+/// Ctrl+F, Ctrl+S, Ctrl+U and the devtools keys. Tauri has no option for this, so it
+/// goes through the WebView2 settings. Copy, paste and other editing keys still work.
+#[cfg(all(windows, not(debug_assertions)))]
+fn disable_browser_accelerator_keys(app: &App) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+    use windows_core::Interface;
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let result = window.with_webview(|webview| unsafe {
+        let set = || -> windows_core::Result<()> {
+            let settings = webview.controller().CoreWebView2()?.Settings()?;
+            settings
+                .cast::<ICoreWebView2Settings3>()?
+                .SetAreBrowserAcceleratorKeysEnabled(false)
+        };
+        if let Err(e) = set() {
+            eprintln!("could not turn off WebView2 browser keys: {e}");
+        }
+    });
+    if let Err(e) = result {
+        eprintln!("could not reach the WebView2 settings: {e}");
+    }
 }
 
 /// The app builder. Single instance is the first plugin: a second launch focuses
