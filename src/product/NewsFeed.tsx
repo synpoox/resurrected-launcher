@@ -10,7 +10,7 @@ export interface NewsFeedProps {
   news: NewsState | null;
   onOpen: (index: number) => void;
   onRetry: () => void;
-  /** A Retry is in flight: the button is disabled and the line says so. */
+  /** A Retry is in flight: Retry is aria-disabled and the line says so. */
   retrying?: boolean;
   /** When the last Retry failed again; shown as "Still offline". */
   failedAt?: Date | null;
@@ -57,22 +57,19 @@ export function NewsFeed({ news, onOpen, onRetry, retrying = false, failedAt = n
   if (news === null) body = null;
   else if (news.status === "offline") {
     body = (
-      <p className="feed-empty" role="status">
-        {retrying
-          ? "Retrying…"
-          : failedAt
-            ? `Still offline (tried at ${failedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}).`
-            : "News needs a connection."}{" "}
-        <button
-          type="button"
-          className="link"
-          disabled={retrying}
-          aria-busy={retrying || undefined}
-          onClick={onRetry}
-        >
+      <div className="feed-empty" aria-busy={retrying || undefined}>
+        <p role="status">
+          {retrying
+            ? "Retrying…"
+            : failedAt
+              ? `Still offline (tried at ${failedAt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })}).`
+              : "News needs a connection."}
+        </p>
+        {/* aria-disabled, not disabled: a disabled button would drop keyboard focus mid-Retry (#209). */}
+        <button type="button" className="link" aria-disabled={retrying || undefined} onClick={() => !retrying && onRetry()}>
           Retry
         </button>
-      </p>
+      </div>
     );
   } else {
     const items = newestFirst(news.items);
@@ -105,7 +102,6 @@ export function NewsFeed({ news, onOpen, onRetry, retrying = false, failedAt = n
   }
   return (
     <section className="feed" aria-label="News">
-      <h2 className="label">News</h2>
       {body}
     </section>
   );

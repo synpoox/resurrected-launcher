@@ -280,17 +280,67 @@ describe("product page", () => {
     await userEvent.click(retry);
     await waitFor(() => expect(replies).toHaveLength(2));
     expect(screen.getByText(/Retrying/)).toBeTruthy();
-    expect((retry as HTMLButtonElement).disabled).toBe(true);
+    // aria-disabled, never disabled: the focused button keeps focus (#209).
+    expect(retry.getAttribute("aria-disabled")).toBe("true");
+    expect((retry as HTMLButtonElement).disabled).toBe(false);
     await userEvent.click(retry);
     expect(replies).toHaveLength(2);
     await act(async () => replies[1]({ status: "offline" }));
-    expect(screen.getByText(/Still offline \(tried at /)).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText(/Still offline \(tried at \d\d:\d\d\)\./)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" }).getAttribute("aria-disabled")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(replies).toHaveLength(3));
     await act(async () => replies[2]({ status: "ok", items: [{ tag: "Guide", title: "Latest", published: "2026-11-01" }] }));
     expect(screen.getByText(/Latest/)).toBeTruthy();
     expect(screen.queryByText(/Still offline/)).toBeNull();
+  });
+
+  it("news: Retry keeps focus, aria-busy is on the updated region and the live region excludes the button", async () => {
+    const replies: ((s: NewsState) => void)[] = [];
+    mount("offline", (a) => {
+      a.getNews = () => new Promise<NewsState>((resolve) => replies.push(resolve));
+    });
+    await waitFor(() => expect(replies).toHaveLength(1));
+    replies[0]({ status: "offline" });
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    const status = screen.getByRole("status");
+    expect(status.contains(retry)).toBe(false);
+    retry.focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(replies).toHaveLength(2));
+    expect(document.activeElement).toBe(retry);
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+    expect(retry.closest(".feed-empty")!.getAttribute("aria-busy")).toBe("true");
+    expect(status.textContent).toBe("Retrying…");
+    await act(async () => replies[1]({ status: "offline" }));
+    expect(document.activeElement).toBe(retry);
+    expect(retry.closest(".feed-empty")!.getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("news: the section has no NEWS label heading (issue 216)", async () => {
+    mount("ready");
+    const feed = await screen.findByRole("region", { name: "News" });
+    expect(within(feed).queryByRole("heading")).toBeNull();
+  });
+
+  it("news: two refused-link reloads resolving out of order show only the latest", async () => {
+    const replies: ((s: NewsState) => void)[] = [];
+    const item = (title: string) => ({ tag: "Guide", title, published: "2026-11-01" });
+    const { user } = mount("ready", (a) => {
+      a.getNews = () => new Promise<NewsState>((resolve) => replies.push(resolve));
+      a.openNewsLink = () => Promise.reject({ code: "invalid_request", message: "load news again" });
+    });
+    await waitFor(() => expect(replies).toHaveLength(1));
+    replies[0]({ status: "ok", items: [item("First")] });
+    await user.click(await screen.findByRole("button", { name: /First/ }));
+    await waitFor(() => expect(replies).toHaveLength(2));
+    await user.click(screen.getByRole("button", { name: /First/ }));
+    await waitFor(() => expect(replies).toHaveLength(3));
+    await act(async () => replies[2]({ status: "ok", items: [item("Latest")] }));
+    await act(async () => replies[1]({ status: "ok", items: [item("Stale")] }));
+    const feed = screen.getByRole("region", { name: "News" });
+    expect(within(feed).getByText(/Latest/)).toBeTruthy();
+    expect(within(feed).queryByText(/Stale/)).toBeNull();
   });
 
   it("About shows why when opening the page is refused", async () => {
