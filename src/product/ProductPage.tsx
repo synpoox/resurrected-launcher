@@ -763,7 +763,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
                 </Notice>
               )}
               {notice()}
-              <div className="act">{actions(false)}</div>
+              <div className={journey === "startup-failed" ? "act act-failed" : "act"}>{actions(false)}</div>
             </div>
             <NewsFeed news={feed.news} onOpen={feed.open} onRetry={feed.retry} />
           </div>
