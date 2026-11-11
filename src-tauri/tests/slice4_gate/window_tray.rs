@@ -193,8 +193,8 @@ fn autostart_starts_hidden_and_a_second_autostart_stays_in_the_tray() {
         "run() reads --autostart"
     );
     assert!(
-        flat.contains(".visible(!autostart)"),
-        "the window is built hidden on autostart"
+        flat.contains(".visible(false)") && flat.contains("if!autostart{window.show()?;}"),
+        "the window is built hidden and shown after the move unless autostart"
     );
     assert!(
         flat.contains("if!args.iter().any(|a|a==AUTOSTART_FLAG){show_main(app)}"),

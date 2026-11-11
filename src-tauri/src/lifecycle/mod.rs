@@ -7,6 +7,7 @@
 
 mod icon;
 pub mod notice;
+pub mod position;
 pub mod tray;
 
 use std::error::Error;
@@ -68,21 +69,27 @@ pub fn run() {
                 f64::from(m.work_area().size.height) / m.scale_factor(),
             )
         }));
-        WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+        let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
             .title(UMBRELLA_DISPLAY_NAME)
             .decorations(false)
             .inner_size(width, height)
-            // Opens centred on the primary monitor (#174); nothing saves or restores position.
+            // Centred on the primary monitor (#174) unless the last spot is still
+            // on a connected monitor (#188, [`position`]).
             .center()
             // A fixed size, like the Riot Client (#203): not resizable, so no maximise either (#135).
             .resizable(false)
             .maximizable(false)
-            .visible(!autostart)
+            // Built hidden and shown after the move, so it never flashes centred.
+            .visible(false)
             // No Ctrl+zoom by keys, wheel or pinch (#185); the layout has fixed sizes.
             .zoom_hotkeys_enabled(false)
             .build()?;
+        position::restore(&window);
         #[cfg(all(windows, not(debug_assertions)))]
         disable_browser_accelerator_keys(app);
+        if !autostart {
+            window.show()?;
+        }
         tray::start(app.handle())?;
         Ok(())
     })
@@ -185,6 +192,7 @@ fn hide_on_close<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
     if let WindowEvent::CloseRequested { api, .. } = event {
         if window.label() == "main" {
             api.prevent_close();
+            position::save(window.app_handle());
             let _ = window.hide();
             notice::on_close(window.app_handle());
         }
