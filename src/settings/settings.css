@@ -37,6 +37,10 @@
   font-size: 17px;
   font-weight: 700;
   color: var(--hero-copy);
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    background var(--dur-base) var(--ease-standard),
+    box-shadow var(--dur-base) var(--ease-standard);
 }
 
 .subnav [role="tab"]:hover {
@@ -57,6 +61,7 @@
   overflow-y: auto;
   padding: calc(48px - var(--titlebar-height)) 48px 40px;
   scrollbar-color: var(--line) var(--bg);
+  animation: fade var(--dur-base) var(--ease-out);
 }
 
 .spanel > * {

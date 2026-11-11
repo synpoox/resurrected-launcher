@@ -53,7 +53,7 @@ export function Settings({ initialTab = "game" }: { initialTab?: SettingsTab }) 
           ))}
         </div>
       </div>
-      <div className="spanel" role="tabpanel" id={`${base}-${tab}`} aria-labelledby={`${base}-${tab}-tab`}>
+      <div key={tab} className="spanel" role="tabpanel" id={`${base}-${tab}`} aria-labelledby={`${base}-${tab}-tab`}>
         {tab === "game" && <GamePanel product={product} state={state} stateFailed={Boolean(products[product.id]?.error)} refresh={refresh} />}
         {tab === "launcher" && <LauncherPanel />}
         {tab === "folders" && <FoldersPanel product={product} state={state} />}

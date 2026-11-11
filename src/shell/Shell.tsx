@@ -10,6 +10,7 @@ import { useProducts } from "../product/store";
 import { RestartingScreen } from "../selfupdate/RestartingScreen";
 import { useSelfUpdate } from "../selfupdate/SelfUpdate";
 import { Settings } from "../settings";
+import { Ghosted } from "../ui/motion";
 import { useToast } from "../ui/Toast";
 import { QuitDialog } from "./QuitDialog";
 import { Sidebar, type View } from "./Sidebar";
@@ -102,21 +103,23 @@ export function Shell({ product, open, tab }: ShellProps) {
       <TitleBar />
       <Sidebar view={view} badges={badges} onSelect={select} />
       <main className="main" aria-label={current ? current.name : "Settings"}>
-        {current ? (
-          <ProductPage
-            key={current.id}
-            product={current}
-            data={products[current.id]}
-            refresh={refresh}
-            open={sceneOpen}
-            tab={sceneOpen === open ? tab : undefined}
-            trayFocus={trayFocus?.product_id === current.id ? trayFocus : undefined}
-            onOpenSettings={() => select({ kind: "settings" })}
-            onDismissBackups={dismissBackups}
-          />
-        ) : (
-          <Settings />
-        )}
+        {/* Switching product or Settings crossfades: the old view fades out as the new one eases in. */}
+        <Ghosted key={current ? current.id : "settings"} className="view">
+          {current ? (
+            <ProductPage
+              product={current}
+              data={products[current.id]}
+              refresh={refresh}
+              open={sceneOpen}
+              tab={sceneOpen === open ? tab : undefined}
+              trayFocus={trayFocus?.product_id === current.id ? trayFocus : undefined}
+              onOpenSettings={() => select({ kind: "settings" })}
+              onDismissBackups={dismissBackups}
+            />
+          ) : (
+            <Settings />
+          )}
+        </Ghosted>
         <RestartingScreen />
         {quit && busy && (
           <QuitDialog

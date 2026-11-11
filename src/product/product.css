@@ -17,7 +17,7 @@
   inset: 0;
   background-repeat: no-repeat;
   background-size: cover;
-  animation: fade 450ms ease-out;
+  animation: fade var(--dur-slow) var(--ease-out);
 }
 
 .shade {
@@ -37,7 +37,8 @@
   translate: 0 -50%;
   /* Stays left of the news column at the 1024 minimum. */
   max-width: min(560px, calc(100% - 120px - var(--feed-width)));
-  animation: lift 450ms ease-out;
+  /* Eases in after the art starts to cross over (product switch, first paint). */
+  animation: lift var(--dur-slow) var(--ease-out) var(--dur-fast) backwards;
 }
 
 .ribbon {
@@ -133,9 +134,25 @@
   font-size: 12px;
 }
 
-/* The main action eases in when a tab opens (reduced motion turns this off in styles.css). */
-.action-col .act {
-  animation: lift 200ms ease-out;
+/* The main action eases in when a tab opens, and so does whatever replaces it when the state
+   changes (Install, Installing, Play): a new control or progress bar lifts in. Reduced motion
+   turns this off in styles.css. */
+.act > * {
+  animation: lift var(--dur-base) var(--ease-out);
+}
+
+.view {
+  position: absolute;
+  inset: 0;
+  animation: fade var(--dur-base) var(--ease-out);
+}
+
+.tabpanel.enter-notes {
+  animation: slide-from-right var(--dur-base) var(--ease-out);
+}
+
+.tabpanel.enter-overview {
+  animation: slide-from-left var(--dur-base) var(--ease-out);
 }
 
 .btn.primary.playing {
@@ -150,7 +167,7 @@
   height: 8px;
   border-radius: 50%;
   background: var(--detail);
-  animation: pulse 1.6s ease-in-out infinite;
+  animation: pulse 1.6s ease-in-out infinite; /* a loop: outside the tokens */
 }
 
 .ready-line {
@@ -209,10 +226,12 @@
 }
 
 .fill {
-  width: 0;
+  width: 100%;
   height: 100%;
   background: var(--button);
-  transition: width 300ms;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--dur-slow) var(--ease-standard);
 }
 
 .fill.striped {
@@ -266,7 +285,7 @@
   text-align: left;
   background: var(--scrim);
   border: 1px solid var(--line);
-  transition: border-color 120ms ease-out;
+  transition: border-color var(--dur-fast) var(--ease-standard);
 }
 
 .feed-item:hover {
@@ -342,6 +361,13 @@
   font-weight: 700;
   letter-spacing: 0.4px;
   color: var(--muted);
+}
+
+.tabs [role="tab"] {
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    background var(--dur-base) var(--ease-standard),
+    box-shadow var(--dur-base) var(--ease-standard);
 }
 
 .tabs [role="tab"]:hover {
@@ -482,7 +508,25 @@
   color: var(--detail);
 }
 
+/* The list drops down: height and opacity together. The panel is hidden when closed (and while it
+   leaves it is inert), so its entries are never reachable closed. */
+.notes-toc-panel {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: toc-open var(--dur-base) var(--ease-out);
+}
+
+.notes-toc-panel[hidden] {
+  display: none;
+}
+
+.notes-toc-panel.closing {
+  animation: toc-close var(--dur-base) var(--ease-in) forwards;
+}
+
 .notes-toc ol {
+  min-height: 0;
+  overflow: hidden;
   list-style: none;
   padding: 0;
 }
@@ -500,6 +544,10 @@
   font-weight: 700;
   color: var(--text);
   text-decoration: none;
+}
+
+.notes-toc li button {
+  transition: color var(--dur-fast) var(--ease-standard);
 }
 
 .notes-toc li button:hover {
@@ -653,7 +701,7 @@
   z-index: 3;
   top: 40px;
   left: 32px;
-  animation: drop 200ms ease-out;
+  animation: drop var(--dur-base) var(--ease-out);
 }
 
 .topact .act {

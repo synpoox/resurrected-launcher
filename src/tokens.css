@@ -39,3 +39,15 @@
   --text-small: 14px;
   --text-title: 24px;
 }
+
+/* Motion tokens (issue 204). Every duration and easing in the frontend comes from here; the same
+   durations are mirrored in src/ui/motion.tsx (a test keeps the two equal). Animate transform and
+   opacity; reduced motion turns it all off in styles.css. */
+:root {
+  --dur-fast: 150ms; /* hover, press, focus, menus, closing dialogs */
+  --dur-base: 200ms; /* dialogs, tabs, toasts, state changes */
+  --dur-slow: 300ms; /* progress, hero art and text, large surfaces */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1); /* both ends eased: moves between states */
+  --ease-out: cubic-bezier(0, 0, 0.2, 1); /* entering */
+  --ease-in: cubic-bezier(0.4, 0, 1, 1); /* leaving */
+}
