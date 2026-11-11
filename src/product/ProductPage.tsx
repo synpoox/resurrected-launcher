@@ -35,6 +35,8 @@ export type Tab = "overview" | "notes";
 export interface TrayFocus {
   product_id: string;
   action: Exclude<TrayRequest["action"], "quit_while_busy">;
+  /** For save_breaking: the operation to run (Install or Update); Update when absent. */
+  kind?: TrayRequest["kind"];
   /** Increments per request, so the same request twice acts twice. */
   seq: number;
 }
@@ -368,14 +370,15 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
     if (kind) void Promise.resolve(kind).then(runAction);
   }, [open, runAction]);
 
-  // Tray requests: the save-breaking dialog (through the Update path), or the Overview's notice.
+  // Tray requests: the save-breaking dialog (through the Install or Update path), or the Overview's notice.
   useEffect(() => {
     if (!trayFocus || focused.current === trayFocus.seq) return;
     focused.current = trayFocus.seq;
     const action = trayFocus.action;
+    const kind = trayFocus.kind ?? "update";
     void Promise.resolve().then(() => {
       setTab("overview");
-      if (action === "save_breaking") return runAction("update");
+      if (action === "save_breaking") return runAction(kind);
     });
   }, [trayFocus, runAction]);
 

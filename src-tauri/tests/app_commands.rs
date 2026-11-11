@@ -1272,11 +1272,13 @@ fn strings(v: &Value) -> Vec<String> {
     serde_json::from_value(v.clone()).unwrap()
 }
 
-/// #215: `Launcher::resolve` loads the earlier releases as the history for an
+/// #215: `Launcher::resolve` passes `Releases::earlier` as the history for an
 /// update and a clean install over an installed release, so a skipped
-/// save-breaking release counts even when the target is not itself flagged.
+/// save-breaking release counts even when the target is not itself flagged. The
+/// `FixtureReleases` double returns every published manifest; the real lookup of
+/// cached manifests is covered by `operations::tests::earlier_lists_other_valid_cached_manifests_of_the_product`.
 #[test]
-fn resolve_loads_release_history_for_the_save_break_check() {
+fn resolve_passes_the_release_history_to_the_save_break_check() {
     let rig = Rig::new();
     rig.install(PD2R_1);
     rig.publish_with(PD2R_2, |m| {

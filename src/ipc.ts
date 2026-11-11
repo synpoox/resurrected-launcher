@@ -407,6 +407,8 @@ export interface TrayRequest {
   product_id: string;
   /** Why a tray Play was refused (show_what_happened); null otherwise. */
   error: LauncherError | null;
+  /** The operation save_breaking asks for (install or update); absent otherwise. */
+  kind?: OperationKind;
 }
 
 /** Event "tray-request", Versioned like the others. */

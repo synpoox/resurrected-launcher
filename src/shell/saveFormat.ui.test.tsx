@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Save compatibility prompt before an update (issue 213). The launcher decides from release
 // metadata (`Inspection.breaks_saves`); these scenes stand in for the native answer.
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ApiContext } from "../api/context";
@@ -120,6 +120,26 @@ describe("save compatibility prompt (issue 213)", () => {
     await user.click(within(dialog).getByRole("checkbox", { name: /after installing/ }));
     await user.click(within(dialog).getByRole("button", { name: /^Install 0\.4\.2$/ }));
     expect(started(api)[0].args[0]).toEqual({ product_id: "pd2r", kind: "install", acknowledge_save_breaking: true });
+  });
+
+  it("a tray request for a save-breaking Install runs Install with Install wording (issue 219)", async () => {
+    const { api, user } = mount("install", (a) => {
+      a.scene.inspections = { ...a.scene.inspections, install: { ...a.scene.inspections?.install, breaks_saves: true } };
+    });
+    await screen.findByRole("button", { name: /^Install$/ });
+    await act(async () => api.emitTrayRequest({ action: "save_breaking", kind: "install", product_id: "pd2r", error: null }));
+    const dialog = await screen.findByRole("dialog", { name: /This install can't use your current characters/ });
+    expect(started(api)).toHaveLength(0);
+    await user.click(within(dialog).getByRole("checkbox", { name: /after installing/ }));
+    await user.click(within(dialog).getByRole("button", { name: /^Install 0\.4\.2$/ }));
+    expect(started(api)[0].args[0]).toEqual({ product_id: "pd2r", kind: "install", acknowledge_save_breaking: true });
+  });
+
+  it("a tray save-breaking request without a kind still runs Update", async () => {
+    const { api } = mount("save-breaking");
+    await screen.findByRole("dialog");
+    await act(async () => api.emitTrayRequest({ action: "save_breaking", product_id: "pd2r", error: null }));
+    expect(await screen.findByRole("dialog", { name: /This update can't use your current characters/ })).toBeTruthy();
   });
 
   it("an acknowledged target release is not asked again after a failed start", async () => {

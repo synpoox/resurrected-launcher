@@ -63,7 +63,7 @@ export function Shell({ product, open, tab }: ShellProps) {
         }
         select({ kind: "product", id: r.product_id });
         traySeq.current += 1;
-        setTrayFocus({ product_id: r.product_id, action: r.action, seq: traySeq.current });
+        setTrayFocus({ product_id: r.product_id, action: r.action, kind: r.kind, seq: traySeq.current });
         if (r.error) toast.show({ tone: "error", text: r.error.message });
         void refresh();
       }),
