@@ -49,7 +49,7 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 ## Window
 
 - Frameless with a **seamless title bar**: content runs to the top edge, and the minimise and close controls float top-right over it. There is no title-bar mark or name.
-- 1280×720 by default, 1024×640 minimum and **1600×900 maximum**. Like the Riot Client, there is no maximise: no Maximise button, double-clicking the title bar does nothing and Windows maximise (Win+↑, snap to top) is off (#135). Every layout below is checked at all three sizes.
+- A fixed size, not resizable (#203): **1600×900**, or **1280×720** when the primary monitor's work area is smaller than that. Like the Riot Client, there is no maximise: no Maximise button, double-clicking the title bar does nothing and Windows maximise (Win+↑, snap to top) is off (#135). Every layout below is checked at both sizes.
 - Scrolling pages (Patch Notes, the Settings panel) start below the 32px title bar, so their scrollbar never sits under the window controls (#135).
 - Closing the window keeps the launcher in the tray, and Quit lives in the tray menu (see [Tray](#tray)).
 

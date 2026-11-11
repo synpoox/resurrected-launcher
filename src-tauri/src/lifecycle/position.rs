@@ -1,6 +1,7 @@
 //! Window position (#188): the main window reopens where it was last closed, but
 //! only while that spot is still on a connected monitor; otherwise it opens centred
-//! (#174). Only the position is kept: the size stays fixed.
+//! (#174). Only the position is kept: the size stays fixed. A spot near a monitor's
+//! edge is pulled back so the whole window stays on that monitor (#210).
 //!
 //! Saved in physical pixels to `window-position` (`"x y"`) in the notice's
 //! directory ([`notice::dir`]) when the window closes to the tray and when the
@@ -35,9 +36,22 @@ impl Monitor {
     }
 }
 
-/// The saved spot, if its top-left corner is on one of `monitors`.
-pub fn restorable(saved: Option<(i32, i32)>, monitors: &[Monitor]) -> Option<(i32, i32)> {
-    saved.filter(|&(x, y)| monitors.iter().any(|m| m.contains(x, y)))
+/// The saved spot, if its top-left corner is on one of `monitors`, moved just far
+/// enough that the whole window (`size`, physical pixels) fits on that monitor. A
+/// window larger than the monitor is pinned to its top-left corner.
+pub fn restorable(
+    saved: Option<(i32, i32)>,
+    size: (u32, u32),
+    monitors: &[Monitor],
+) -> Option<(i32, i32)> {
+    let (x, y) = saved?;
+    let m = monitors.iter().find(|m| m.contains(x, y))?;
+    let fit = |pos: i32, start: i32, len: u32, extent: u32| {
+        let max = i64::from(start) + i64::from(len) - i64::from(extent);
+        let clamped = i64::from(pos).min(max).max(i64::from(start));
+        i32::try_from(clamped).unwrap_or(pos)
+    };
+    Some((fit(x, m.x, m.width, size.0), fit(y, m.y, m.height, size.1)))
 }
 
 /// Reads the saved spot; a missing or malformed file is no spot.
@@ -72,7 +86,8 @@ pub fn restore<R: Runtime>(window: &WebviewWindow<R>) {
             height: m.size().height,
         })
         .collect();
-    if let Some((x, y)) = restorable(read(&dir), &monitors) {
+    let size = window.outer_size().map_or((0, 0), |s| (s.width, s.height));
+    if let Some((x, y)) = restorable(read(&dir), size, &monitors) {
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
 }
@@ -103,6 +118,7 @@ mod tests {
         width: 1920,
         height: 1080,
     };
+    const WIN: (u32, u32) = (1600, 900);
     const LEFT: Monitor = Monitor {
         x: -2560,
         y: -200,
@@ -112,19 +128,47 @@ mod tests {
 
     #[test]
     fn a_spot_on_a_connected_monitor_is_restored() {
-        assert_eq!(restorable(Some((100, 50)), &[PRIMARY]), Some((100, 50)));
         assert_eq!(
-            restorable(Some((-2000, -100)), &[PRIMARY, LEFT]),
+            restorable(Some((100, 50)), WIN, &[PRIMARY]),
+            Some((100, 50))
+        );
+        assert_eq!(
+            restorable(Some((-2000, -100)), WIN, &[PRIMARY, LEFT]),
             Some((-2000, -100))
         );
     }
 
     #[test]
     fn a_spot_on_a_disconnected_monitor_is_centred() {
-        assert_eq!(restorable(Some((-2000, -100)), &[PRIMARY]), None);
-        assert_eq!(restorable(Some((1920, 0)), &[PRIMARY]), None);
-        assert_eq!(restorable(None, &[PRIMARY]), None);
-        assert_eq!(restorable(Some((10, 10)), &[]), None);
+        assert_eq!(restorable(Some((-2000, -100)), WIN, &[PRIMARY]), None);
+        assert_eq!(restorable(Some((1920, 0)), WIN, &[PRIMARY]), None);
+        assert_eq!(restorable(None, WIN, &[PRIMARY]), None);
+        assert_eq!(restorable(Some((10, 10)), WIN, &[]), None);
+    }
+
+    #[test]
+    fn a_window_hanging_off_its_monitor_is_pulled_back() {
+        // 1600x900 restored onto a 1366x768 secondary to the right of PRIMARY.
+        let small = Monitor {
+            x: 1920,
+            y: 0,
+            width: 1366,
+            height: 768,
+        };
+        assert_eq!(
+            restorable(Some((2000, 100)), WIN, &[PRIMARY, small]),
+            Some((1920, 0))
+        );
+        // Hanging off the bottom/right of a monitor the window does fit on.
+        assert_eq!(
+            restorable(Some((1000, 700)), WIN, &[PRIMARY]),
+            Some((320, 180))
+        );
+        // Already fully on screen: untouched.
+        assert_eq!(
+            restorable(Some((320, 180)), WIN, &[PRIMARY]),
+            Some((320, 180))
+        );
     }
 
     #[test]
