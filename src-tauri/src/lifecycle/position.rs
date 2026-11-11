@@ -26,11 +26,12 @@ pub struct Rect {
 }
 
 /// A connected monitor, in physical pixels: its full rectangle and its work area
-/// (the rectangle minus the taskbar).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// (the rectangle minus the taskbar), and its scale factor (1.0 = 100%).
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Monitor {
     pub full: Rect,
     pub work: Rect,
+    pub scale: f64,
 }
 
 impl Rect {
@@ -46,15 +47,28 @@ impl Rect {
 
 /// The saved spot, if its top-left corner is on one of `monitors`, moved just far
 /// enough that the whole window (`size`, physical pixels) fits in that monitor's
-/// work area. A window larger than that work area gets no spot (it opens centred
-/// on the primary monitor, where its size was chosen to fit).
+/// work area. `size` was measured at scale factor `current_scale`; Windows
+/// rescales the window when it moves to a monitor with another scale factor, so
+/// it is converted to the target monitor's before checking. A window larger than
+/// that work area gets no spot (it opens centred on the primary monitor, where
+/// its size was chosen to fit).
 pub fn restorable(
     saved: Option<(i32, i32)>,
     size: (u32, u32),
+    current_scale: f64,
     monitors: &[Monitor],
 ) -> Option<(i32, i32)> {
     let (x, y) = saved?;
-    let m = monitors.iter().find(|m| m.full.contains(x, y))?.work;
+    let target = monitors.iter().find(|m| m.full.contains(x, y))?;
+    let m = target.work;
+    let ratio = if current_scale > 0.0 && target.scale > 0.0 {
+        target.scale / current_scale
+    } else {
+        1.0
+    };
+    // Rounded up with a little slack for float error: never under-estimate.
+    let rescale = |n: u32| (f64::from(n) * ratio - 1e-6).ceil().max(0.0) as u32;
+    let size = (rescale(size.0), rescale(size.1));
     if size.0 > m.width || size.1 > m.height {
         return None;
     }
@@ -106,11 +120,13 @@ pub fn restore<R: Runtime>(window: &WebviewWindow<R>) {
                     width: work.size.width,
                     height: work.size.height,
                 },
+                scale: m.scale_factor(),
             }
         })
         .collect();
     let size = window.outer_size().map_or((0, 0), |s| (s.width, s.height));
-    if let Some((x, y)) = restorable(read(&dir), size, &monitors) {
+    let scale = window.scale_factor().unwrap_or(1.0);
+    if let Some((x, y)) = restorable(read(&dir), size, scale, &monitors) {
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
 }
@@ -149,6 +165,7 @@ mod tests {
                 width,
                 height: height - taskbar,
             },
+            scale: 1.0,
         }
     }
 
@@ -160,33 +177,33 @@ mod tests {
     #[test]
     fn a_spot_on_a_connected_monitor_is_restored() {
         assert_eq!(
-            restorable(Some((100, 50)), WIN, &[PRIMARY]),
+            restorable(Some((100, 50)), WIN, 1.0, &[PRIMARY]),
             Some((100, 50))
         );
         assert_eq!(
-            restorable(Some((-2000, -100)), WIN, &[PRIMARY, LEFT]),
+            restorable(Some((-2000, -100)), WIN, 1.0, &[PRIMARY, LEFT]),
             Some((-2000, -100))
         );
     }
 
     #[test]
     fn a_spot_on_a_disconnected_monitor_is_centred() {
-        assert_eq!(restorable(Some((-2000, -100)), WIN, &[PRIMARY]), None);
-        assert_eq!(restorable(Some((1920, 0)), WIN, &[PRIMARY]), None);
-        assert_eq!(restorable(None, WIN, &[PRIMARY]), None);
-        assert_eq!(restorable(Some((10, 10)), WIN, &[]), None);
+        assert_eq!(restorable(Some((-2000, -100)), WIN, 1.0, &[PRIMARY]), None);
+        assert_eq!(restorable(Some((1920, 0)), WIN, 1.0, &[PRIMARY]), None);
+        assert_eq!(restorable(None, WIN, 1.0, &[PRIMARY]), None);
+        assert_eq!(restorable(Some((10, 10)), WIN, 1.0, &[]), None);
     }
 
     #[test]
     fn a_window_hanging_off_its_monitor_is_pulled_back_into_the_work_area() {
         // Hanging off the bottom/right: clamped to the work area, above the taskbar.
         assert_eq!(
-            restorable(Some((1000, 700)), WIN, &[PRIMARY]),
+            restorable(Some((1000, 700)), WIN, 1.0, &[PRIMARY]),
             Some((320, 132))
         );
         // Already fully inside the work area: untouched.
         assert_eq!(
-            restorable(Some((320, 132)), WIN, &[PRIMARY]),
+            restorable(Some((320, 132)), WIN, 1.0, &[PRIMARY]),
             Some((320, 132))
         );
     }
@@ -195,10 +212,48 @@ mod tests {
     fn a_window_larger_than_its_monitor_is_centred_instead() {
         // 1600x900 on a 1366x768 secondary to the right of PRIMARY.
         let small = mon(1920, 0, 1366, 768, 0);
-        assert_eq!(restorable(Some((2000, 100)), WIN, &[PRIMARY, small]), None);
+        assert_eq!(
+            restorable(Some((2000, 100)), WIN, 1.0, &[PRIMARY, small]),
+            None
+        );
         // Fits the full monitor but not the work area (taskbar): also centred.
         let tight = mon(0, 0, 1920, 1080, 200);
-        assert_eq!(restorable(Some((10, 10)), WIN, &[tight]), None);
+        assert_eq!(restorable(Some((10, 10)), WIN, 1.0, &[tight]), None);
+    }
+
+    const fn scaled(m: Monitor, scale: f64) -> Monitor {
+        Monitor { scale, ..m }
+    }
+
+    #[test]
+    fn the_size_is_rescaled_to_the_target_monitors_scale_factor() {
+        // 1280x720 at 100% on the primary is 1920x1080 physical at 150%.
+        let win = (1280, 720);
+        // Secondary at 150% whose work area (1600x900) cannot fit 1920x1080.
+        let small = scaled(mon(1920, 0, 1600, 900, 0), 1.5);
+        assert_eq!(
+            restorable(Some((2000, 10)), win, 1.0, &[PRIMARY, small]),
+            None
+        );
+        // The same monitor at 100% fits the unscaled 1280x720.
+        let same = mon(1920, 0, 1600, 900, 0);
+        assert_eq!(
+            restorable(Some((2000, 10)), win, 1.0, &[PRIMARY, same]),
+            Some((2000, 10))
+        );
+        // A 4K secondary at 150% fits 1920x1080 and the spot is clamped to it.
+        let big = scaled(mon(1920, 0, 3840, 2160, 0), 1.5);
+        assert_eq!(
+            restorable(Some((5000, 1500)), win, 1.0, &[PRIMARY, big]),
+            Some((3840, 1080))
+        );
+        // Moving to a lower scale shrinks the check: 1920x1080 at 150% is
+        // 1280x720 at 100%, which fits a 1366x768 work area.
+        let low = mon(1920, 0, 1366, 768, 0);
+        assert_eq!(
+            restorable(Some((2000, 10)), (1920, 1080), 1.5, &[PRIMARY, low]),
+            Some((2000, 10))
+        );
     }
 
     #[test]
