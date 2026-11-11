@@ -18,7 +18,7 @@ use resurrected_launcher_lib::app::{
     ProductState, RecoveryView, Release, ReleaseNotes, Releases, StartupFailed, OUTCOME_EVENT,
     PROGRESS_EVENT, STATE_EVENT,
 };
-use resurrected_launcher_lib::catalog::{GameBuild, Platform};
+use resurrected_launcher_lib::catalog::{GameBuild, Platform, ReleaseManifest};
 use resurrected_launcher_lib::contract::{
     ErrorCode, GameLocation, LauncherError, OperationKind, Phase, ProductId, ProgressEvent,
     Readiness, RelativePath, RunningGame, Versioned, CONTRACT_VERSION, LOADER_DOWNLOAD_PAGE,
@@ -73,6 +73,21 @@ impl Releases for FixtureReleases {
             .find(|r| r.manifest.release_id == record.release_id)
             .expect("fixture release")
             .clone())
+    }
+
+    /// Every other published release of the product, like the cached manifests.
+    fn earlier(
+        &self,
+        _: &mut StateStore,
+        product: &ProductId,
+        release_id: &str,
+    ) -> Vec<ReleaseManifest> {
+        let all = self.0.lock().unwrap();
+        all.iter()
+            .map(|r| &r.manifest)
+            .filter(|m| &m.product_id == product && m.release_id != release_id)
+            .cloned()
+            .collect()
     }
 }
 
@@ -226,6 +241,9 @@ impl Releases for Shared {
         r: &InstalledRelease,
     ) -> Result<Release, LauncherError> {
         self.0.installed(s, r)
+    }
+    fn earlier(&self, s: &mut StateStore, p: &ProductId, id: &str) -> Vec<ReleaseManifest> {
+        self.0.earlier(s, p, id)
     }
 }
 
@@ -406,8 +424,14 @@ impl Rig {
 
     /// Publishes `name` as the recommended release, served by the fixture server.
     fn publish(&self, name: &str) -> FixtureRelease {
+        self.publish_with(name, |_| {})
+    }
+
+    /// [`Rig::publish`], with `tweak` applied to the published manifest.
+    fn publish_with(&self, name: &str, tweak: impl FnOnce(&mut ReleaseManifest)) -> FixtureRelease {
         let release = release(name);
         let mut manifest = release.manifest.clone();
+        tweak(&mut manifest);
         manifest.archive = self.server.serve(&release);
         // Verified with the rig's fake D2R.exe.
         manifest.compatibility.game_builds = vec![GameBuild {
@@ -1246,6 +1270,38 @@ fn startup_recovers_an_interrupted_first_install() {
 
 fn strings(v: &Value) -> Vec<String> {
     serde_json::from_value(v.clone()).unwrap()
+}
+
+/// #215: `Launcher::resolve` loads the earlier releases as the history for an
+/// update and a clean install over an installed release, so a skipped
+/// save-breaking release counts even when the target is not itself flagged.
+#[test]
+fn resolve_loads_release_history_for_the_save_break_check() {
+    let rig = Rig::new();
+    rig.install(PD2R_1);
+    rig.publish_with(PD2R_2, |m| {
+        m.release_date = "2099-01-02".into();
+        m.saves.incompatibility_notice = Some("Saves break.".into());
+    });
+    let r3 = rig.publish_with(PD2R_3, |m| {
+        m.release_date = "2099-01-03".into();
+        m.saves.incompatibility_notice = None;
+    });
+    for kind in ["update", "clean_install"] {
+        let insp = rig.inspect(kind, json!({})).unwrap();
+        assert!(!insp.release.save_breaking, "{kind}");
+        assert!(insp.breaks_saves, "{kind} must see the skipped release");
+    }
+
+    // The backend refuses the unacknowledged start and goes ahead with it.
+    let insp = rig.inspect("update", json!({})).unwrap();
+    rig.start("update", json!({}), &insp.token).unwrap();
+    let refused = rig.outcome();
+    assert_eq!(refused["error"]["code"], "save_breaking_not_acknowledged");
+    assert_eq!(rig.state().installed.unwrap().release_id, PD2R_1);
+    let ack = json!({ "acknowledge_save_breaking": true });
+    assert_eq!(rig.run("update", ack)["status"], "succeeded");
+    assert_eq!(rig.state().installed.unwrap().release_id, r3.release_id());
 }
 
 #[test]

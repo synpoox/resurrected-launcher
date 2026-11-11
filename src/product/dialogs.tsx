@@ -137,8 +137,18 @@ export function LocationDialog({ product, onClose }: { product: Product; onClose
   );
 }
 
+export type SaveBreakingOp = "update" | "install" | "clean_install";
+
+const SAVE_BREAKING_WORDS: Record<SaveBreakingOp, { noun: string; action: (version: string) => string; gerund: string }> = {
+  update: { noun: "update", action: (v) => `Update to ${v}`, gerund: "updating" },
+  install: { noun: "install", action: (v) => `Install ${v}`, gerund: "installing" },
+  clean_install: { noun: "clean install", action: (v) => `Clean install ${v}`, gerund: "doing a clean install" },
+};
+
 export interface SaveBreakingProps {
   product: Product;
+  /** What the player is about to do; Update unless said otherwise. */
+  op?: SaveBreakingOp;
   inspection: Inspection;
   installedVersion: string | null;
   onConfirm: () => void;
@@ -146,19 +156,20 @@ export interface SaveBreakingProps {
 }
 
 /** ADR 0001: an accent-topped warning with a required acknowledgement. Saves are never converted. */
-export function SaveBreakingDialog({ product, inspection, installedVersion, onConfirm, onClose }: SaveBreakingProps) {
+export function SaveBreakingDialog({ product, op = "update", inspection, installedVersion, onConfirm, onClose }: SaveBreakingProps) {
+  const words = SAVE_BREAKING_WORDS[op];
   const api = useApi();
   const [ack, setAck] = useState(false);
   const version = inspection.release.display_version;
   return (
     <Dialog
-      title="This update can't use your current characters safely"
+      title={`This ${words.noun} can't use your current characters safely`}
       tone="risk"
       onClose={onClose}
       actions={
         <>
           <button type="button" className="btn primary" disabled={!ack} onClick={onConfirm}>
-            Update to {version}
+            {words.action(version)}
           </button>
           <button type="button" className="btn ghost" onClick={onClose} data-autofocus="">
             Not now
@@ -182,7 +193,7 @@ export function SaveBreakingDialog({ product, inspection, installedVersion, onCo
       </p>
       <label className="ack">
         <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} required />
-        <span>I understand my current characters may not work after updating</span>
+        <span>I understand my current characters may not work after {words.gerund}</span>
       </label>
     </Dialog>
   );

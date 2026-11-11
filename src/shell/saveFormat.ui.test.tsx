@@ -90,6 +90,38 @@ describe("save compatibility prompt (issue 213)", () => {
     expect(started(api)).toHaveLength(0);
   });
 
+  it("a clean install across a save-format change asks for acknowledgement after consent, then starts with both (issue 215)", async () => {
+    const { api, user } = mount("clean-install", (a) => {
+      const clean = a.scene.inspections?.clean_install;
+      a.scene.inspections = { ...a.scene.inspections, clean_install: { ...clean, breaks_saves: true } };
+    });
+    const consent = await screen.findByRole("dialog", { name: /Replace the PD2R files/ });
+    await user.click(await within(consent).findByRole("button", { name: "Clean install" }));
+    const dialog = await screen.findByRole("dialog", { name: /This clean install can't use your current characters/ });
+    expect(started(api)).toHaveLength(0);
+    expect(within(dialog).getByRole("button", { name: /^Clean install 0\.4\.2$/ }).hasAttribute("disabled")).toBe(true);
+    await user.click(within(dialog).getByRole("checkbox", { name: /after doing a clean install/ }));
+    await user.click(within(dialog).getByRole("button", { name: /^Clean install 0\.4\.2$/ }));
+    expect(started(api)[0].args[0]).toEqual({
+      product_id: "pd2r",
+      kind: "clean_install",
+      consent_clean_install: true,
+      acknowledge_save_breaking: true,
+    });
+  });
+
+  it("an install across a save-format change shows the same prompt (issue 215)", async () => {
+    const { api, user } = mount("install", (a) => {
+      a.scene.inspections = { ...a.scene.inspections, install: { ...a.scene.inspections?.install, breaks_saves: true } };
+    });
+    await user.click(await screen.findByRole("button", { name: /^Install$/ }));
+    const dialog = await screen.findByRole("dialog", { name: /This install can't use your current characters/ });
+    expect(started(api)).toHaveLength(0);
+    await user.click(within(dialog).getByRole("checkbox", { name: /after installing/ }));
+    await user.click(within(dialog).getByRole("button", { name: /^Install 0\.4\.2$/ }));
+    expect(started(api)[0].args[0]).toEqual({ product_id: "pd2r", kind: "install", acknowledge_save_breaking: true });
+  });
+
   it("an acknowledged target release is not asked again after a failed start", async () => {
     const seen: unknown[] = [];
     const { user } = mount("save-breaking", (a) => {

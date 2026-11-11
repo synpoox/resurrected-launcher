@@ -494,7 +494,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
     startOperation(request, insp) {
       record("startOperation", request, insp);
       if (insp.token !== `${request.kind}-token`) return refuse("release_changed", "Inspect again.");
-      if (insp.breaks_saves && request.kind === "update" && !request.acknowledge_save_breaking) {
+      if (insp.breaks_saves && ["install", "update", "clean_install"].includes(request.kind) && !request.acknowledge_save_breaking) {
         return refuse("save_breaking_not_acknowledged", "Acknowledge the save-breaking release first.");
       }
       if (insp.conflicts.length > 0) {
