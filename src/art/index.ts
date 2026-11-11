@@ -39,10 +39,9 @@ export const HERO_ART: Record<HeroProductId, HeroArt> = {
   ),
   forever: official(
     forever,
-    "Necromancer promotional art",
-    "Official Diablo II: Resurrected Necromancer promotional artwork",
-    "74% 22%",
-    "auto 135%",
+    "30th Anniversary key art",
+    "Diablo before a glowing arcane circle in the official Diablo II: Resurrected 30th Anniversary key art",
+    "20% 30%",
   ),
   "09": official(
     nine,

@@ -226,7 +226,7 @@ Official D2R promotional art, © Blizzard Entertainment, **never presented as mo
 | Product | Image | Framing |
 | --- | --- | --- |
 | PD2R | Reign of the Warlock key art | `55% center`, cover |
-| Forever | Necromancer promotional art, 2600×906 (the website's Forever hero; replaces the 30th Anniversary key art from [#22](https://github.com/synpoox/resurrected-launcher/issues/22); same composition as 09, so the same framing) | `74% 22%`, `auto 135%` |
+| Forever | 30th Anniversary key art, textless, 1920×1080 (from [#22](https://github.com/synpoox/resurrected-launcher/issues/22), restored by [#173](https://github.com/synpoox/resurrected-launcher/issues/173)) | `20% 30%`, `cover` |
 | 09 | Paladin promotional art, 2600×906 (the website's 09 hero) | `74% 22%`, `auto 135%` |
 
 Source URLs are in the prototype's `src/data.js`. The real app **bundles or caches** the art instead of hotlinking it, so heroes still show offline.
