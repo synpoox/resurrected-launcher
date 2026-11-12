@@ -110,6 +110,70 @@ export function NotesSections({ releaseKey, sections }: { releaseKey: string; se
   ));
 }
 
+/** The nearest ancestor that scrolls vertically (the notes panel), or the page. */
+function scrollParent(el: HTMLElement): HTMLElement {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const o = getComputedStyle(p).overflowY;
+    if ((o === "auto" || o === "scroll") && p.scrollHeight > p.clientHeight) return p;
+  }
+  return (document.scrollingElement as HTMLElement | null) ?? document.documentElement;
+}
+
+/** Stops the running ease, if any (a new jump, user input, a release switch, unmount). */
+let cancelEase: (() => void) | null = null;
+
+/**
+ * Scrolls `target` to the top of its scroller over MOTION.slow with --ease-standard (cubic-bezier .4,0,.2,1).
+ * One ease runs at a time: a new jump restarts from the current position, and wheel, pointer, touch or
+ * key input stops it so the user's scrolling is never fought.
+ */
+function smoothScrollTo(target: HTMLElement) {
+  cancelEase?.();
+  const box = scrollParent(target);
+  const isPage = box === document.scrollingElement || box === document.documentElement;
+  const top = isPage ? 0 : box.getBoundingClientRect().top;
+  const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+  const from = box.scrollTop;
+  // Clamped to the room left, so the ease is not cut short against the end.
+  const max = Math.max(0, box.scrollHeight - box.clientHeight);
+  const delta = Math.max(-from, Math.min(target.getBoundingClientRect().top - top - margin, max - from));
+  if (Math.abs(delta) < 1) return;
+  const ease = bezier(0.4, 0, 0.2, 1);
+  const start = performance.now();
+  const inputs = ["wheel", "pointerdown", "touchstart", "keydown"] as const;
+  const listenOn: EventTarget[] = isPage ? [window] : [box, window];
+  let raf = 0;
+  const stop = () => {
+    cancelAnimationFrame(raf);
+    for (const el of listenOn) for (const e of inputs) el.removeEventListener(e, stop);
+    if (cancelEase === stop) cancelEase = null;
+  };
+  const step = (now: number) => {
+    const t = Math.min(1, (now - start) / MOTION.slow);
+    box.scrollTop = from + delta * ease(t);
+    if (t < 1) raf = requestAnimationFrame(step);
+    else stop();
+  };
+  for (const el of listenOn) for (const e of inputs) el.addEventListener(e, stop, { passive: true });
+  cancelEase = stop;
+  raf = requestAnimationFrame(step);
+}
+
+/** CSS cubic-bezier(x1, y1, x2, y2) as a function of time, solved by bisection. */
+function bezier(x1: number, y1: number, x2: number, y2: number) {
+  const at = (a: number, b: number, u: number) => 3 * a * u * (1 - u) ** 2 + 3 * b * u * u * (1 - u) + u ** 3;
+  return (x: number) => {
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 24; i++) {
+      const mid = (lo + hi) / 2;
+      if (at(x1, x2, mid) < x) lo = mid;
+      else hi = mid;
+    }
+    return at(y1, y2, (lo + hi) / 2);
+  };
+}
+
 /** Collapsed by default; each entry scrolls to its section and moves focus to its heading. */
 function TableOfContents({ releaseKey, sections }: { releaseKey: string; sections: NotesSection[] }) {
   // Closing: the list drops back up (height and opacity) before it is hidden; it is already out of reach.
@@ -123,13 +187,17 @@ function TableOfContents({ releaseKey, sections }: { releaseKey: string; section
   }, [phase]);
   const toggle = () => setPhase(open ? (motionAllowed() ? "closing" : "closed") : motionAllowed() ? "opening" : "open");
   const listId = useId();
+  // A release switch or unmount must not leave an ease running onto the old offsets.
+  useEffect(() => () => cancelEase?.(), [releaseKey]);
   const entries = sections.flatMap((s, i) => (s.heading ? [{ i, heading: s.heading }] : []));
   if (entries.length === 0) return null;
   const go = (id: string) => {
     const target = document.getElementById(id);
     if (!target) return;
-    // Instant, no smooth scrolling (spec: Motion). jsdom has no scrollIntoView.
-    if (typeof target.scrollIntoView === "function") target.scrollIntoView({ block: "start" });
+    // Eases over --dur-slow (spec: Motion); instant under reduced motion. Focus never scrolls itself.
+    if (motionAllowed()) smoothScrollTo(target);
+    // jsdom has no scrollIntoView.
+    else if (typeof target.scrollIntoView === "function") target.scrollIntoView({ block: "start" });
     target.focus({ preventScroll: true });
   };
   return (

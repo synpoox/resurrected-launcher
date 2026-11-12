@@ -249,3 +249,20 @@ describe("exit animations", () => {
     expect(ghosts()).toHaveLength(0);
   });
 });
+
+describe("text selection (#230)", () => {
+  const css = readFileSync("src/styles.css", "utf8");
+  // Every top-level block for the selector, joined (body has more than one).
+  const rule = (selector: string) =>
+    [...css.matchAll(new RegExp(`(?:^|\n)${selector} {([^}]*)}`, "g"))].map((m) => m[1]).join("\n");
+
+  it("is off app-wide on body, so portals are covered too", () => {
+    expect(rule("body")).toContain("user-select: none");
+    expect(readFileSync("src/shell/shell.css", "utf8")).not.toContain("user-select");
+  });
+
+  it("stays on for text entry", () => {
+    const entry = css.match(/input,\s*textarea,\s*\[contenteditable\][^{]*\{([^}]*)\}/)?.[1] ?? "";
+    expect(entry).toContain("user-select: text");
+  });
+});

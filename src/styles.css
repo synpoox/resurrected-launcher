@@ -14,6 +14,18 @@ body,
   height: 100%;
 }
 
+/* Nothing in the window is highlightable, like a native app (#230). Inherited, so dialogs, menus
+   and toasts (portals under body) are covered; only text entry stays selectable. */
+body {
+  user-select: none;
+}
+
+input,
+textarea,
+[contenteditable]:not([contenteditable="false"]) {
+  user-select: text;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -81,7 +93,8 @@ code,
 }
 
 /* Motion (spec: Motion; issue 204). Durations and easings are the --dur-* and --ease-* tokens.
-   Scrolling is instant. Only transform and opacity animate (the table of contents also eases its
+   Scrolling is instant, except a table-of-contents jump, which eases over --dur-slow
+   (PatchNotes.tsx). Only transform and opacity animate (the table of contents also eases its
    height, once, on a short list). No animation delays an action: exits are inert copies. */
 html {
   scroll-behavior: auto;

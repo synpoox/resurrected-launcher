@@ -78,7 +78,7 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 - Layout follows the League client's patch notes in structure and feel, with our tokens and no Riot branding (owner design pass, #128):
   - **Banner**: the product's bundled hero art (`src/art`, never a remote image), 260px high across an 880px column, 1px `--line` frame.
   - **Release head**, centred in a 760px column, newest release first: a 32px uppercase title in two lines, the product name over "Patch 0.2.0 notes". The patch version drops a leading or trailing status; the status becomes the tag. Then the notes' opening paragraph as the summary (17px), a 3px double `--line` divider, and the meta row: tag (`--detail`: Alpha, Beta or Release) · date.
-  - **Table of contents**: a full-width row between rules, "TABLE OF CONTENTS" with `+`/`−` in `--detail`, collapsed by default. Opened, it lists every section heading as a ruled row. Choosing one jumps to that section (instantly, no smooth scrolling) and moves focus to its heading. Entries are buttons, because the webview has no links.
+  - **Table of contents**: a full-width row between rules, "TABLE OF CONTENTS" with `+`/`−` in `--detail`, collapsed by default. Opened, it lists every section heading as a ruled row. Choosing one scrolls smoothly to that section (over 300ms, `--ease-standard`; instantly under reduced motion) and moves focus to its heading. Entries are buttons, because the webview has no links.
   - **Sections**: a 32px bold italic uppercase heading, then a 1px `--line` box on `--bg`. In the box: an optional description or `>` quote (quotation marks in `--muted`), a divider, `###` sub-headings (21px uppercase) and bullets nested up to three levels (disc, then circle). Body text is 17px at line height 1.7.
 - Notes are a Markdown subset (`docs/specs/release-manifest.md`). It is parsed into data and rendered as React text: HTML, links and images are never interpreted, so notes never load an image. The only remote image is the optional `release_notes_header_image` banner (#179), whose hosts `img-src` lists; it falls back to the hero art when absent or failing to load.
 - The installed release's notes ship with it and display offline. Newer releases offline show "Patch notes for newer releases need a connection. Retry".
@@ -199,7 +199,8 @@ Subtle only, with no video and no hero rotation: the hero changes only when the 
 - Progress width transitions over 300ms. The running dot pulses on a 1.6s cycle.
 - A busy button's spinner (a 14px square, three sides drawn) turns once every 800ms (#138). Under reduced motion it stays still.
 - A closing toast fades and drops 8px over 200ms ease-in ([#156](https://github.com/synpoox/resurrected-launcher/issues/156)).
-- Switching tabs and scrolling Patch Notes is instant, with no smooth scrolling.
+- Switching tabs and ordinary scrolling are instant. A table-of-contents jump in Patch Notes scrolls smoothly over 300ms with `--ease-standard` (#231); under reduced motion it jumps.
+- No text in the window can be selected by dragging or double-clicking (`user-select: none` on `body`); text inputs stay selectable (#230).
 - **Under `prefers-reduced-motion: reduce`, every animation and transition is off.** The running pulse becomes a static dot, and progress bars jump to their value.
 
 ## Accessibility
