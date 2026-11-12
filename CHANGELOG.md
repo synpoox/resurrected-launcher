@@ -8,12 +8,13 @@ Smoother launcher, safer game updates, and a round of fixes.
 
 - **Save-break warning for game patches.** If a game patch changes how character saves are stored, the launcher warns you before it installs, for Install, Clean install and Update alike.
 - **Reopens where you left it.** The launcher window comes back on the same monitor and spot where you last closed it. The first time, it opens in the middle of the screen.
-- **Smoother motion.** Buttons, tabs, dialogs and screen changes now animate more gently.
-- **Product page polish.** A tidier action row next to Play, steadier tabs, a softer Play fade-in and a clearer glow on the main button.
+- **Smoother motion.** Buttons and dialogs animate more gently. Switching products swaps the background art with a short crossfade, and tabs slide in.
+- **Product page polish.** A tidier action row next to Play, steadier tabs and a clearer glow on the main button.
 - **News.** See all lists every item when a product has more than three, Retry tells you it is trying again, and the feed hides itself when a product has no news.
 - **Troubleshooting.** Copy log and Open logs folder sit next to Export diagnostics.
 - **What's new.** From the next update on, the launcher shows its release notes once after it updates itself.
 - **Patch Notes images.** Patch Notes can show a header image for each release.
+- **Smooth Patch Notes contents.** Choosing an entry in the Patch Notes contents list scrolls smoothly to that section.
 
 ### Changed
 
@@ -21,6 +22,7 @@ Smoother launcher, safer game updates, and a round of fixes.
 - The Forever page now uses the 30th Anniversary key art.
 - The art credits list is no longer in Settings.
 - The browser's right-click menu now works only in text fields, and browser keys such as F5 and Ctrl+F do nothing.
+- Text in the launcher can no longer be highlighted, like a regular app.
 
 ### Fixed
 
