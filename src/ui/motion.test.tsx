@@ -249,3 +249,18 @@ describe("exit animations", () => {
     expect(ghosts()).toHaveLength(0);
   });
 });
+
+describe("text selection (#230)", () => {
+  const css = readFileSync("src/styles.css", "utf8");
+  const rule = (selector: string) => css.match(new RegExp(`(?:^|\n)${selector} {([^}]*)}`))?.[1] ?? "";
+
+  it("is off app-wide on body, so portals are covered too", () => {
+    expect(rule("body")).toContain("user-select: none");
+    expect(readFileSync("src/shell/shell.css", "utf8")).not.toContain("user-select");
+  });
+
+  it("stays on for text entry", () => {
+    const entry = css.match(/input,\s*textarea,\s*\[contenteditable\][^{]*\{([^}]*)\}/)?.[1] ?? "";
+    expect(entry).toContain("user-select: text");
+  });
+});

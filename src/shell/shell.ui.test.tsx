@@ -468,6 +468,34 @@ describe("product page", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("a table-of-contents jump eases the scroll when motion is allowed, and jumps under reduced motion (#231)", async () => {
+    const notes = ["## Items", "- a", "## Skills", "- b"].join("\n");
+    const { user } = mount("ready", (a) => {
+      a.scene.notes = [{ ...a.scene.notes[0], notes }];
+    });
+    await user.click(within(await loaded()).getByRole("tab", { name: "Patch Notes" }));
+    const toc = await screen.findByRole("navigation", { name: "Table of contents" });
+    await user.click(within(toc).getByRole("button", { name: /Table of contents/ }));
+    const heading = screen.getByRole("heading", { level: 3, name: "Skills" });
+    const jump = vi.fn();
+    heading.scrollIntoView = jump;
+    const entry = within(toc).getByRole("button", { name: "Skills" });
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("reduce"), media: q }));
+    await user.click(entry);
+    expect(jump).toHaveBeenCalledWith({ block: "start" });
+    expect(focused()).toBe(heading);
+    // Motion allowed: no instant jump; a frame loop moves the scroller instead.
+    jump.mockClear();
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: false, media: q }));
+    const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 0);
+    heading.getBoundingClientRect = () => ({ top: 400 }) as DOMRect;
+    await user.click(entry);
+    expect(jump).not.toHaveBeenCalled();
+    expect(raf).toHaveBeenCalled();
+    expect(focused()).toBe(heading);
+    raf.mockRestore();
+  });
+
   it("the table of contents drops back up before it hides, out of reach meanwhile; reduced motion hides it at once", async () => {
     const notes = ["## Items", "- a", "## Skills", "- b"].join("\n");
     const { user } = mount("ready", (a) => {

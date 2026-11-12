@@ -28,7 +28,6 @@
   right: 0;
   height: var(--titlebar-height);
   display: flex;
-  user-select: none;
 }
 
 .titlebar .drag {
