@@ -120,6 +120,15 @@ describe("view switches are never see-through", () => {
     }
   });
 
+  it("the lift and drop keyframes (action area) move by transform only, never opacity (#233)", () => {
+    const css = read("src/styles.css");
+    for (const name of ["lift", "drop"]) {
+      const body = block(css, `@keyframes ${name}`);
+      expect(body, name).toContain("transform");
+      expect(body, name).not.toContain("opacity");
+    }
+  });
+
   it("tab panels are opaque; a product view has no entrance animation; the hero art crossfades over opaque art", () => {
     const css = read("src/product/product.css");
     expect(block(css, ".view")).not.toContain("animation");

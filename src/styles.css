@@ -106,16 +106,15 @@ html {
   }
 }
 
+/* lift and drop are transform only: the action area is never see-through (issue 233). */
 @keyframes lift {
   from {
-    opacity: 0;
     transform: translateY(8px);
   }
 }
 
 @keyframes drop {
   from {
-    opacity: 0;
     transform: translateY(-12px);
   }
 }
