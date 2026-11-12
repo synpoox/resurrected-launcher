@@ -13,14 +13,15 @@ Policy comes from the [#8 resolution](https://github.com/synpoox/resurrected-lau
 | `lint` | Every trigger, including PRs that touch workflows or this folder | Runs pinned, hash-checked `actionlint` on all workflows, and checks that every secret `release.yml` reads is listed below |
 | `signing-gate` | Tag or manual run, never on PRs | Reports whether both secrets exist in the `launcher-release` environment. If they don't, it logs a notice and the build is skipped |
 | `build` | Only when `signing-gate` found both secrets | Checks that the tag equals `launcher-v` + `tauri.conf.json` `version`, runs `tauri build` with `createUpdaterArtifacts`, writes `latest.json`, and uploads the installer, its `.sig` and `latest.json` as a workflow artifact kept for 14 days |
+| `draft-release` | Only after a successful `build` on a pushed tag `launcher-v<version>`; never for a `-gate` tag, a manual run or a PR | Fails if a release for the tag already exists. Otherwise downloads the artifact and creates a **draft** release titled `Project Resurrected launcher <version>`, with `docs/release/notes/<version>.md` as the body and the installer, its `.sig` and `latest.json` attached under their own names. Needs no secrets and no environment; its token has `contents: write` for this job only |
 
-It never creates, drafts or publishes a GitHub release, and it never writes a tag. Publishing and promotion belong to slice 6.
+The workflow creates a draft release (#238) but never publishes one, never marks one latest, and never writes a tag. The owner's one remaining step: open the draft under Releases, check the title, notes and assets, then click **Publish**. Publishing is what makes it the latest release, which the updater endpoint below follows. Promotion and the public test channel belong to slice 6.
 
-`latest.json` points at `https://github.com/<repo>/releases/download/launcher-v<version>/<installer>`. That URL only works after someone publishes those assets by hand. The updater endpoint the app trusts is `plugins.updater.endpoints` in `tauri.conf.json` (`https://github.com/synpoox/resurrected-launcher/releases/latest/download/latest.json`, decided on #86, set by #88), so it only answers once a release is published.
+`latest.json` points at `https://github.com/<repo>/releases/download/launcher-v<version>/<installer>`. That URL only works once the draft is published. The updater endpoint the app trusts is `plugins.updater.endpoints` in `tauri.conf.json` (`https://github.com/synpoox/resurrected-launcher/releases/latest/download/latest.json`, decided on #86, set by #88), so it only answers once the owner publishes the draft.
 
-The bundle is named after `productName` (`Project Resurrected`, #151), so Tauri writes `Project Resurrected_<version>_x64-setup.exe`. The workflow renames it and its `.sig` to `Project-Resurrected_<version>_x64-setup.exe` before writing `latest.json` (the release and gate URLs both use the renamed file), because GitHub would otherwise rename a spaced asset on upload and the URL would break. Publish the renamed files as they are.
+The bundle is named after `productName` (`Project Resurrected`, #151), so Tauri writes `Project Resurrected_<version>_x64-setup.exe`. The workflow renames it and its `.sig` to `Project-Resurrected_<version>_x64-setup.exe` before writing `latest.json` (the release and gate URLs both use the renamed file), because GitHub would otherwise rename a spaced asset on upload and the URL would break. The draft uses the renamed files as they are.
 
-What's new (#189): put the launcher's release notes in `docs/release/notes/<version>.md` (the patch-notes Markdown subset) before tagging. The workflow copies them into `latest.json`'s `notes`; after the self-update installs, the launcher shows them once in a What's new dialog. With no file, `notes` is empty and no dialog opens.
+What's new (#189): put the launcher's release notes in `docs/release/notes/<version>.md` (the patch-notes Markdown subset) before tagging. The workflow copies them into `latest.json`'s `notes`; after the self-update installs, the launcher shows them once in a What's new dialog. Without it `notes` is empty and no dialog opens, and the draft-release job (#238) fails: it needs this file.
 
 ## Gate builds (#89)
 
@@ -38,7 +39,7 @@ Both secrets live in the GitHub **environment** `launcher-release`, not in repos
 | `TAURI_SIGNING_PRIVATE_KEY` | The full contents of the private key file made by `tauri signer generate`. Tauri also accepts a path, but CI has no such file. |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The key's password. The workflow requires one: an empty password counts as missing. |
 
-No other secret is needed, and `GITHUB_TOKEN` stays read-only. The **public** key is not a secret: it is committed in `tauri.conf.json` as `plugins.updater.pubkey` (#88), and a test pins it to the key posted on #86.
+No other secret is needed. `GITHUB_TOKEN` is read-only everywhere except `draft-release`, which gets `contents: write` and nothing else. The **public** key is not a secret: it is committed in `tauri.conf.json` as `plugins.updater.pubkey` (#88), and a test pins it to the key posted on #86.
 
 Environment settings:
 - Required reviewer: the owner.
