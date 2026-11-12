@@ -15,7 +15,7 @@ use super::operations::{
     invalid, locked, Launcher, RecoveryView, Release, ReleaseSummary, Running,
 };
 use super::winapi::{self, ProcessHandle};
-use crate::catalog::{self, Feed, FEED_IDENTITY};
+use crate::catalog::{self, Availability, Feed, FEED_IDENTITY};
 use crate::contract::{
     ErrorCode, GameLocation, LauncherError, LoaderGuidance, OperationKind, ProductId, Readiness,
     RunningGame, Versioned, LOADER_DOWNLOAD_PAGE,
@@ -319,6 +319,21 @@ impl Launcher {
         products
     }
 
+    /// Whether the cached feed lists `product` as coming soon and no release of
+    /// it is installed, so it has no manifest to recover against.
+    fn is_coming_soon(&self, product: &ProductId) -> bool {
+        let Ok(mut s) = locked(&self.state) else {
+            return false;
+        };
+        if s.installed_release(product).is_some() {
+            return false;
+        }
+        s.cached(FEED_IDENTITY)
+            .and_then(|c| Feed::parse(&c.bytes).ok())
+            .and_then(|f| f.product(product).map(|p| p.availability.clone()))
+            == Some(Availability::Upcoming)
+    }
+
     /// `location` with the known products whose install folder exists under it.
     pub(super) fn view(&self, location: GameLocation) -> LocationView {
         let installed_products = self
@@ -568,6 +583,10 @@ impl Launcher {
             Err(_) => None,
         };
         for product in &self.known_products() {
+            // Coming soon and not installed: nothing to recover, nothing to log (#234).
+            if self.is_coming_soon(product) {
+                continue;
+            }
             // A failure leaves the journal; readiness then reports recovery_required.
             // Without a D2R location there is nothing to recover, so that refusal
             // is not logged on every start.

@@ -1269,6 +1269,42 @@ fn startup_recovers_an_interrupted_first_install() {
     assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
 }
 
+/// #234: a coming-soon product has nothing to recover; startup must not try it
+/// (which fails with `InvalidRequest`) nor log a failure, while an installed
+/// product with a journal still recovers.
+#[test]
+fn startup_skips_coming_soon_products_and_still_recovers_installed_ones() {
+    let rig = Rig::on(Box::new(CrashBeforeActivation::default()));
+    let r1 = rig.publish(PD2R_1);
+    let root = rig.game.product_root(&r1);
+    let outcome = rig.run("install", json!({}));
+    assert_eq!(outcome["error"]["code"], "internal", "{outcome}");
+    let journal = root.with_file_name("PD2R.resurrected-journal.json");
+    assert!(journal.exists());
+    let mut feed: Value = serde_json::from_slice(&feed(&[&r1])).unwrap();
+    for id in ["project-09", "project-forever"] {
+        feed["products"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({ "product_id": id, "availability": "upcoming" }));
+    }
+    {
+        let launcher = rig.webview.state::<Arc<Launcher>>();
+        let mut store = launcher.state.lock().unwrap();
+        store
+            .put_cached("feed", &serde_json::to_vec(&feed).unwrap())
+            .unwrap();
+    }
+
+    rig.start_up();
+    assert!(!journal.exists(), "the installed product still recovers");
+    let text = fs::read_to_string(rig._state_dir.path().join("launcher.log")).unwrap();
+    assert!(!text.contains("project-09"), "{text}");
+    assert!(!text.contains("project-forever"), "{text}");
+    assert!(text.contains("recovery of pd2r: RolledBack"), "{text}");
+    assert!(!text.contains("failed: InvalidRequest"), "{text}");
+}
+
 // ---- slice 4 command gaps (#74) ----
 
 fn strings(v: &Value) -> Vec<String> {
