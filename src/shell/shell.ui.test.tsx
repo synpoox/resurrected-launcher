@@ -481,19 +481,92 @@ describe("product page", () => {
     heading.scrollIntoView = jump;
     const entry = within(toc).getByRole("button", { name: "Skills" });
     vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("reduce"), media: q }));
-    await user.click(entry);
-    expect(jump).toHaveBeenCalledWith({ block: "start" });
-    expect(focused()).toBe(heading);
-    // Motion allowed: no instant jump; a frame loop moves the scroller instead.
+    try {
+      await user.click(entry);
+      expect(jump).toHaveBeenCalledWith({ block: "start" });
+      expect(focused()).toBe(heading);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    // Motion allowed: no instant jump; frames driven by hand move the scroller.
     jump.mockClear();
     vi.stubGlobal("matchMedia", (q: string) => ({ matches: false, media: q }));
-    const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 0);
-    heading.getBoundingClientRect = () => ({ top: 400 }) as DOMRect;
-    await user.click(entry);
-    expect(jump).not.toHaveBeenCalled();
-    expect(raf).toHaveBeenCalled();
-    expect(focused()).toBe(heading);
-    raf.mockRestore();
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextId = 1;
+    const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      frames.set(nextId, cb);
+      return nextId++;
+    });
+    const caf = vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => void frames.delete(id));
+    let clock = 1000;
+    const nowSpy = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const run = (at: number) => {
+      clock = at;
+      const pending = [...frames.values()];
+      frames.clear();
+      for (const cb of pending) cb(at);
+    };
+    const box = document.documentElement;
+    const dims = vi.spyOn(box, "scrollHeight", "get").mockReturnValue(5000);
+    const dims2 = vi.spyOn(box, "clientHeight", "get").mockReturnValue(600);
+    // scroll-margin-top is CSS, not loaded in jsdom; the end position is top minus whatever it computes to.
+    const margin = parseFloat(getComputedStyle(heading).scrollMarginTop) || 0;
+    try {
+      box.scrollTop = 0;
+      let top = 400;
+      heading.getBoundingClientRect = () => ({ top }) as DOMRect;
+      await user.click(entry);
+      expect(jump).not.toHaveBeenCalled();
+      expect(frames.size).toBe(1);
+      expect(focused()).toBe(heading);
+      run(1000);
+      expect(box.scrollTop).toBeCloseTo(0, 6);
+      run(1150);
+      const mid = box.scrollTop;
+      expect(mid).toBeGreaterThan(0);
+      expect(mid).toBeGreaterThan((400 - margin) * 0.5); // decelerating curve is past linear at the midpoint
+      run(1300);
+      const end = box.scrollTop;
+      expect(end).toBeGreaterThan(mid);
+      expect(end).toBeCloseTo(400 - margin, 6);
+      expect(frames.size).toBe(0);
+
+      // Wheel mid-ease stops it: no later frame writes scrollTop.
+      box.scrollTop = 0;
+      clock = 2000;
+      await user.click(entry);
+      run(2100);
+      const before = box.scrollTop;
+      fireEvent.wheel(window);
+      expect(frames.size).toBe(0);
+      box.scrollTop = before + 7;
+      run(2200);
+      expect(box.scrollTop).toBe(before + 7);
+
+      // A second click mid-ease restarts from the current position with a single loop.
+      box.scrollTop = 0;
+      clock = 3000;
+      await user.click(entry);
+      run(3100);
+      const at = box.scrollTop;
+      top = 400 - at;
+      await user.click(entry);
+      expect(frames.size).toBe(1);
+      run(3100);
+      expect(box.scrollTop).toBeCloseTo(at, 6);
+      run(3400);
+      expect(box.scrollTop).toBeCloseTo(end, 6);
+      expect(frames.size).toBe(0);
+      expect(caf).toHaveBeenCalled();
+    } finally {
+      nowSpy.mockRestore();
+      dims.mockRestore();
+      dims2.mockRestore();
+      caf.mockRestore();
+      raf.mockRestore();
+      vi.unstubAllGlobals();
+      box.scrollTop = 0;
+    }
   });
 
   it("the table of contents drops back up before it hides, out of reach meanwhile; reduced motion hides it at once", async () => {

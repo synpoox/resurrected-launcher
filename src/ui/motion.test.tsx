@@ -252,7 +252,9 @@ describe("exit animations", () => {
 
 describe("text selection (#230)", () => {
   const css = readFileSync("src/styles.css", "utf8");
-  const rule = (selector: string) => css.match(new RegExp(`(?:^|\n)${selector} {([^}]*)}`))?.[1] ?? "";
+  // Every top-level block for the selector, joined (body has more than one).
+  const rule = (selector: string) =>
+    [...css.matchAll(new RegExp(`(?:^|\n)${selector} {([^}]*)}`, "g"))].map((m) => m[1]).join("\n");
 
   it("is off app-wide on body, so portals are covered too", () => {
     expect(rule("body")).toContain("user-select: none");

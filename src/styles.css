@@ -93,7 +93,8 @@ code,
 }
 
 /* Motion (spec: Motion; issue 204). Durations and easings are the --dur-* and --ease-* tokens.
-   Scrolling is instant, except a table-of-contents jump, which eases over --dur-slow (PatchNotes.tsx). Only transform and opacity animate (the table of contents also eases its
+   Scrolling is instant, except a table-of-contents jump, which eases over --dur-slow
+   (PatchNotes.tsx). Only transform and opacity animate (the table of contents also eases its
    height, once, on a short list). No animation delays an action: exits are inert copies. */
 html {
   scroll-behavior: auto;

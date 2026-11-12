@@ -119,22 +119,44 @@ function scrollParent(el: HTMLElement): HTMLElement {
   return (document.scrollingElement as HTMLElement | null) ?? document.documentElement;
 }
 
-/** Scrolls `target` to the top of its scroller over MOTION.slow with --ease-standard (cubic-bezier .4,0,.2,1). */
+/** Stops the running ease, if any (a new jump, user input, a release switch, unmount). */
+let cancelEase: (() => void) | null = null;
+
+/**
+ * Scrolls `target` to the top of its scroller over MOTION.slow with --ease-standard (cubic-bezier .4,0,.2,1).
+ * One ease runs at a time: a new jump restarts from the current position, and wheel, pointer, touch or
+ * key input stops it so the user's scrolling is never fought.
+ */
 function smoothScrollTo(target: HTMLElement) {
+  cancelEase?.();
   const box = scrollParent(target);
-  const top = box === document.scrollingElement || box === document.documentElement ? 0 : box.getBoundingClientRect().top;
+  const isPage = box === document.scrollingElement || box === document.documentElement;
+  const top = isPage ? 0 : box.getBoundingClientRect().top;
   const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
   const from = box.scrollTop;
-  const delta = target.getBoundingClientRect().top - top - margin;
+  // Clamped to the room left, so the ease is not cut short against the end.
+  const max = Math.max(0, box.scrollHeight - box.clientHeight);
+  const delta = Math.max(-from, Math.min(target.getBoundingClientRect().top - top - margin, max - from));
   if (Math.abs(delta) < 1) return;
   const ease = bezier(0.4, 0, 0.2, 1);
   const start = performance.now();
+  const inputs = ["wheel", "pointerdown", "touchstart", "keydown"] as const;
+  const listenOn: EventTarget[] = isPage ? [window] : [box, window];
+  let raf = 0;
+  const stop = () => {
+    cancelAnimationFrame(raf);
+    for (const el of listenOn) for (const e of inputs) el.removeEventListener(e, stop);
+    if (cancelEase === stop) cancelEase = null;
+  };
   const step = (now: number) => {
     const t = Math.min(1, (now - start) / MOTION.slow);
     box.scrollTop = from + delta * ease(t);
-    if (t < 1) requestAnimationFrame(step);
+    if (t < 1) raf = requestAnimationFrame(step);
+    else stop();
   };
-  requestAnimationFrame(step);
+  for (const el of listenOn) for (const e of inputs) el.addEventListener(e, stop, { passive: true });
+  cancelEase = stop;
+  raf = requestAnimationFrame(step);
 }
 
 /** CSS cubic-bezier(x1, y1, x2, y2) as a function of time, solved by bisection. */
@@ -165,6 +187,8 @@ function TableOfContents({ releaseKey, sections }: { releaseKey: string; section
   }, [phase]);
   const toggle = () => setPhase(open ? (motionAllowed() ? "closing" : "closed") : motionAllowed() ? "opening" : "open");
   const listId = useId();
+  // A release switch or unmount must not leave an ease running onto the old offsets.
+  useEffect(() => () => cancelEase?.(), [releaseKey]);
   const entries = sections.flatMap((s, i) => (s.heading ? [{ i, heading: s.heading }] : []));
   if (entries.length === 0) return null;
   const go = (id: string) => {
