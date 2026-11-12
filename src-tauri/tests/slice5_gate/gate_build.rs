@@ -108,17 +108,57 @@ fn release_builds_have_self_update_on_and_only_gate_tags_change_the_build() {
     assert!(has(
         "name: launcher-${{ steps.version.outputs.version }}${{ steps.version.outputs.gate == 'true' && '-gate' || '' }}-unpublished"
     ));
-    // Still never publishes or tags.
-    for word in [
-        "gh release",
-        "softprops",
-        "create-release",
-        "git tag",
-        "git push",
-    ] {
+    // The only release step is the draft job (#238): a draft, never published,
+    // never tagged. Comments are ignored; every other line is checked.
+    for word in ["softprops", "create-release", "git tag", "git push"] {
         assert!(!yml.contains(word), "release.yml mentions {word}");
     }
+    let raw: Vec<&str> = yml.lines().collect();
+    let start = raw
+        .iter()
+        .position(|l| *l == "  draft-release:")
+        .expect("release.yml has a draft-release job");
+    let end = raw[start + 1..]
+        .iter()
+        .position(|l| l.starts_with("  ") && !l.starts_with("   ") && !l.trim().starts_with('#'))
+        .map_or(raw.len(), |i| start + 1 + i);
+    let code = |l: &&str| !l.trim().starts_with('#');
+    let in_job = |i: usize| i > start && i < end;
+    let mentions = |word: &str| -> Vec<usize> {
+        (0..raw.len())
+            .filter(|&i| code(&raw[i]) && raw[i].contains(word))
+            .collect()
+    };
+    // Every `gh release` is inside the draft-release job.
+    let gh = mentions("gh release");
+    assert!(!gh.is_empty());
+    assert!(
+        gh.iter().all(|&i| in_job(i)),
+        "gh release outside draft-release"
+    );
+    // The only create is a --draft --verify-tag; nothing publishes or edits.
+    let creates: Vec<&str> = gh
+        .iter()
+        .map(|&i| raw[i])
+        .filter(|l| l.contains("gh release create"))
+        .collect();
+    assert_eq!(creates.len(), 1);
+    assert!(creates[0].contains(" --draft ") && creates[0].contains(" --verify-tag"));
+    for l in gh.iter().map(|&i| raw[i]) {
+        assert!(
+            l.contains("gh release create") || l.contains("gh release view"),
+            "unexpected gh release use: {l}"
+        );
+    }
+    for word in ["--latest", "gh release edit", "--draft=false"] {
+        assert!(!yml.contains(word), "release.yml mentions {word}");
+    }
+    // Read-only by default; write access is the draft job's alone.
     assert!(has("contents: read"));
+    let writes = mentions("contents: write");
+    assert_eq!(writes.len(), 1, "contents: write appears once");
+    assert!(in_job(writes[0]), "contents: write outside draft-release");
+    assert!(raw[..start].contains(&"  contents: read"));
 }
 
 /// Every build installs per user (no UAC), runs as invoker, carries the offline

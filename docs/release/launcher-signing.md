@@ -21,7 +21,7 @@ The workflow creates a draft release (#238) but never publishes one, never marks
 
 The bundle is named after `productName` (`Project Resurrected`, #151), so Tauri writes `Project Resurrected_<version>_x64-setup.exe`. The workflow renames it and its `.sig` to `Project-Resurrected_<version>_x64-setup.exe` before writing `latest.json` (the release and gate URLs both use the renamed file), because GitHub would otherwise rename a spaced asset on upload and the URL would break. The draft uses the renamed files as they are.
 
-What's new (#189): put the launcher's release notes in `docs/release/notes/<version>.md` (the patch-notes Markdown subset) before tagging. The workflow copies them into `latest.json`'s `notes`; after the self-update installs, the launcher shows them once in a What's new dialog. With no file, `notes` is empty and no dialog opens.
+What's new (#189): put the launcher's release notes in `docs/release/notes/<version>.md` (the patch-notes Markdown subset) before tagging. The workflow copies them into `latest.json`'s `notes`; after the self-update installs, the launcher shows them once in a What's new dialog. Without it `notes` is empty and no dialog opens, and the draft-release job (#238) fails: it needs this file.
 
 ## Gate builds (#89)
 
