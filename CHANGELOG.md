@@ -4,7 +4,7 @@
 
 ### New
 
-- The product page now shows a gold game wordmark at the top left of the hero, above the ribbon and title.
+- The product page shows the Diablo II: Resurrected logo at the top left of the hero, with Project above it (PD2R) or 09 below it.
 
 ### Fixed
 

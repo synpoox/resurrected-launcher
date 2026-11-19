@@ -17,6 +17,7 @@ it.each(PRODUCTS.map((p) => [p.id, p] as const))("%s renders the logo and its ex
   );
   // PROJECT sits above the logo, 09 below it.
   expect(kids[0].tagName === "SPAN").toBe(product.wordmark.above !== undefined);
+  expect(mark.querySelector("img")!.getAttribute("alt")).toBe("");
   expect(mark.getAttribute("aria-hidden")).toBe("true");
   expect(screen.getAllByRole("heading")).toHaveLength(1);
 });
