@@ -12,8 +12,7 @@ Resurrected Launcher installs, updates and starts Diablo II: Resurrected mods. I
 
 ## Features
 
-- Installs and updates mods on your Diablo II: Resurrected installation.
-- Checks downloaded files against published hashes.
+- Installs and updates mods, and checks every download against published hashes.
 - Keeps your saves, loot filters and settings. The launcher does not convert saves.
 - Warns you before a save-breaking update and asks you to confirm it.
 - Rolls back a failed or cancelled update.
@@ -38,14 +37,13 @@ Download `Project-Resurrected_<version>_x64-setup.exe` from the [Releases page](
 ## Updates
 
 - The launcher updates itself.
-- Mod releases are installed and updated from the launcher. Each release's Patch Notes are shown in the launcher.
 - Back up your saves before you update. Use Settings → Folders and plugins → Open folder.
-- The launcher does not delete or convert saves. A new game version can still reject or change them. Going back to an older version does not restore saves.
+- A new game version can still reject or change saves. Going back to an older version does not restore them.
 
 ## Troubleshooting
 
 - **Game won't start or files look damaged:** open the **⋯** menu next to Play and choose **Repair**. Repair keeps your saves, loot filters and settings.
-- **Still not working:** go to Settings → Troubleshooting → Export diagnostics. A review dialog shows the report before you save it.
+- **Still not working:** go to Settings → Troubleshooting → Export diagnostics. A review dialog shows the report before you save it. The report is saved to a file on your PC. Nothing is sent.
 
 ## Plugins
 
@@ -53,24 +51,12 @@ You can install plugins yourself. Plugins are allowed in offline play and in dir
 
 ## Build from source
 
-Requirements: Windows 10 or 11, Node.js 22, Rust 1.90 (installed with [rustup](https://rustup.rs)), and the [Tauri Windows prerequisites](https://tauri.app/start/prerequisites/#windows). You do not need Diablo II: Resurrected to build.
-
-```sh
-git clone https://github.com/synpoox/resurrected-launcher.git
-cd resurrected-launcher
-npm ci
-npm run tauri dev
-```
-
-To build the installer, run `npx tauri build`. The installer is written to `src-tauri/target/release/bundle/nsis/`.
+To build from source, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Documentation
 
 - [CONTRIBUTING.md](CONTRIBUTING.md): developer guide, tests and project layout
 - [GLOSSARY.md](GLOSSARY.md): terms used in the launcher
-- [docs/specs/launcher-v1.md](docs/specs/launcher-v1.md): launcher v1 spec
-- [docs/adr/](docs/adr): architecture decisions
-- [docs/release/launcher-signing.md](docs/release/launcher-signing.md): launcher release signing
 - [docs/third-party.md](docs/third-party.md): third-party components
 
 ## License
