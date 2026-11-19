@@ -221,6 +221,23 @@ fn install_puts_the_release_in_place_keeps_unknown_plugin_and_records_it_install
 }
 
 #[test]
+fn install_into_a_d2r_folder_with_no_mods_folder_creates_the_product_root() {
+    let rig = Rig::new();
+    let (r1, m1) = rig.served(PD2R_1);
+    let d2r = tempfile::tempdir().unwrap();
+    fs::write(d2r.path().join("D2R.exe"), b"").unwrap();
+    let mut req = rig.request(Install, &r1, &m1, None);
+    req.d2r = d2r.path();
+
+    let report = rig.run(&req).unwrap();
+
+    let mut want = release_tree(&r1);
+    want.remove(DISPOSABLE_SENTINEL); // fixtures only; a real install has none
+    assert_eq!(tree(&report.product_root), want);
+    assert_eq!(rig.installed_release().as_deref(), Some(PD2R_1));
+}
+
+#[test]
 fn update_replaces_untouched_shipped_defaults_using_the_previous_published_hash() {
     let rig = Rig::new();
     let (_, m1) = install_1(&rig);

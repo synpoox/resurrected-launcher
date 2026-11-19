@@ -137,7 +137,11 @@ pub fn check(
             running.join("; "),
         ));
     }
-    probe_write(&paths.root.join(".resurrected-write-probe"))?;
+    // An absent root (first install at this location) is created by the install's
+    // renames; the sibling probe below proves its parent is writable.
+    if paths.root.exists() {
+        probe_write(&paths.root.join(".resurrected-write-probe"))?;
+    }
     probe_write(&sibling(&paths.root, ".resurrected-write-probe"))?;
     let parent = paths.root.parent().unwrap_or(&paths.root);
     let free = host
@@ -163,6 +167,14 @@ mod tests {
     fn system_host_reports_free_space_of_a_temp_dir() {
         let dir = tempfile::tempdir().unwrap();
         assert!(SystemHost.free_space(dir.path()).unwrap() > 0);
+    }
+
+    #[test]
+    fn check_passes_for_an_absent_root_and_leaves_nothing_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::for_root(&dir.path().join("PD2Resurrected"));
+        check(&paths, 1, &[], &SystemHost).unwrap();
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
     }
 
     #[cfg(windows)]

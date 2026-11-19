@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Install, Update and Repair no longer fail with "cannot write ... (os error 3)" when the D2R folder has no PD2Resurrected folder yet. The launcher now creates it.
+
 ## 0.1.5
 
 Community links in the sidebar, and the launcher now offers updates that fix an unsupported D2R version.

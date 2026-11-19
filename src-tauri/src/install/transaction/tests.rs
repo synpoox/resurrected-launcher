@@ -276,6 +276,19 @@ impl Fixture {
         }
     }
 
+    /// A real-shaped D2R folder (`D2R.exe`, `mods`) whose product root is absent.
+    fn absent_root() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let d2r = dir.path().join("Diablo II Resurrected");
+        fs::create_dir_all(d2r.join("mods")).unwrap();
+        fs::write(d2r.join("D2R.exe"), b"").unwrap();
+        Self {
+            root: d2r.join("mods").join("PD2R"),
+            dir,
+            record: Record(Mutex::new(None)),
+        }
+    }
+
     fn ctx<'a>(&'a self, injector: &'a dyn FaultInjector, host: &'a dyn Host) -> Context<'a> {
         Context {
             injector,
@@ -603,6 +616,38 @@ fn crash_during_in_process_rollback_is_resolved_by_recovery() {
     fx.run_with(&case, &crash, &Plenty, fail).unwrap_err();
     assert_eq!(fx.recover(&NoFaults), Ok(Recovery::RolledBack));
     assert_whole(&fx, &ends, false, "rollback crash");
+}
+
+#[test]
+fn install_with_an_absent_root_creates_it_and_a_late_failure_leaves_none() {
+    let case = install_case();
+    let done = Fixture::absent_root();
+    done.run(&case, &NoFaults).unwrap();
+    assert!(done.root.join("data/a.txt").is_file());
+
+    let fx = Fixture::absent_root();
+    let before = state(&fx);
+    // Fails after the move: the in-process rollback must undo the root too.
+    let fail = Some((Boundary::LiveVerified, ErrorCode::Cancelled));
+    fx.run_with(&case, &NoFaults, &Plenty, fail).unwrap_err();
+    assert!(!fx.root.exists(), "rollback left the product root");
+    assert_eq!(state(&fx), before);
+}
+
+#[test]
+fn crash_after_the_roots_make_dir_is_recovered_to_no_root_and_a_closed_journal() {
+    let case = install_case();
+    let fx = Fixture::absent_root();
+    let before = state(&fx);
+    let crash = FailAt {
+        boundary: Boundary::StagedMovedToLive,
+        point: FaultPoint::AfterEntry(0),
+    };
+    fx.run(&case, &crash).unwrap_err();
+    assert!(fx.root.is_dir(), "the root's MakeDir had run");
+    assert_eq!(fx.recover(&NoFaults), Ok(Recovery::RolledBack));
+    assert!(!fx.root.exists());
+    assert_eq!(state(&fx), before);
 }
 
 /// Free space that runs out after the first preflight.
