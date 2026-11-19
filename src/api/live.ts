@@ -37,6 +37,7 @@ export function createLiveApi() {
     openNewsLink: ipc.openNewsLink,
     openProductPage: ipc.openProductPage,
     openCommunityPage: ipc.openCommunityPage,
+    openSocialLink: ipc.openSocialLink,
 
     onStateChanged: ipc.onStateChanged,
     onProgress: ipc.onProgress,

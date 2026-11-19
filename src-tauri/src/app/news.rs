@@ -29,7 +29,26 @@ const PRODUCT_PAGES_JSON: &str = include_str!("../../../src/product-pages.json")
 
 /// The project Discord, offered by the in-launcher About dialog of products without
 /// a page (#135). Bundled, never fetched; passes [`news::link`] (tested).
-pub const COMMUNITY_URL: &str = "https://discord.gg/4mKqKXMRy9";
+pub const COMMUNITY_URL: &str = "https://discord.com/invite/KWGqVxmpDR";
+
+/// The sidebar's social icons (#247): the frontend sends one of these ids, never a URL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SocialLink {
+    Github,
+    Discord,
+    Kofi,
+}
+
+impl SocialLink {
+    pub fn url(self) -> &'static str {
+        match self {
+            Self::Github => "https://github.com/synpoox/pd2-resurrected",
+            Self::Discord => COMMUNITY_URL,
+            Self::Kofi => "https://ko-fi.com/projectresurrected",
+        }
+    }
+}
 
 /// [`PRODUCT_PAGES_JSON`] as `(product id, URL)`, sorted by id. Each URL passes
 /// [`news::link`] (tested).
@@ -210,9 +229,33 @@ pub async fn open_community_page(launcher: State<'_, Arc<Launcher>>) -> Result<(
     open(&launcher, COMMUNITY_URL.to_owned()).await
 }
 
+/// `open_social_link`: opens the bundled page for a [`SocialLink`] id.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn open_social_link(
+    launcher: State<'_, Arc<Launcher>>,
+    link: SocialLink,
+) -> Result<(), LauncherError> {
+    open(&launcher, link.url().to_owned()).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn social_links_map_to_their_urls() {
+        let urls = [SocialLink::Github, SocialLink::Discord, SocialLink::Kofi].map(SocialLink::url);
+        assert_eq!(
+            urls,
+            [
+                "https://github.com/synpoox/pd2-resurrected",
+                "https://discord.com/invite/KWGqVxmpDR",
+                "https://ko-fi.com/projectresurrected",
+            ]
+        );
+        let id: SocialLink = serde_json::from_str("\"kofi\"").unwrap();
+        assert_eq!(id, SocialLink::Kofi);
+    }
 
     #[test]
     fn bundled_product_pages_pass_the_link_rule() {

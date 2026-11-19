@@ -111,7 +111,8 @@ pub fn invoke_handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync 
         news::get_news,
         news::open_news_link,
         news::open_product_page,
-        news::open_community_page
+        news::open_community_page,
+        news::open_social_link
     ]
 }
 
@@ -338,6 +339,7 @@ mod tests {
         "open_news_link",
         "open_product_page",
         "open_community_page",
+        "open_social_link",
     ];
 
     fn root_file(rel: &str) -> String {

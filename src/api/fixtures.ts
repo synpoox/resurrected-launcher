@@ -620,6 +620,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
     openNewsLink: (id, index) => done("openNewsLink", id, index),
     openProductPage: (id) => done("openProductPage", id),
     openCommunityPage: () => done("openCommunityPage"),
+    openSocialLink: (link) => done("openSocialLink", link),
 
     onStateChanged: (h) => subscribe(changed, h),
     onProgress(h) {

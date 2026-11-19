@@ -41,6 +41,7 @@ fn main() {
         "open_news_link",
         "open_product_page",
         "open_community_page",
+        "open_social_link",
     ]);
     let attributes = tauri_build::Attributes::new()
         .windows_attributes(windows)
