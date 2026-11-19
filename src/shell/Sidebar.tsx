@@ -38,7 +38,7 @@ export interface SidebarProps {
   onSelect: (view: View) => void;
 }
 
-/** Branding, the products in spec order (arrow keys move between them), and Settings at the bottom. */
+/** Branding, the products in spec order (arrow keys move between them), then Settings and the community links at the bottom. */
 export function Sidebar({ view, badges, onSelect }: SidebarProps) {
   const api = useApi();
   const toast = useToast();
@@ -71,6 +71,20 @@ export function Sidebar({ view, badges, onSelect }: SidebarProps) {
           );
         })}
       </ul>
+      <button
+        type="button"
+        className="item settings"
+        aria-current={view.kind === "settings" ? "page" : undefined}
+        onClick={() => onSelect({ kind: "settings" })}
+      >
+        <svg className="cog" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="3.2" />
+          <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" />
+          <circle cx="12" cy="12" r="6.5" />
+        </svg>
+        Settings
+        <SettingsDot />
+      </button>
       <div className="social" role="group" aria-label="Community links">
         {SOCIAL.map((s) => (
           <button
@@ -98,20 +112,6 @@ export function Sidebar({ view, badges, onSelect }: SidebarProps) {
           </button>
         ))}
       </div>
-      <button
-        type="button"
-        className="item settings"
-        aria-current={view.kind === "settings" ? "page" : undefined}
-        onClick={() => onSelect({ kind: "settings" })}
-      >
-        <svg className="cog" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <circle cx="12" cy="12" r="3.2" />
-          <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" />
-          <circle cx="12" cy="12" r="6.5" />
-        </svg>
-        Settings
-        <SettingsDot />
-      </button>
     </nav>
   );
 }
