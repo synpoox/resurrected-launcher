@@ -324,8 +324,7 @@ impl Tx<'_> {
             Boundary::LiveMovedToBackup | Boundary::CleanInstallBackupMade
         );
         if first_live_mutation && self.j.direction == Direction::Forward {
-            let needs = self.j.plan.space.recovery_copy;
-            preflight::check(&self.j.paths, needs, &self.moved_files(), self.ctx.host)?;
+            preflight::check(&self.j.paths, 0, &self.moved_files(), self.ctx.host)?;
         }
         if b.is_multi_entry() {
             let entries = self.plan_entries(b)?;

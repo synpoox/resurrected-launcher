@@ -280,8 +280,21 @@ impl Entry {
                         fs::create_dir_all(parent)?;
                     }
                     fs::copy(&c.from, &c.temp)?;
+                    // The copy inherits a read-only flag, which blocks the flush's write open.
+                    let mut perm = fs::metadata(&c.temp)?.permissions();
+                    let read_only = perm.readonly();
+                    if read_only {
+                        #[allow(clippy::permissions_set_readonly_false)]
+                        perm.set_readonly(false);
+                        fs::set_permissions(&c.temp, perm.clone())?;
+                    }
                     flush(&OpenOptions::new().write(true).open(&c.temp)?)?;
-                    durable_rename(&c.temp, &c.to, true)
+                    durable_rename(&c.temp, &c.to, true)?;
+                    if read_only {
+                        perm.set_readonly(true);
+                        fs::set_permissions(&c.to, perm)?;
+                    }
+                    Ok(())
                 };
                 copy().map_err(|e| io_error("copying", &c.from, e))
             }

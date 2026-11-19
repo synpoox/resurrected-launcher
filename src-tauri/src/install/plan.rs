@@ -217,7 +217,6 @@ pub fn inspect(
         expect_backup: Vec::new(),
     };
     let (plan, expect) = (&mut insp.plan, &mut insp.expect);
-    let mut recovery = 0u64;
     let mut known: BTreeSet<String> = new
         .inventory
         .files()
@@ -234,7 +233,6 @@ pub fn inspect(
                     plan.to_backup.push(f.path.clone());
                     insp.expect_backup.push((f.path.to_string(), Want::File(d)));
                     expect.push((f.path.to_string(), Want::Absent));
-                    recovery += d.0;
                 }
                 OnDisk::File(_) if new.ownership_of(&f.path) == Ownership::Managed => {
                     plan.to_keep.push(f.path.clone());
@@ -295,7 +293,6 @@ pub fn inspect(
                     insp.expect_backup.push((f.path.to_string(), Want::File(d)));
                     plan.to_live.push(f.path.clone());
                     expect.push((f.path.to_string(), want));
-                    recovery += f.size;
                 }
                 Fate::KeepEdited => {
                     let d = file_digest(disk)?;
@@ -358,7 +355,6 @@ pub fn inspect(
                             plan.to_backup.push(f.path.clone());
                             insp.expect_backup.push((f.path.to_string(), Want::File(d)));
                             expect.push((f.path.to_string(), Want::Absent));
-                            recovery += d.0;
                         } else {
                             insp.preserved.push(f.path.clone());
                             expect.push((f.path.to_string(), Want::File(d)));
@@ -398,9 +394,7 @@ pub fn inspect(
         plan.to_backup.clear();
         insp.expect_backup.clear();
         plan.to_live.clear();
-        recovery = 0;
     }
-    plan.space.recovery_copy = recovery;
 
     // Unknown files (saves, plugins, anything unlisted) must still be there after.
     // Clean install leaves them only in the labelled backup, and says so.

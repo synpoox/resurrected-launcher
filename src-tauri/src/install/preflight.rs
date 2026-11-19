@@ -16,15 +16,14 @@ use crate::contract::{ErrorCode, LauncherError};
 pub struct SpaceNeeds {
     pub download: u64,
     pub staging: u64,
-    /// The recovery copy of the previous installation's replaced files.
+    /// Always 0: the backup is filled by same-volume renames and needs no space.
+    /// Kept so journals written by older builds still load.
     pub recovery_copy: u64,
 }
 
 impl SpaceNeeds {
     pub fn total(&self) -> u64 {
-        self.download
-            .saturating_add(self.staging)
-            .saturating_add(self.recovery_copy)
+        self.download.saturating_add(self.staging)
     }
 }
 
