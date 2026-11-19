@@ -7,6 +7,7 @@
 - An installed PD2R now has Clean install… in its ⋯ menu, so an Update that stops on a file the launcher did not install can be recovered. (#264)
 - If you change the D2R location to a folder without PD2R, the launcher now offers Install there instead of Update, Repair and Uninstall.
 - Install, Update and Repair no longer fail with "cannot write ... (os error 3)" when the D2R folder has no PD2Resurrected folder yet. The launcher now creates it.
+- Installing PD2R in a second D2R folder no longer makes the launcher forget the first folder's install. Switching back to it shows PD2R installed again. (#270)
 
 ## 0.1.5
 
