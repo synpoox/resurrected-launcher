@@ -123,6 +123,45 @@ describe("pending action buttons (issue 138)", () => {
   });
 });
 
+describe("journey dead ends (#267)", () => {
+  it("a loader the update allows offers Update and the Manage menu, not Get D2RLoader", async () => {
+    mount("loader-update");
+    await loaded();
+    expect(screen.getByRole("button", { name: "Update" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Manage PD2R" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Get D2RLoader" })).toBeNull();
+  });
+
+  it("a startup failure with an update available offers Update, the notice and Manage", async () => {
+    mount("startup-failed-update");
+    await loaded();
+    expect(screen.getByRole("button", { name: "Update" })).toBeTruthy();
+    expect(screen.getByText(/The game closed while starting/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Manage PD2R" })).toBeTruthy();
+  });
+
+  it("a startup failure keeps Manage", async () => {
+    mount("startup-failed");
+    await loaded();
+    expect(screen.getByRole("button", { name: "Manage PD2R" })).toBeTruthy();
+  });
+
+  it("recovery required: no Repair advice, Repair and Uninstall are disabled, and Check again says why it failed", async () => {
+    const { api, user } = mount("recovery-required");
+    await loaded();
+    await user.click(screen.getByRole("button", { name: "How to fix" }));
+    expect(screen.queryByText(/use Repair/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Export diagnostics" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Manage PD2R" }));
+    expect(blocked(screen.getByRole("menuitem", { name: /^Repair/ }))).toBe(true);
+    expect(blocked(screen.getByRole("menuitem", { name: /^Uninstall/ }))).toBe(true);
+    await user.keyboard("{Escape}");
+    api.recoverProduct = () => Promise.reject({ code: "access_denied", message: "denied" });
+    await user.click(screen.getByRole("button", { name: "Check again" }));
+    expect(await screen.findByText(/Close any File Explorer windows/)).toBeTruthy();
+  });
+});
+
 describe("consent dialogs open on the click (issue 138)", () => {
   it("Clean install… opens its dialog at once, loading until the inspection answers", async () => {
     const { api, user } = mount("clean-install");

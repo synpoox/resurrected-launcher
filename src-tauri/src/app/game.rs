@@ -281,6 +281,13 @@ impl Launcher {
             Ok(Readiness::D2rMissing) => Readiness::D2rMissing,
             // shortcut: `since: 0` when the processes could not be listed at all.
             Ok(_) if listing_failed => Readiness::Running { since: 0 },
+            // The mod folder was deleted outside the launcher: Play would start -mod with no mod.
+            Ok(Readiness::Ready | Readiness::UpdateAvailable)
+                if matches!((&location, &installed), (Some(l), Some(i))
+                    if !product_root(&l.path, &i.manifest).is_dir()) =>
+            {
+                Readiness::RepairNeeded
+            }
             Ok(r) => r,
             // D2R.exe could not be hashed: its build is unverified, so not playable.
             Err(_) => Readiness::BuildUnsupported {

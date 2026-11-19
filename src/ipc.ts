@@ -119,8 +119,8 @@ export type Readiness =
   | { status: "recovery_required" }
   | { status: "build_unsupported"; found: string; update_fixes?: boolean }
   | { status: "loader_missing" }
-  | { status: "loader_unsupported"; found: string; allowed: string[] }
-  | { status: "loader_modified"; file: string; version: string }
+  | { status: "loader_unsupported"; found: string; allowed: string[]; update_fixes?: boolean }
+  | { status: "loader_modified"; file: string; version: string; update_fixes?: boolean }
   | { status: "not_installed" }
   /** Playable, but a Repair didn't finish, so files may be missing or damaged (issue 155). */
   | { status: "repair_needed" }

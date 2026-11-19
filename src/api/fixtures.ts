@@ -329,6 +329,21 @@ export const SCENES: readonly Scene[] = [
     inspections: { update: { breaks_saves: true, save_breaking_notice: null } },
   }),
   scene({
+    key: "loader-update",
+    label: "Loader not allowed, update allows it",
+    state: base({
+      installed: installed("0.4.1"),
+      readiness: { status: "loader_unsupported", found: "1.4.0", allowed: ["1.3.1-beta"], update_fixes: true },
+      loader_guidance: { found: "1.4.0", allowed: ["1.3.1-beta"], download_page: "https://d2rloader.net/download.html" },
+    }),
+    notes: NOTES_UPDATE,
+  }),
+  scene({
+    key: "recovery-required",
+    label: "Recovery required",
+    state: base({ readiness: { status: "recovery_required" } }),
+  }),
+  scene({
     key: "running",
     label: "Running",
     state: base({
@@ -337,6 +352,12 @@ export const SCENES: readonly Scene[] = [
     }),
   }),
   scene({ key: "startup-failed", label: "Startup failure", state: base({ startup_failed: { exit_code: 1 } }) }),
+  scene({
+    key: "startup-failed-update",
+    label: "Startup failure, update available",
+    state: base({ installed: installed("0.4.1"), readiness: { status: "update_available" }, startup_failed: { exit_code: 1 } }),
+    notes: NOTES_UPDATE,
+  }),
   scene({ key: "repair", label: "Repair", state: base(), open: "repair" }),
   scene({
     key: "repair-needed",

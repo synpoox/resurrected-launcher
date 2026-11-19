@@ -36,9 +36,12 @@ export function journeyOf(state: ProductState, progress: ProgressEvent | null): 
       return "d2r-missing";
     case "running":
       return "running";
-    case "loader_missing":
     case "loader_unsupported":
     case "loader_modified":
+      // The recommended release allows this loader: Update fixes it (#267).
+      if (state.readiness.update_fixes && state.recommended) return "update";
+      return "loader-missing";
+    case "loader_missing":
       return "loader-missing";
     case "build_unsupported":
       // The recommended release supports this D2R build: Update fixes it (#249).
@@ -50,7 +53,7 @@ export function journeyOf(state: ProductState, progress: ProgressEvent | null): 
     case "not_installed":
       return state.recommended ? "install" : "offline-empty";
     case "update_available":
-      return state.startup_failed ? "startup-failed" : "update";
+      return "update"; // a startup failure shows as a notice on the update row (#267)
     case "ready":
       if (state.startup_failed) return "startup-failed";
       return offline ? "offline" : "ready";

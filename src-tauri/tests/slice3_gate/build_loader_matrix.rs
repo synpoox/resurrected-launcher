@@ -55,6 +55,16 @@ fn build_loader_matrix_same_size_but_different_hash_is_build_unsupported() {
     play_refused(&rig, "game_build_unsupported");
 }
 
+/// #267: deleting the mod folder in Explorer must not leave Play starting -mod with no mod.
+#[test]
+fn build_loader_matrix_deleted_mod_folder_needs_repair() {
+    let rig = Rig::new();
+    rig.adopted();
+    assert_eq!(rig.state().readiness, Readiness::Ready);
+    fs::remove_dir_all(rig.root()).unwrap();
+    assert_eq!(rig.state().readiness, Readiness::RepairNeeded);
+}
+
 #[test]
 fn build_loader_matrix_missing_game_or_loader_file_refuses_play() {
     let rig = Rig::new();
@@ -183,7 +193,8 @@ fn build_loader_matrix_unsupported_loader_version_refuses_play_with_guidance() {
             state.readiness,
             Readiness::LoaderUnsupported {
                 found: found.into(),
-                allowed: vec![LOADER_VERSION.into()]
+                allowed: vec![LOADER_VERSION.into()],
+                update_fixes: false
             },
             "{file}"
         );
