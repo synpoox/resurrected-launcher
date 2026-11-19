@@ -500,6 +500,12 @@ export async function openProductPage(productId: string): Promise<void> {
   await invoke("open_product_page", { product_id: productId });
 }
 
+/** A sidebar social link, bundled in the launcher; the id picks the URL. */
+export type SocialLink = "github" | "discord" | "kofi";
+export async function openSocialLink(link: SocialLink): Promise<void> {
+  await invoke("open_social_link", { link });
+}
+
 /** The project Discord, bundled in the launcher. Takes nothing. */
 export async function openCommunityPage(): Promise<void> {
   await invoke("open_community_page");

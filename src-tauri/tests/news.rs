@@ -367,6 +367,6 @@ fn community_page_is_the_bundled_discord() {
     let rig = Rig::new();
     rig.invoke("open_community_page", json!({})).unwrap();
     assert_eq!(rig.opened(), [COMMUNITY_URL]);
-    assert_eq!(COMMUNITY_URL, "https://discord.gg/4mKqKXMRy9");
+    assert_eq!(COMMUNITY_URL, "https://discord.com/invite/KWGqVxmpDR");
     assert!(rig.server.hits().is_empty());
 }

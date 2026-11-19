@@ -40,6 +40,7 @@
     "allow-open-news-link",
     "allow-open-product-page",
     "allow-open-community-page",
+    "allow-open-social-link",
     "core:event:allow-listen",
     "core:event:allow-unlisten"
   ]

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- GitHub, Discord and Ko-fi icons sit above Settings in the sidebar. Each opens in your browser. The Discord link now uses the new invite.
+
 ## 0.1.4
 
 A much smaller installer and a tidier product list.

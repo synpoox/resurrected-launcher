@@ -95,6 +95,7 @@ export interface LauncherApi {
   openProductPage(productId: string): Promise<void>;
   /** The project Discord (issue 135), from "Follow for updates on Discord" on products without a page. */
   openCommunityPage(): Promise<void>;
+  openSocialLink(link: "github" | "discord" | "kofi"): Promise<void>;
 
   // Events
   onStateChanged(handler: () => void): Promise<Unlisten>;

@@ -134,8 +134,33 @@
 }
 
 .sidebar .settings {
-  margin-top: auto;
   gap: 10px;
+}
+
+.social {
+  margin-top: auto;
+  display: flex;
+  gap: 4px;
+  padding: 0 16px;
+}
+
+.social-link {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: var(--muted);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+
+.social-link:hover {
+  color: var(--text);
+}
+
+.social-icon {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
 }
 
 .cog {
