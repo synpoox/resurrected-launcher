@@ -1940,3 +1940,50 @@ fn unmanaged_install_missing_a_file_inspects_as_an_install_that_adds_it() {
     assert_eq!(outcome["status"], "succeeded", "{outcome}");
     assert_eq!(&fs::read(root.join(missing)).unwrap(), bytes);
 }
+
+/// Rewrites the pd2r record as if an older launcher wrote it (no location).
+fn unstamp(rig: &Rig) {
+    let launcher = rig.webview.state::<Arc<Launcher>>();
+    let mut state = launcher.state.lock().unwrap();
+    let mut old = state.installed_releases()[0].clone();
+    old.d2r_location = None;
+    state.mark_installed(old).unwrap();
+}
+
+fn stamped(rig: &Rig) -> Option<PathBuf> {
+    let launcher = rig.webview.state::<Arc<Launcher>>();
+    let state = launcher.state.lock().unwrap();
+    let stamp = state.installed_releases()[0].d2r_location.clone();
+    stamp
+}
+
+#[test]
+fn old_install_records_are_stamped_only_where_the_product_folder_exists() {
+    let rig = Rig::new();
+    rig.install(PD2R_1);
+    let a = rig.game.d2r().to_owned();
+    let b = tempfile::tempdir().unwrap();
+    fake_game_files(b.path());
+    let choose = |p: &Path| {
+        *rig.desktop.pick.lock().unwrap() = Some(p.to_owned());
+        rig.invoke("choose_game_location", json!({})).unwrap();
+    };
+
+    // (a) startup stamps the selected location, where the folder is present.
+    unstamp(&rig);
+    assert_eq!(stamped(&rig), None);
+    rig.start_up();
+    assert_eq!(stamped(&rig), Some(a.clone()));
+    assert_eq!(rig.state().readiness, Readiness::Ready);
+
+    // (b) another location without the folder: stays unknown, shows Install.
+    unstamp(&rig);
+    choose(b.path());
+    assert_eq!(stamped(&rig), None);
+    assert_eq!(rig.state().readiness, Readiness::NotInstalled);
+
+    // (c) choosing the folder that has it stamps it and shows its real state.
+    choose(&a);
+    assert_eq!(stamped(&rig), Some(a));
+    assert_eq!(rig.state().readiness, Readiness::Ready);
+}

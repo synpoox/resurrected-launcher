@@ -88,6 +88,7 @@ const installed = (version: string) => ({
   manifest_sha256: "0".repeat(64),
   installed_at: Math.floor(NOW / 1000) - 20 * 86_400,
   verified: true,
+  d2r_location: null,
 });
 
 const summary = (version: string, saveBreaking = false) => ({

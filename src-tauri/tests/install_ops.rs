@@ -635,6 +635,21 @@ fn repair_restores_release_owned_files_only_and_keeps_player_files() {
 }
 
 #[test]
+fn repair_and_uninstall_refuse_a_record_from_another_d2r_location() {
+    let rig = Rig::new();
+    let (r1, m1) = install_1(&rig);
+    let elsewhere = tempfile::tempdir().unwrap();
+    for kind in [Repair, Uninstall, Update] {
+        let mut req = rig.request(kind, &r1, &m1, Some(&m1));
+        req.d2r = elsewhere.path();
+        assert!(rig.run(&req).is_err());
+        let e = ops::inspect(&rig.env(&NoFaults), &req).unwrap_err();
+        assert_eq!(e.code, ErrorCode::InvalidRequest);
+    }
+    assert_eq!(rig.installed_release().as_deref(), Some(PD2R_1));
+}
+
+#[test]
 fn uninstall_removes_only_positively_identified_managed_files_and_reports_player_files() {
     let rig = Rig::new();
     let (r1, m1) = install_1(&rig);

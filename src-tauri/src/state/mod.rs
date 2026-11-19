@@ -107,6 +107,22 @@ pub struct InstalledRelease {
     /// written after `LiveVerified`); [`StateStore::mark_unverified`] sets `false`
     /// when a Repair starts, and that Repair's commit sets it back (#155).
     pub verified: bool,
+    /// The D2R folder the release was installed into (#260). A record only applies
+    /// while that folder is the selected location. `None` is a record from before
+    /// this field; the launcher stamps it once it finds the product's folder there.
+    #[serde(default)]
+    pub d2r_location: Option<PathBuf>,
+}
+
+impl InstalledRelease {
+    /// Whether this record describes an install in `location`. A record with no
+    /// location (written before the field existed) is unknown, so it is at none.
+    pub fn is_at(&self, location: &Path) -> bool {
+        self.d2r_location.as_deref().is_some_and(|l| {
+            crate::game::detect::same_folder_key(l)
+                == crate::game::detect::same_folder_key(location)
+        })
+    }
 }
 
 fn check_text(what: &str, s: &str) -> Result<(), String> {
@@ -245,6 +261,24 @@ impl StateStore {
         }
     }
 
+    /// Stamps a migrated record (no location yet) with `location` (#260). The caller
+    /// has checked the product's folder is there.
+    pub fn stamp_location(
+        &mut self,
+        product: &ProductId,
+        location: &Path,
+    ) -> Result<(), LauncherError> {
+        let mut installed = self.installed_for_write()?;
+        match installed
+            .iter_mut()
+            .find(|r| &r.product_id == product && r.d2r_location.is_none())
+        {
+            Some(r) => r.d2r_location = Some(location.to_path_buf()),
+            None => return Ok(()),
+        }
+        self.save_installed(installed)
+    }
+
     /// Before writing a blocked file: re-reads it. `Ok(Some(data))` when it is now
     /// readable (the caller adopts `data` before applying its change), `Ok(None)` when
     /// there is nothing to adopt, and an error, with nothing written, while the
@@ -298,8 +332,14 @@ impl StateStore {
         Ok(())
     }
 
+    /// The product's record, only while it describes the selected D2R location
+    /// (#260): elsewhere the product is not installed.
     pub fn installed_release(&self, product: &ProductId) -> Option<&InstalledRelease> {
-        self.installed.iter().find(|r| &r.product_id == product)
+        let loc = self.preferences.d2r_location.as_deref();
+        self.installed
+            .iter()
+            .find(|r| &r.product_id == product)
+            .filter(|r| loc.is_none_or(|l| r.is_at(l)))
     }
 
     pub fn installed_releases(&self) -> &[InstalledRelease] {
@@ -482,6 +522,7 @@ mod tests {
             manifest_sha256: sha256(release.as_bytes()),
             installed_at: 1_760_000_000,
             verified: true,
+            d2r_location: None,
         }
     }
 
@@ -556,6 +597,43 @@ mod tests {
             };
             store.set_preferences(prefs).unwrap();
         }
+    }
+
+    #[test]
+    fn record_applies_only_at_its_own_location_and_unstamped_records_stay_hidden() {
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b) = (absolute("d2r-a"), absolute("d2r-b"));
+        let prefs = |p: &PathBuf| Preferences {
+            d2r_location: Some(p.clone()),
+            ..Preferences::default()
+        };
+        // An installed-releases.json from before the field existed.
+        let old = serde_json::json!({"schema_version": 1, "data": [{
+            "product_id": "pd2r", "release_id": "0.4.1", "display_version": "alpha 0.4.1",
+            "manifest_sha256": record("0.4.1").manifest_sha256, "installed_at": 1, "verified": true}]});
+        fs::write(dir.path().join(INSTALLED_FILE), old.to_string()).unwrap();
+        let mut store = StateStore::open(dir.path());
+        assert!(store.issues().is_empty());
+        // Opening never stamps; with B selected the old record is unknown, so hidden.
+        store.set_preferences(prefs(&b)).unwrap();
+        assert_eq!(store.installed_release(&pd2r()), None);
+        assert_eq!(store.installed_releases()[0].d2r_location, None);
+        // Stamped once A is selected and its folder is found.
+        store.set_preferences(prefs(&a)).unwrap();
+        store.stamp_location(&pd2r(), &a).unwrap();
+        assert!(store.installed_release(&pd2r()).is_some());
+        assert_eq!(
+            StateStore::open(dir.path()).installed_releases()[0].d2r_location,
+            Some(a)
+        );
+        store.set_preferences(prefs(&b)).unwrap();
+        assert_eq!(store.installed_release(&pd2r()), None);
+        // A stamped record is never restamped.
+        store.stamp_location(&pd2r(), &b).unwrap();
+        assert_eq!(
+            store.installed_releases()[0].d2r_location,
+            Some(absolute("d2r-a"))
+        );
     }
 
     #[test]

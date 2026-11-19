@@ -122,7 +122,7 @@ pub(crate) fn is_link(meta: &fs::Metadata) -> bool {
 
 /// Two spellings of one folder give the same key: canonical when the folder
 /// exists, absolute otherwise, uppercased, without a trailing separator.
-fn same_folder_key(path: &Path) -> String {
+pub(crate) fn same_folder_key(path: &Path) -> String {
     let resolved = fs::canonicalize(path)
         .or_else(|_| std::path::absolute(path))
         .unwrap_or_else(|_| path.to_path_buf());
