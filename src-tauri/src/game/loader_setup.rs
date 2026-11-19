@@ -50,6 +50,7 @@ mod tests {
             found: "0.9".into(),
             // The readiness's own list is ignored: the manifest is the source.
             allowed: vec!["stale".into()],
+            update_fixes: false,
         };
         let g = guidance(&r, &manifest()).unwrap();
         assert_eq!(g.found.as_deref(), Some("0.9"));
@@ -62,6 +63,7 @@ mod tests {
         let r = Readiness::LoaderModified {
             file: "D2RLoader.exe".into(),
             version: "1.3.1-beta".into(),
+            update_fixes: false,
         };
         let g = guidance(&r, &manifest()).unwrap();
         assert_eq!(g.found.as_deref(), Some("1.3.1-beta"));

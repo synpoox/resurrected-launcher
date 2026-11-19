@@ -70,6 +70,10 @@ pub enum Readiness {
         /// The first disallowed ProductVersion, `D2RLoader.exe` checked before `D2RCore.dll`.
         found: String,
         allowed: Vec<String>,
+        /// The recommended release (a different one than installed) allows the
+        /// installed loader, so Update fixes it.
+        #[serde(default)]
+        update_fixes: bool,
     },
     /// A loader file's version is allowed, but `compatibility.loader_builds` pins
     /// that (version, file) and the file's size or SHA-256 matches no pinned build:
@@ -80,6 +84,9 @@ pub enum Readiness {
         file: String,
         /// Its ProductVersion, one of `compatibility.loader_versions`.
         version: String,
+        /// As on `LoaderUnsupported`.
+        #[serde(default)]
+        update_fixes: bool,
     },
     /// The product has no installed-release record.
     NotInstalled,
@@ -197,15 +204,17 @@ mod tests {
                 Readiness::LoaderUnsupported {
                     found: "1.2.0".into(),
                     allowed: vec!["1.3.1-beta".into()],
+                    update_fixes: true,
                 },
-                json!({ "status": "loader_unsupported", "found": "1.2.0", "allowed": ["1.3.1-beta"] }),
+                json!({ "status": "loader_unsupported", "found": "1.2.0", "allowed": ["1.3.1-beta"], "update_fixes": true }),
             ),
             (
                 Readiness::LoaderModified {
                     file: "D2RLoader.exe".into(),
                     version: "1.3.1-beta".into(),
+                    update_fixes: false,
                 },
-                json!({ "status": "loader_modified", "file": "D2RLoader.exe", "version": "1.3.1-beta" }),
+                json!({ "status": "loader_modified", "file": "D2RLoader.exe", "version": "1.3.1-beta", "update_fixes": false }),
             ),
             (
                 Readiness::NotInstalled,
@@ -233,7 +242,8 @@ mod tests {
         assert_eq!(
             Readiness::LoaderUnsupported {
                 found: String::new(),
-                allowed: vec![]
+                allowed: vec![],
+                update_fixes: false
             }
             .play_refusal(),
             Some(ErrorCode::LoaderNotReady)
@@ -241,7 +251,8 @@ mod tests {
         assert_eq!(
             Readiness::LoaderModified {
                 file: String::new(),
-                version: String::new()
+                version: String::new(),
+                update_fixes: false
             }
             .play_refusal(),
             Some(ErrorCode::LoaderNotReady)

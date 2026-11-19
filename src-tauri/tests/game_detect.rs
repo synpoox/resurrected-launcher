@@ -356,6 +356,39 @@ fn unsupported_installed_build_is_fixed_by_a_supporting_recommended_release() {
     );
 }
 
+/// #267: a loader the recommended release allows (or its pinned bytes match) is fixed by Update.
+#[test]
+fn loader_update_fixes_when_recommended_release_accepts_the_loader() {
+    let game = game_dir();
+    let loc = location(game.path());
+    let host = ok_host();
+    let mut installed = manifest("old");
+    installed.compatibility.loader_versions = vec!["0.9.0".into()];
+    let recommended = manifest("new");
+    let unsupported = |update_fixes| Readiness::LoaderUnsupported {
+        found: LOADER.into(),
+        allowed: vec!["0.9.0".into()],
+        update_fixes,
+    };
+    let f = facts(Some(&loc), Some(&installed), Some(&recommended));
+    assert_eq!(run(&f, &host), unsupported(true));
+    let f = facts(Some(&loc), Some(&installed), Some(&installed));
+    assert_eq!(run(&f, &host), unsupported(false));
+
+    // Modified: the installed release pins other bytes; the recommended one pins none.
+    let mut installed = manifest("old");
+    installed.compatibility.loader_builds = vec![pin(LOADER, "D2RLoader.exe", b"official")];
+    let modified = |update_fixes| Readiness::LoaderModified {
+        file: "D2RLoader.exe".into(),
+        version: LOADER.into(),
+        update_fixes,
+    };
+    let f = facts(Some(&loc), Some(&installed), Some(&recommended));
+    assert_eq!(run(&f, &host), modified(true));
+    let f = facts(Some(&loc), Some(&installed), None);
+    assert_eq!(run(&f, &host), modified(false));
+}
+
 #[test]
 fn loader_must_be_present_versioned_and_allowed() {
     let game = game_dir();
@@ -370,6 +403,7 @@ fn loader_must_be_present_versioned_and_allowed() {
         Readiness::LoaderUnsupported {
             found: "1.2.0".into(),
             allowed: vec![LOADER.into()],
+            update_fixes: false,
         }
     );
     let core_old = FakeHost::with_versions("3.3.93847", LOADER, "1.1.0");
@@ -378,6 +412,7 @@ fn loader_must_be_present_versioned_and_allowed() {
         Readiness::LoaderUnsupported {
             found: "1.1.0".into(),
             allowed: vec![LOADER.into()],
+            update_fixes: false,
         }
     );
 
@@ -430,6 +465,7 @@ fn pinned_loader_files_must_match_the_official_bytes() {
     let modified = Readiness::LoaderModified {
         file: "D2RLoader.exe".into(),
         version: LOADER.into(),
+        update_fixes: false,
     };
     assert_eq!(run(&facts(Some(&loc), Some(&m), None), &host), modified);
     fs::write(game.path().join("D2RLoader.exe"), b"patched loader").unwrap();
@@ -447,6 +483,7 @@ fn pinned_loader_files_must_match_the_official_bytes() {
         Readiness::LoaderModified {
             file: "D2RCore.dll".into(),
             version: LOADER.into(),
+            update_fixes: false,
         }
     );
     fs::write(game.path().join("D2RCore.dll"), b"official core").unwrap();

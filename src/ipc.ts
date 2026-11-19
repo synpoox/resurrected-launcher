@@ -119,8 +119,8 @@ export type Readiness =
   | { status: "recovery_required" }
   | { status: "build_unsupported"; found: string; update_fixes?: boolean }
   | { status: "loader_missing" }
-  | { status: "loader_unsupported"; found: string; allowed: string[] }
-  | { status: "loader_modified"; file: string; version: string }
+  | { status: "loader_unsupported"; found: string; allowed: string[]; update_fixes?: boolean }
+  | { status: "loader_modified"; file: string; version: string; update_fixes?: boolean }
   | { status: "not_installed" }
   /** Playable, but a Repair didn't finish, so files may be missing or damaged (issue 155). */
   | { status: "repair_needed" }
@@ -168,6 +168,8 @@ export interface ProductState {
   cancelling: boolean;
   /** The tracked game exited within 30 s of Play; the next Play clears it. */
   startup_failed: { exit_code: number | null } | null;
+  /** The installed release's folder is gone: Play is refused until Repair restores it. */
+  mod_missing?: boolean;
 }
 
 /** Mirrors `app::ConflictView`. */

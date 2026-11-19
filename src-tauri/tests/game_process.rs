@@ -368,6 +368,7 @@ fn play_refuses_every_unplayable_readiness_without_spawning() {
         Readiness::LoaderUnsupported {
             found: "1.0".into(),
             allowed: vec!["1.3.1-beta".into()],
+            update_fixes: false,
         },
         Readiness::NotInstalled,
     ];
