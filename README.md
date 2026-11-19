@@ -1,48 +1,64 @@
 # Resurrected Launcher
 
-Install, update and play the Project Resurrected mods for Diablo II: Resurrected, all from one launcher.
+Resurrected Launcher installs, updates and starts Diablo II: Resurrected mods. It runs on top of your own Diablo II: Resurrected installation.
 
 [![CI](https://github.com/synpoox/resurrected-launcher/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/synpoox/resurrected-launcher/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-![The launcher's product page, ready to play](docs/screenshots/76/ready-1280x720.png)
+## Products
 
-<sub>Preview build with placeholder art and text. Names, including Project Resurrected, are provisional.</sub>
+- **Project Diablo 2: Resurrected**: alpha, available now.
+- **Diablo II: Resurrected 09**: coming soon.
 
-## What it does
+## Features
 
-- **One place for every mod.** Project Diablo 2: Resurrected has an alpha release. Diablo II: Resurrected Forever and Diablo II: Resurrected 09 are coming soon.
-- **Installs and updates on top of your own D2R.** It finds your game, downloads releases and checks every file.
-- **Never converts your saves.** Installing or updating keeps your saves, edited loot filters and settings in place, and the launcher never converts them. If a release is marked save-breaking, it warns you and asks you to confirm before updating.
-- **Recovers from problems.** A failed or cancelled update rolls back cleanly, and Repair restores missing or damaged mod files.
-- **Shows Patch Notes** for each release, including offline for the version you have installed.
+- Installs and updates mods, and checks every download against published hashes.
+- Keeps your saves, loot filters and settings. The launcher does not convert saves.
+- Warns you before a save-breaking update and asks you to confirm it.
+- Rolls back a failed or cancelled update.
+- Repair restores missing or damaged mod files.
+- Shows Patch Notes for each release, including the installed release offline.
 
 ## Download
 
-Download the latest installer (`Project-Resurrected_<version>_x64-setup.exe`) from the [Releases page](https://github.com/synpoox/resurrected-launcher/releases/latest) and run it. It installs for your user only and needs no administrator rights. The installer is not Authenticode-signed, so Windows SmartScreen may warn you: choose **More info → Run anyway**. After that, the launcher updates itself.
+Download `Project-Resurrected_<version>_x64-setup.exe` from the [Releases page](https://github.com/synpoox/resurrected-launcher/releases/latest) and run it.
 
-## System requirements
+- The installer installs for your user only. It needs no administrator rights.
+- The installer needs an internet connection only if Microsoft WebView2 is missing from your PC.
+- The installer is not Authenticode-signed. Windows SmartScreen may warn you. Choose **More info**, then **Run anyway**.
+
+## Requirements
 
 - Windows 10 (22H2) or Windows 11, 64-bit
 - Your own Diablo II: Resurrected installation
 - [D2RLoader](https://d2rloader.net/download.html). The launcher tells you if it is missing or the wrong version.
-- An internet connection to install and update. Installed mods also play offline.
+- An internet connection to install and update.
 
-## FAQ
+## Updates
 
-**Will an update wipe my characters?**
-The launcher doesn't delete or convert them. The new game version can still refuse or change them, though, and going back to an older version restores game files, not saves. The launcher warns you before an update marked save-breaking. Back up your saves before updating (Settings → Folders and plugins → Open folder).
+- The launcher updates itself.
+- Back up your saves before you update. Use Settings → Folders and plugins → Open folder.
+- A new game version can still reject or change saves. Going back to an older version does not restore them.
 
-**Can I use plugins?**
-Yes, if you install them yourself. They are allowed in offline play and direct TCP/IP co-op, where the mod supports it, but not in project-hosted multiplayer or ladder play. Settings → Folders and plugins opens the plugin folders.
+## Troubleshooting
 
-**The game won't start or files look broken.**
-Open the **⋯** menu next to Play and choose **Repair**. It restores missing or damaged mod files and keeps your saves, edited filters and settings. If that doesn't fix it, use Settings → Troubleshooting → Export diagnostics. You review the report and save it yourself; nothing is sent.
+- **Game won't start or files look damaged:** open the **⋯** menu next to Play and choose **Repair**. Repair keeps your saves, loot filters and settings.
+- **Still not working:** go to Settings → Troubleshooting → Export diagnostics. A review dialog shows the report before you save it. The report is saved to a file on your PC. Nothing is sent.
+
+## Plugins
+
+You can install plugins yourself. Plugins are allowed in offline play and in direct TCP/IP co-op, where the mod supports it. They are not allowed in project-hosted multiplayer or ladder play.
+
+## Build from source
+
+To build from source, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Documentation
+
+- [CONTRIBUTING.md](CONTRIBUTING.md): developer guide, tests and project layout
+- [GLOSSARY.md](GLOSSARY.md): terms used in the launcher
+- [docs/third-party.md](docs/third-party.md): third-party components
 
 ## License
 
 [MIT](LICENSE). The bundled 7-Zip keeps its own license ([details](docs/third-party.md)).
-
----
-
-Building from source or contributing? See [CONTRIBUTING.md](CONTRIBUTING.md).
