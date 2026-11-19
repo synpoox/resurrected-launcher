@@ -854,6 +854,7 @@ describe("menus and dialogs", () => {
     await user.click(within(dialog).getByRole("button", { name: "Uninstall" }));
     const done = await screen.findByRole("dialog", { name: "PD2R was uninstalled" });
     expect(within(done).getByText("Your saves and settings were kept.")).toBeTruthy();
+    expect(within(done).getByText(/1 file stayed in the PD2R folder: your edited settings and files the launcher didn't install\./)).toBeTruthy();
     expect(within(done).queryByText("lootfilter/my-filter.filter")).toBeNull();
     expect(within(done).queryByRole("list")).toBeNull();
     await user.click(within(done).getByRole("button", { name: "Open saves folder" }));

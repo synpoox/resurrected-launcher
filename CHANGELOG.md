@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Uninstall no longer leaves a release's files behind while saying PD2R was uninstalled. Files that changed from the release now move to a backup folder next to the PD2R folder, and the result says which files stayed (#266).
 - If you change the D2R location to a folder without PD2R, the launcher now offers Install there instead of Update, Repair and Uninstall.
 - Install, Update and Repair no longer fail with "cannot write ... (os error 3)" when the D2R folder has no PD2Resurrected folder yet. The launcher now creates it.
 

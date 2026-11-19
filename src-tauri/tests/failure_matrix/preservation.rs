@@ -181,6 +181,33 @@ fn uninstall_keeps_a_loot_filter_edited_after_inspection() {
     late.assert_kept(&rig);
 }
 
+/// #266: a managed file whose bytes differ from the release leaves the product
+/// folder for the labelled backup; the edited shipped default stays.
+#[test]
+fn uninstall_moves_a_changed_managed_file_to_the_backup() {
+    let rig = Rig::new();
+    let m1 = rig.install_1();
+    let root = rig.root();
+    let filter = edit_loot_filter(&root);
+    fs::write(root.join(ARMOR), b"changed armor").unwrap();
+
+    Op::new(&rig, Uninstall, PD2R_1, Some(m1))
+        .run(&rig, &NoFaults)
+        .unwrap();
+
+    assert_eq!(
+        tree(&root),
+        with_file(empty_root(), LOOT_FILTER, &filter),
+        "only the edited default stays"
+    );
+    let backups = clean_install_backups(&root);
+    assert_eq!(backups.len(), 1);
+    assert_eq!(
+        tree(&backups[0]),
+        with_file(Tree::new(), ARMOR, b"changed armor")
+    );
+}
+
 /// The player edits the untouched loot filter default once the run passes `at`
 /// (`AfterStep`); then, optionally, the process crashes at `crash`.
 struct LateEdit {

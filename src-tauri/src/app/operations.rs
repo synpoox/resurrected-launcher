@@ -508,6 +508,7 @@ impl Launcher {
             (&root, req.release_sha256.to_string(), p.kind),
             (
                 &p.to_backup,
+                &p.to_keep,
                 &p.to_live,
                 &p.carry_forward,
                 &p.prune_if_empty,
@@ -592,7 +593,7 @@ impl InspectionView {
             product_id: req.product_id.clone(),
             kind: req.kind,
             release: ReleaseSummary::of(&release.manifest),
-            files_replaced_or_removed: insp.plan.to_backup.len(),
+            files_replaced_or_removed: insp.plan.to_backup.len() + insp.plan.to_keep.len(),
             files_added: insp.plan.to_live.len(),
             files_kept: insp.kept,
             preserved: insp.preserved,

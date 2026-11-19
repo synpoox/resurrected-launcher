@@ -359,7 +359,9 @@ impl Journal {
         let mut want = Paths::for_root(root);
         want.clean_backup = journal.paths.clean_backup.clone();
         let clean = journal.kind == OperationKind::CleanInstall;
-        if journal.paths != want || clean != is_clean_backup_of(root, &want.clean_backup) {
+        let keeps = clean
+            || (journal.kind == OperationKind::Uninstall && journal.paths.clean_backup.is_some());
+        if journal.paths != want || keeps != is_clean_backup_of(root, &want.clean_backup) {
             return Err(unreadable(
                 "its paths do not belong to this product root".into(),
             ));
@@ -684,12 +686,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("PD2R");
         let mut paths = Paths::for_root(&root);
-        let journal = |paths: Paths, kind| Journal {
+        let journal = |paths: Paths, kind| {
+            Journal {
             version: JOURNAL_VERSION,
             kind,
             paths,
             plan: serde_json::from_value(serde_json::json!({
-                "kind": "update", "to_backup": [], "to_live": [], "carry_forward": [],
+                "kind": "update", "to_backup": [], "to_keep": [], "to_live": [], "carry_forward": [],
                 "prune_if_empty": [], "record": "remove",
                 "space": {"download": 0, "staging": 0, "recovery_copy": 0}
             }))
@@ -698,6 +701,7 @@ mod tests {
             reached: None,
             rollback_reason: None,
             steps: vec![],
+        }
         };
         journal(paths.clone(), OperationKind::Update)
             .save()
