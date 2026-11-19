@@ -196,6 +196,9 @@ pub struct ProductState {
     pub catalog: CatalogState,
     /// The last Play's game exited within 30 s; the next Play clears it.
     pub startup_failed: Option<StartupFailed>,
+    /// The installed release's folder is gone: Play is refused until Repair restores it.
+    #[serde(default)]
+    pub mod_missing: bool,
 }
 
 /// What one fresh assessment found.
@@ -207,6 +210,8 @@ struct Assessed {
     readiness: Readiness,
     running: Vec<RunningGame>,
     guidance: Option<LoaderGuidance>,
+    /// A release is installed but its product folder is gone (deleted outside the launcher).
+    mod_missing: bool,
 }
 
 /// Refuses a D2R root that is, or lies inside, a symlink or junction (#66 review):
@@ -277,15 +282,14 @@ impl Launcher {
             unverified: record.as_ref().is_some_and(|r| !r.verified),
             running: &running,
         };
+        let mod_missing = matches!((&location, &installed), (Some(l), Some(i))
+            if !product_root(&l.path, &i.manifest).is_dir());
         let readiness = match readiness::assess(&facts, &self.hashes, &*self.game) {
             Ok(Readiness::D2rMissing) => Readiness::D2rMissing,
             // shortcut: `since: 0` when the processes could not be listed at all.
             Ok(_) if listing_failed => Readiness::Running { since: 0 },
             // The mod folder was deleted outside the launcher: Play would start -mod with no mod.
-            Ok(Readiness::Ready | Readiness::UpdateAvailable)
-                if matches!((&location, &installed), (Some(l), Some(i))
-                    if !product_root(&l.path, &i.manifest).is_dir()) =>
-            {
+            Ok(Readiness::Ready | Readiness::UpdateAvailable) if mod_missing => {
                 Readiness::RepairNeeded
             }
             Ok(r) => r,
@@ -307,6 +311,7 @@ impl Launcher {
             readiness,
             running,
             guidance,
+            mod_missing,
         })
     }
 
@@ -392,6 +397,7 @@ impl Launcher {
             loader_guidance: assessed.guidance,
             catalog,
             startup_failed: locked(&self.startup)?.get(product).copied(),
+            mod_missing: assessed.mod_missing,
         })
     }
 
@@ -463,6 +469,9 @@ impl Launcher {
         let refused = |code| LauncherError::new(code, format!("not playable: {:?}", a.readiness));
         if let Some(code) = a.readiness.play_refusal() {
             return Err(refused(code));
+        }
+        if a.mod_missing {
+            return Err(refused(ErrorCode::ProductNotInstalled));
         }
         // Playable readiness implies both; Internal only guards that invariant.
         let (Some(location), Some(installed)) = (&a.location, &a.installed) else {

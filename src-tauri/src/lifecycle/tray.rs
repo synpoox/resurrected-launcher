@@ -678,6 +678,7 @@ mod tests {
             catalog: CatalogState::Refreshed,
             cancelling: false,
             startup_failed: None,
+            mod_missing: false,
         }
     }
 

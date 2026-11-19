@@ -140,6 +140,19 @@ describe("journey dead ends (#267)", () => {
     expect(screen.getByRole("button", { name: "Manage PD2R" })).toBeTruthy();
   });
 
+  it("a loader that no release fixes still has the Manage menu", async () => {
+    mount("loader-modified");
+    await loaded();
+    expect(screen.getByRole("button", { name: "Manage PD2R" })).toBeTruthy();
+  });
+
+  it("a deleted mod folder offers Repair but no Play", async () => {
+    mount("mod-missing");
+    await loaded();
+    expect(screen.getByRole("button", { name: "Repair" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Play/ })).toBeNull();
+  });
+
   it("a startup failure keeps Manage", async () => {
     mount("startup-failed");
     await loaded();

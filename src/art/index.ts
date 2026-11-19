@@ -5,6 +5,7 @@ import pd2r from "./pd2r.webp?no-inline";
 import forever from "./forever.webp?no-inline";
 import nine from "./09.webp?no-inline";
 import mark from "./mark.svg?no-inline";
+import logo from "./d2r-logo.webp?no-inline";
 
 export type HeroProductId = "pd2r" | "forever" | "09";
 
@@ -13,6 +14,7 @@ export interface HeroArt {
   position: string; // CSS background-position, from the spec's framing table
   size?: string; // CSS background-size; defaults to "cover"
   accessibleName: string; // the hero's accessible name
+  scrim?: true; // darkens the top-left corner so the wordmark reads on bright art
 }
 
 const official = (src: string, accessibleName: string, position: string, size?: string): HeroArt => ({
@@ -29,16 +31,14 @@ export const HERO_ART: Record<HeroProductId, HeroArt> = {
     "55% center",
   ),
   forever: official(
-    nine,
+    forever,
     "Official Diablo II: Resurrected Paladin promotional artwork",
     "74% 22%",
     "auto 135%",
   ),
-  "09": official(
-    forever,
-    "Diablo before a glowing arcane circle in the official Diablo II: Resurrected 30th Anniversary key art",
-    "20% 30%",
-  ),
+  "09": { ...official(nine, "Official Diablo II: Resurrected Assassin and Druid artwork", "10% 0%"), scrim: true },
 };
 
 export const MARK_SRC: string = mark;
+
+export const LOGO_SRC: string = logo;

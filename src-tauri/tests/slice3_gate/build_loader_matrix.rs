@@ -62,7 +62,10 @@ fn build_loader_matrix_deleted_mod_folder_needs_repair() {
     rig.adopted();
     assert_eq!(rig.state().readiness, Readiness::Ready);
     fs::remove_dir_all(rig.root()).unwrap();
-    assert_eq!(rig.state().readiness, Readiness::RepairNeeded);
+    let state = rig.state();
+    assert_eq!(state.readiness, Readiness::RepairNeeded);
+    assert!(state.mod_missing);
+    play_refused(&rig, "product_not_installed");
 }
 
 #[test]

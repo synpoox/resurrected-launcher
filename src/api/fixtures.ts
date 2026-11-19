@@ -360,6 +360,11 @@ export const SCENES: readonly Scene[] = [
   }),
   scene({ key: "repair", label: "Repair", state: base(), open: "repair" }),
   scene({
+    key: "mod-missing",
+    label: "Mod folder deleted",
+    state: base({ installed: installed("0.4.2"), readiness: { status: "repair_needed" }, mod_missing: true }),
+  }),
+  scene({
     key: "repair-needed",
     label: "Repair didn't finish",
     state: base({ installed: { ...installed("0.4.2"), verified: false }, readiness: { status: "repair_needed" } }),

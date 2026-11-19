@@ -485,6 +485,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           <>
             {busy("primary", "Get D2RLoader", "loader", () => api.openLoaderDownloadPage().catch(fail))}
             {!compact && busy("ghost", "Check again", "check", checkAgain)}
+            {!compact && installed && manage}
           </>
         );
       case "install": {
@@ -626,7 +627,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           <>
             {busy("primary", "Repair", "repair", () => operate("repair"))}
             {!compact && installed && recommended && recommended.release_id !== installed.release_id && busy("ghost", "Update", "update", () => operate("update"))}
-            {!compact && installed && busy("ghost", `Play ${installed.display_version}`, "play", play)}
+            {!compact && installed && !state.mod_missing && busy("ghost", `Play ${installed.display_version}`, "play", play)}
             {!compact && manage}
           </>
         );
@@ -725,7 +726,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
                   <li>
                     {r.status === "build_unsupported"
                       ? "Check for a launcher or PD2R update, or restore the supported D2R build."
-                      : "Choose Check again. If it keeps failing, close any File Explorer windows open in the PD2R folder, or use Export diagnostics."}
+                      : `Choose Check again. If it keeps failing, close any File Explorer windows open in the ${product.short} folder, or use Export diagnostics.`}
                   </li>
                   <li>Choose Check again.</li>
                 </ol>
