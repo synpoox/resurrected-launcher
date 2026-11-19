@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.4
+
+A much smaller installer and a tidier product list.
 
 ### Changed
 
