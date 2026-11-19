@@ -85,7 +85,7 @@ Signing-key backup and a tested recovery procedure are slice 5 release gates (#8
 
 ## Standalone recovery installer
 
-The NSIS `*-setup.exe` that the workflow uploads is also the standalone recovery installer. It installs per user (`installMode: currentUser`) and includes the offline WebView2 installer. Keep every released version's installer downloadable. Automatic launcher rollback is not assumed (#8).
+The NSIS `*-setup.exe` that the workflow uploads is also the standalone recovery installer. It installs per user (`installMode: currentUser`) and embeds the WebView2 bootstrapper, which needs a network connection only when WebView2 is missing. Keep every released version's installer downloadable. Automatic launcher rollback is not assumed (#8).
 
 ## Clean-VM test matrix (#87 provides the machines, #89 records the results)
 
@@ -94,7 +94,7 @@ Hosted CI does not prove this matrix. Use clean machines and revert to a snapsho
 | # | Check | Windows 10 22H2 x64 | Windows 11 x64 |
 | --- | --- | --- | --- |
 | 1 | Clean per-user install from `*-setup.exe`: no UAC prompt, the launcher starts and finds its bundled 7-Zip | required | required |
-| 2 | No WebView2 Runtime, network off: the offline WebView2 installer runs and the launcher starts | required (no-WebView2 snapshot) | if a snapshot exists |
+| 2 | No WebView2 Runtime, network on: the embedded bootstrapper installs WebView2 and the launcher starts (with network off it cannot install; the installer says so) | required (no-WebView2 snapshot) | if a snapshot exists |
 | 3 | Normal-user permissions: the launcher never asks for elevation, and refused writes are explained | required | required |
 | 4 | Upgrade N → N+1 through the updater: settings, the D2R location and installed-release records survive | required | required |
 | 5 | Bad signature: a tampered installer, a wrong-key `.sig` and an unsigned artifact are each rejected, and N keeps running | required | required |

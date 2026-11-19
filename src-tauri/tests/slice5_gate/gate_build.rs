@@ -1,7 +1,7 @@
 //! What the signed workflow builds: a release launcher with self-update on and
 //! the shipped config, or (on a `launcher-v<version>-gate` tag) a gate build whose
 //! only difference is a loopback updater endpoint. And what
-//! every build installs: per user, no elevation, offline WebView2, bundled 7-Zip.
+//! every build installs: per user, no elevation, embedded WebView2 bootstrapper, bundled 7-Zip.
 
 use serde_json::{json, Value};
 use tauri::test::mock_builder;
@@ -161,17 +161,17 @@ fn release_builds_have_self_update_on_and_only_gate_tags_change_the_build() {
     assert!(raw[..start].contains(&"  contents: read"));
 }
 
-/// Every build installs per user (no UAC), runs as invoker, carries the offline
-/// WebView2 installer and the pinned 7-Zip, and updates in passive mode.
+/// Every build installs per user (no UAC), runs as invoker, carries the embedded
+/// WebView2 bootstrapper and the pinned 7-Zip, and updates in passive mode.
 #[test]
-fn the_installer_is_per_user_with_offline_webview2_and_bundled_7zip() {
+fn the_installer_is_per_user_with_embedded_webview2_bootstrapper_and_bundled_7zip() {
     let conf = json("src-tauri/tauri.conf.json");
     let bundle = &conf["bundle"];
     assert_eq!(bundle["targets"], json!(["nsis"]));
     assert_eq!(bundle["windows"]["nsis"]["installMode"], "currentUser");
     assert_eq!(
         bundle["windows"]["webviewInstallMode"],
-        json!({ "type": "offlineInstaller" })
+        json!({ "type": "embedBootstrapper" })
     );
     assert_eq!(bundle["resources"], json!(["resources/7zip/*"]));
     assert!(super::repo()

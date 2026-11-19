@@ -5,6 +5,7 @@
 ### Changed
 
 - Diablo II: Resurrected Forever is removed from the launcher entirely. The 09 description no longer mentions 3.3, and the Forever and 09 hero images are swapped.
+- The launcher installer is much smaller to download. It now needs an internet connection during install only if your PC is missing Microsoft WebView2.
 
 ## 0.1.3
 
