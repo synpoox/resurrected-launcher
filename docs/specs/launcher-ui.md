@@ -91,9 +91,9 @@ Type: system Arial (`Arial, Helvetica, sans-serif`), with no bundled font. Headi
 - Type scale and contrast (#135): body 16px in `--text`; row labels 18px; sub-nav tabs 17px in `--hero-copy` (selected `--text`), 14px vertical padding with 4px between tabs; hints, notes and notices 15px in `--hero-copy`; section labels 13px uppercase in `--hero-copy`; the heading 30px; rows have 20px vertical padding.
 - Opens in the main area. A 220px sub-nav holds the tabs **Game · Launcher · Folders and plugins · Troubleshooting**. One panel shows at a time, and each row has a label, a hint and a right-hand control.
 - **Game**:
-  - The D2R location with its store and build, and "Change…", which opens the location dialog. Choosing a location moves nothing. "Change…" is disabled while the game runs ("Quit the game to change this") or an operation runs ("Wait for the update to finish", [#272](https://github.com/synpoox/resurrected-launcher/issues/272)).
+  - The D2R location with its store and build, and "Change…", which opens the location dialog. Choosing a location moves nothing.
   - Browsing to a folder without `D2R.exe` shows an inline error, and a notice reports the recheck result.
-  - While the game runs, the control is disabled with "Quit the game to change this".
+  - While the game runs, the control is disabled with "Quit the game to change this"; while an operation runs, with "Wait for the update to finish" ([#272](https://github.com/synpoox/resurrected-launcher/issues/272)).
 - **Launcher**: **Start with Windows** switch, off by default, which opens to the tray.
 - **Launcher → Launcher version** (#28): the version and its update status, with **Check for updates**. When an update is ready or has failed, the control becomes Restart to update or Try again (see [Launcher self-update](#launcher-self-update)).
 - **Launcher → Download launcher updates automatically** (#28): switch, on by default. Hint when on: "Updates download in the background and install when you restart or Quit." Hint when off: "You'll be told when an update is available. Nothing downloads until you choose Download."

@@ -98,7 +98,7 @@ export function Sidebar({ view, badges, onSelect }: SidebarProps) {
               void api
                 .openSocialLink(s.id)
                 .catch((e) =>
-                  toast.show({ tone: "error", text: operationFailureText(e, "") }),
+                  toast.show({ tone: "error", text: operationFailureText(e, PRODUCTS[0].short) }),
                 )
             }
           >

@@ -30,7 +30,7 @@ import { PatchNotes } from "./PatchNotes";
 import { Progress } from "./Progress";
 import { rememberSaveBreakingAck, saveBreakingAcked } from "./saveAck";
 import { progressStats } from "./stats";
-import { asError, type ProductData } from "./store";
+import type { ProductData } from "./store";
 
 export type Tab = "overview" | "notes";
 
@@ -77,7 +77,7 @@ export function ProductPage(props: ProductPageProps) {
 
 /** Shows the latest request's reply only: Rust resolves `openNewsLink` indexes against the
  *  latest-started `getNews` too, so an index means the same item on both sides. */
-function useNews(productId: string) {
+function useNews(productId: string, short: string) {
   const api = useApi();
   const toast = useToast();
   const [news, setNews] = useState<NewsState | null>(null);
@@ -109,7 +109,7 @@ function useNews(productId: string) {
     },
     open: (i: number) =>
       void api.openNewsLink(productId, i).catch((e: unknown) => {
-        toast.show({ tone: "error", text: asError(e).message });
+        toast.show({ tone: "error", text: operationFailureText(e, short) });
         load();
       }),
   };
@@ -124,7 +124,7 @@ function ComingSoon({ product }: { product: Product }) {
   const fail = (e: unknown) => toast.show({ tone: "error", text: operationFailureText(e, product.short) });
   const about = () => void api.openProductPage(product.id).catch(fail);
   const follow = () => void api.openCommunityPage().catch(fail);
-  const feed = useNews(product.id);
+  const feed = useNews(product.id, product.short);
   return (
     <div className="page overview">
       <HeroArt product={product} />
@@ -161,7 +161,7 @@ function ReleasedProduct(props: ProductPageProps) {
           <div className="bottom">
             <div className="action-col">
               <Notice tone="error">
-                <b>{product.short} couldn't be read.</b> {data.error.message}{" "}
+                <b>{product.short} couldn't be read.</b> {operationFailureText(data.error, product.short)}{" "}
                 <button type="button" className="link" onClick={() => void refresh()}>
                   Try again
                 </button>
@@ -195,7 +195,7 @@ function outcomeToastsOf(host: object, productId: string): number[] {
 function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpenSettings, onDismissBackups, state }: ProductPageProps & { state: ProductState }) {
   const api = useApi();
   const toast = useToast();
-  const feed = useNews(product.id);
+  const feed = useNews(product.id, product.short);
   const installedId = state.installed?.release_id;
   // Once a tab was chosen, the panel that opens slides in; the first paint of a page doesn't.
   const [switched, setSwitched] = useState(false);

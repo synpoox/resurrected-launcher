@@ -371,7 +371,7 @@ export function CleanInstallDialog({ product, inspection, label, onConfirm, onCl
       onClose={onClose}
       actions={actions}
     >
-      {changed && (
+      {changed && installed && (
         <p>
           {version} can't be installed over the files or settings in your {product.short} folder that were changed.
         </p>

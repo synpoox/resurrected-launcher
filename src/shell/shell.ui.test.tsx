@@ -283,7 +283,7 @@ describe("product page", () => {
     });
     const feed = await screen.findByRole("region", { name: "News" });
     await user.click((await within(feed).findAllByRole("button"))[0]);
-    expect(await screen.findByText("no news item 0 for pd2r; load news again")).toBeTruthy();
+    expect(await screen.findByText(/^Something went wrong/)).toBeTruthy();
     await waitFor(() => expect(names(api).filter((n) => n === "getNews")).toHaveLength(2));
   });
 

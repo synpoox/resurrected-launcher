@@ -109,6 +109,21 @@ describe("install inspection (#272)", () => {
   });
 });
 
+describe("install inspection, recommended release (#272)", () => {
+  it("is read again when the recommended release changes", async () => {
+    const { api } = mount("install");
+    await screen.findByRole("button", { name: "Install" });
+    await waitFor(() => expect(calls(api, "inspectOperation")).toHaveLength(1));
+    const read = api.getProductState.bind(api);
+    api.getProductState = async (id) => {
+      const s = await read(id);
+      return { ...s, recommended: { release_id: "pd2r-0.4.3-alpha", display_version: "0.4.3", save_breaking: false } };
+    };
+    act(() => api.emitOutcome({ status: "cancelled", product_id: "pd2r", kind: "install" }));
+    await waitFor(() => expect(calls(api, "inspectOperation").length).toBeGreaterThan(1));
+  });
+});
+
 describe("Settings (#272)", () => {
   it("Change… waits for a running operation and says which", async () => {
     const { user } = mount("ready", (a) => {

@@ -108,7 +108,8 @@ export function operationFailureText(error: unknown, short: string): string {
     case "insufficient_space":
       return `Not enough free disk space: ${spaceText(e.message)}Free up space, then try again.`;
     case "operation_in_progress":
-      return `Another change to ${short} is still running. Wait for it to finish.`;
+      // The same code means the launcher is quitting, so the copy fits both.
+      return `${short} is busy with another change, or the launcher is closing. Wait a moment, then try again.`;
     case "recovery_required":
       return `An earlier change to ${short} didn't finish. Choose Check again to restore it.`;
     case "download_failed":
