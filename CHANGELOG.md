@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Check again now looks for newly published releases, not just your files, so you no longer have to restart the launcher to see a new update.
+
 ### New
 
 - GitHub, Discord and Ko-fi icons sit above Settings in the sidebar. Each opens in your browser. The Discord link now uses the new invite.

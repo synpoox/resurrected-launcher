@@ -352,6 +352,8 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   };
   const cancel = () => api.cancelOperation(product.id).then(refresh, fail);
   const checkAgain = async () => {
+    // A new release may have been published since startup; a failed refresh must not block the re-check.
+    await api.refreshCatalog().catch(() => undefined);
     try {
       if (state.readiness.status === "recovery_required") await api.recoverProduct(product.id);
       await refresh();

@@ -684,6 +684,27 @@ describe("product page", () => {
     expect(document.getElementById(play.getAttribute("aria-describedby")!)!.textContent).toMatch(/Can't play/);
   });
 
+  it("Check again refreshes the catalog, then re-reads state", async () => {
+    const { api, user } = mount("blocked");
+    await loaded();
+    const before = api.calls.length;
+    await user.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(names(api).slice(before)).toContain("getProductState"));
+    const after = names(api).slice(before);
+    expect(after.indexOf("refreshCatalog")).toBeGreaterThanOrEqual(0);
+    expect(after.indexOf("refreshCatalog")).toBeLessThan(after.indexOf("getProductState"));
+  });
+
+  it("Check again still re-reads state when the catalog refresh fails", async () => {
+    const { api, user } = mount("blocked", (a) => {
+      a.refreshCatalog = () => Promise.reject(new Error("offline"));
+    });
+    await loaded();
+    const before = api.calls.length;
+    await user.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(names(api).slice(before)).toContain("getProductState"));
+  });
+
   it("the first launch after an update opens Patch Notes once", async () => {
     localStorage.setItem(seenKey("pd2r"), "pd2r-0.4.1-alpha");
     mount("ready");
