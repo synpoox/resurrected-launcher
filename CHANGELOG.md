@@ -8,7 +8,6 @@
 
 ### Fixed
 
-- Uninstall no longer leaves a release's files behind while saying PD2R was uninstalled. Files that changed from the release now move to a backup folder next to the PD2R folder, and the result says which files stayed (#266).
 - One product's broken or too-new release no longer makes every product show offline. The others keep their updates. (#271)
 - A download or catalog refresh that stalls on a dead connection now fails after a timeout instead of hanging, so Cancel, Quit and Play work again. (#269)
 - An installed PD2R now has Clean install… in its ⋯ menu, so an Update that stops on a file the launcher did not install can be recovered. (#264)
