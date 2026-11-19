@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+### New
+
+- The product page shows the Diablo II: Resurrected logo at the top left of the hero, with Project above it (PD2R) or 09 below it.
+
 ### Fixed
 
 - Uninstall no longer leaves a release's files behind while saying PD2R was uninstalled. Files that changed from the release now move to a backup folder next to the PD2R folder, and the result says which files stayed (#266).
+- An installed PD2R now has Clean install… in its ⋯ menu, so an Update that stops on a file the launcher did not install can be recovered. (#264)
 - If you change the D2R location to a folder without PD2R, the launcher now offers Install there instead of Update, Repair and Uninstall.
 - Install, Update and Repair no longer fail with "cannot write ... (os error 3)" when the D2R folder has no PD2Resurrected folder yet. The launcher now creates it.
 

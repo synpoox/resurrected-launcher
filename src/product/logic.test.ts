@@ -331,6 +331,7 @@ describe("existingOf (issue 126)", () => {
     kind: "install",
     release: { release_id: "pd2r-0.2.0-alpha", display_version: "0.2.0-alpha", save_breaking: false },
     files_replaced_or_removed: 0,
+    files_to_backup: 0,
     files_added: 0,
     files_kept: 0,
     preserved: [],

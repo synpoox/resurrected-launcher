@@ -284,6 +284,12 @@ export function UninstallDialog({ product, inspection, report, busy, onConfirm, 
       }
     >
       <p>{`This removes ${product.short}'s game files only.`}</p>
+      {inspection && inspection.files_to_backup > 0 && (
+        <p>
+          {inspection.files_to_backup === 1 ? "1 changed file moves" : `${inspection.files_to_backup} changed files move`} to a
+          backup folder next to the {product.short} folder.
+        </p>
+      )}
       {!inspection && <Inspecting text={`Checking ${product.short}'s files…`} />}
       <ul className="kept">
         <li>
@@ -317,13 +323,15 @@ export interface CleanInstallProps {
   /** Names a release as the action row does ("alpha 0.4.2"). */
   label: (releaseId: string, version: string) => string;
   onClose: () => void;
+  /** Opened from the ⋯ menu of an installed product, whose files may already match the release. */
+  installed?: boolean;
 }
 
 /** issue 126: the product folder holds files the offered release doesn't (an older version, or edited
  *  managed files), so Install would be refused. Clean install, with this consent, moves the folder
  *  aside as a labelled backup, installs the release and carries edited settings forward. Settings
  *  the release can't run with are named (issue 134, #6 item 4); they are reset, not carried. */
-export function CleanInstallDialog({ product, inspection, label, onConfirm, onClose }: CleanInstallProps) {
+export function CleanInstallDialog({ product, inspection, label, onConfirm, onClose, installed }: CleanInstallProps) {
   const actions = (
     <>
       <BusyButton className="primary" blocked={!inspection} onClick={() => inspection && onConfirm(inspection)}>
@@ -354,10 +362,16 @@ export function CleanInstallDialog({ product, inspection, label, onConfirm, onCl
       onClose={onClose}
       actions={actions}
     >
-      <p>
-        {product.short} is already in your game folder, but it doesn't match {version}: it's an older version, or some of
-        its files were changed. It can't be updated in place.
-      </p>
+      {installed ? (
+        <p>
+          Clean install moves your {product.short} folder aside and installs {version} fresh.
+        </p>
+      ) : (
+        <p>
+          {product.short} is already in your game folder, but it doesn't match {version}: it's an older version, or some of
+          its files were changed. It can't be updated in place.
+        </p>
+      )}
       <ul className="kept">
         <li>
           <b>Backup:</b> clean install moves the whole {product.short} folder aside, next to it in <code>mods</code>, and

@@ -746,30 +746,31 @@ describe("menus and dialogs", () => {
     const menu = screen.getByRole("menu");
     expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
       "Repair",
+      "Clean install…",
       "Open saves folder",
       "Open settings folder",
       "Uninstall…",
     ]);
     expect(focused().textContent).toBe("Repair");
-    await user.keyboard("{ArrowDown}");
+    await user.keyboard("{ArrowDown}{ArrowDown}");
     expect(focused().textContent).toBe("Open saves folder");
-    await user.keyboard("{ArrowUp}{ArrowUp}");
+    await user.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}");
     expect(focused().textContent).toBe("Uninstall…");
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("menu")).toBeNull();
     expect(focused()).toBe(trigger);
     await user.click(trigger);
-    await user.keyboard("{ArrowDown}{Enter}");
+    await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
     expect(api.calls.at(-1)).toEqual({ name: "openFolder", args: ["pd2r", "saves"] });
     expect(focused()).toBe(trigger);
   });
 
-  it("⋯ menu stays while the game runs: Repair and Uninstall say why they're unavailable", async () => {
+  it("⋯ menu stays while the game runs: Repair, Clean install… and Uninstall say why they're unavailable", async () => {
     const { api, user } = mount("running");
     await loaded();
     await user.click(screen.getByRole("button", { name: "Manage PD2R" }));
     const menu = screen.getByRole("menu");
-    for (const name of [/^Repair/, /^Uninstall…/]) {
+    for (const name of [/^Repair/, /^Clean install…/, /^Uninstall…/]) {
       const item = within(menu).getByRole("menuitem", { name });
       expect(item.getAttribute("aria-disabled")).toBe("true");
       expect(document.getElementById(item.getAttribute("aria-describedby")!)!.textContent).toBe("Quit PD2R first");
@@ -851,6 +852,7 @@ describe("menus and dialogs", () => {
     expect(within(dialog).getByText(/Kept:/)).toBeTruthy();
     expect(within(dialog).getByText(/Diablo II: Resurrected, D2RLoader and other products/)).toBeTruthy();
     expect(within(dialog).getByText("lootfilter/default.filter")).toBeTruthy();
+    expect(within(dialog).getByText(/2 changed files move to a\s+backup folder next to the PD2R folder\./)).toBeTruthy();
     await user.click(within(dialog).getByRole("button", { name: "Uninstall" }));
     const done = await screen.findByRole("dialog", { name: "PD2R was uninstalled" });
     expect(within(done).getByText("Your saves and settings were kept.")).toBeTruthy();

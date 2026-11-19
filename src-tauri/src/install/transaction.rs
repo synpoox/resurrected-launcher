@@ -303,6 +303,13 @@ impl Tx<'_> {
                         .collect::<Result<_, _>>()?;
                     prune.sort_by_key(|d| std::cmp::Reverse(d.components().count()));
                     entries.extend(prune.into_iter().map(|path| Entry::RemoveDir { path }));
+                } else if plan.kind == OperationKind::Uninstall {
+                    // Rolled back: the changed files are home again, so `K` is empty dirs.
+                    entries.extend(
+                        p.clean_backup
+                            .iter()
+                            .map(|path| Entry::Delete { path: path.clone() }),
+                    );
                 }
             }
             _ => unreachable!("{b:?} is not multi-entry"),

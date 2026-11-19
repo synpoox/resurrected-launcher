@@ -439,6 +439,8 @@ impl Scenario {
                 let m1 = rig.install_1();
                 let filter = edit_loot_filter(&root);
                 let plugin = add_unknown_plugin(&root);
+                // A changed managed file goes to the labelled backup (#266).
+                fs::write(root.join(ARMOR), b"changed armor").unwrap();
                 let new = with_file(empty_root(), LOOT_FILTER, &filter);
                 let op = Op::new(&rig, Uninstall, PD2R_1, Some(m1));
                 (
@@ -478,7 +480,8 @@ impl Scenario {
 
     /// The root holds the complete previous (`new == false`) or new installation,
     /// the record agrees, and no journal or scratch is left. A committed clean
-    /// install leaves exactly one labelled backup holding the old folder.
+    /// install leaves exactly one labelled backup holding the old folder; a
+    /// committed uninstall one holding the changed managed files.
     pub fn assert_settled(&self, new: bool, case: &str) {
         let (want, record) = if new {
             (&self.new, self.new_record)
@@ -519,7 +522,14 @@ impl Scenario {
             scratch.is_empty(),
             "{case}: left beside the root: {scratch:?}"
         );
-        if !(new && self.op.kind == CleanInstall) {
+        if new && self.op.kind == Uninstall {
+            assert_eq!(backups.len(), 1, "{case}: one labelled backup");
+            assert!(
+                tree(&backups[0]) == with_file(Tree::new(), ARMOR, b"changed armor"),
+                "{case}: backup holds the changed file"
+            );
+        }
+        if !(new && matches!(self.op.kind, CleanInstall | Uninstall)) {
             assert!(backups.is_empty(), "{case}: unexpected backup {backups:?}");
         }
     }

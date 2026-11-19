@@ -116,7 +116,17 @@ fn clean_install_backup_is_retained_through_later_operations_and_recovery() {
     kept("update", &to_3.run(rig, &NoFaults).unwrap());
 
     let uninstall = Op::new(rig, Uninstall, PD2R_3, Some(to_3.manifest.clone()));
-    kept("uninstall", &uninstall.run(rig, &NoFaults).unwrap());
+    // Uninstall reports only a backup it made itself (#266); the old one stays on disk.
+    assert!(uninstall
+        .run(rig, &NoFaults)
+        .unwrap()
+        .clean_install_backups
+        .is_empty());
+    assert_eq!(
+        names(&clean_install_backups(&s.root)),
+        names(std::slice::from_ref(backup))
+    );
+    assert!(tree(backup) == s.old, "uninstall: the backup changed");
 
     // A second clean install adds a second backup and keeps the first.
     let again = Op::new(rig, CleanInstall, PD2R_1, None);

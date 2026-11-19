@@ -566,6 +566,8 @@ pub struct InspectionView {
     pub release: ReleaseSummary,
     /// Managed files replaced or removed (moved to the recovery copy).
     pub files_replaced_or_removed: usize,
+    /// Uninstall: changed managed files that move to a labelled backup (#266).
+    pub files_to_backup: usize,
     /// Release files put in place.
     pub files_added: usize,
     /// Release files already in place and left as they are (#126): with no
@@ -594,6 +596,7 @@ impl InspectionView {
             kind: req.kind,
             release: ReleaseSummary::of(&release.manifest),
             files_replaced_or_removed: insp.plan.to_backup.len() + insp.plan.to_keep.len(),
+            files_to_backup: insp.plan.to_keep.len(),
             files_added: insp.plan.to_live.len(),
             files_kept: insp.kept,
             preserved: insp.preserved,

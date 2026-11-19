@@ -73,7 +73,9 @@ pub struct Paths {
     pub backup: PathBuf,
     /// Where the download (#35) writes the archive.
     pub archive: PathBuf,
-    /// Clean install only: the labelled backup `K`, never silently deleted.
+    /// Clean install, or uninstall with changed managed files: the labelled backup
+    /// `K`, never silently deleted by a commit (a rolled-back uninstall removes its
+    /// empty `K`).
     pub clean_backup: Option<PathBuf>,
 }
 
@@ -94,7 +96,10 @@ impl Paths {
 
     /// Scratch the transaction owns outright and may delete whole.
     fn is_scratch(&self, p: &Path) -> bool {
-        [&self.staging, &self.backup, &self.archive].contains(&&p.to_path_buf())
+        [&self.staging, &self.backup, &self.archive]
+            .into_iter()
+            .chain(&self.clean_backup)
+            .any(|s| s == p)
     }
 }
 
@@ -728,6 +733,11 @@ mod tests {
         );
         clean.clean_backup = Some(clean_backup_path(&root, 42));
         journal(clean, OperationKind::CleanInstall).save().unwrap();
+        assert!(Journal::load(&root).unwrap().is_some());
+
+        let mut un = Paths::for_root(&root);
+        un.clean_backup = Some(clean_backup_path(&root, 42));
+        journal(un, OperationKind::Uninstall).save().unwrap();
         assert!(Journal::load(&root).unwrap().is_some());
     }
 
