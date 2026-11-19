@@ -1,9 +1,11 @@
 //! Catalog refresh: download the release feed and the manifests it recommends,
 //! validate everything, and only then replace State's metadata cache.
 //!
-//! All or nothing: offline, a failed download, invalid metadata or a changed
-//! release leaves the cache exactly as it was, so the last valid metadata stays in
-//! use and nothing unverified is reported as ready.
+//! Offline, a failed feed download, an invalid feed or a changed release leaves
+//! the cache exactly as it was, so the last valid metadata stays in use and
+//! nothing unverified is reported as ready. One product's own manifest failing
+//! (download, parse, too new a launcher) does not fail the others: it is reported
+//! in [`Fetched::failures`] and that product keeps its cached release.
 
 use std::sync::atomic::AtomicBool;
 
@@ -36,8 +38,9 @@ pub fn manifest_identity(product: &ProductId, release_id: &str) -> String {
 ///
 /// Errors: [`crate::contract::ErrorCode::ReleaseChanged`] when a known
 /// `release_id` now points at different manifest bytes, `metadata_invalid` for
-/// invalid metadata, and the download errors of [`Downloader::fetch_bytes`]. On
-/// any error the cache is unchanged.
+/// an invalid feed, and the download errors of [`Downloader::fetch_bytes`] for the
+/// feed. On any error the cache is unchanged. A single product's manifest failing
+/// is not an error here: that product keeps its cached release (see [`fetch`]).
 pub fn refresh(
     downloader: &Downloader,
     state: &mut StateStore,
@@ -184,7 +187,9 @@ pub fn apply(state: &mut StateStore, fetched: Fetched) -> Result<Feed, LauncherE
     }
     let feed_bytes = match state.cached(FEED_IDENTITY) {
         Some(old) if !failures.is_empty() => {
-            keep_cached_pointers(&feed_bytes, &old.bytes, &failures).unwrap_or(feed_bytes)
+            keep_cached_pointers(&feed_bytes, &old.bytes, &failures)
+                .filter(|spliced| Feed::parse(spliced).is_ok())
+                .unwrap_or(feed_bytes)
         }
         _ => feed_bytes,
     };

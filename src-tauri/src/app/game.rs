@@ -179,6 +179,49 @@ pub enum CatalogState {
     },
 }
 
+impl CatalogState {
+    /// This state as `product` sees it: [`CatalogState::Failed`] with its own error
+    /// when only its manifest failed in the last refresh.
+    fn for_product(self, product: &ProductId) -> Self {
+        match self {
+            Self::Refreshed { product_errors } => product_errors
+                .into_iter()
+                .find(|(id, _)| id == product)
+                .map_or(
+                    Self::Refreshed {
+                        product_errors: Vec::new(),
+                    },
+                    |(_, error)| Self::Failed { error },
+                ),
+            other => other,
+        }
+    }
+}
+
+#[cfg(test)]
+mod catalog_state_tests {
+    use super::*;
+    use crate::contract::ErrorCode;
+
+    #[test]
+    fn a_failed_product_reads_failed_with_its_own_error_and_the_others_refreshed() {
+        let error = LauncherError::new(ErrorCode::LauncherUpdateRequired, "too old");
+        let state = CatalogState::Refreshed {
+            product_errors: vec![(ProductId("pd2r".into()), error.clone())],
+        };
+        assert_eq!(
+            state.clone().for_product(&ProductId("pd2r".into())),
+            CatalogState::Failed { error }
+        );
+        assert_eq!(
+            state.for_product(&ProductId("09".into())),
+            CatalogState::Refreshed {
+                product_errors: Vec::new()
+            }
+        );
+    }
+}
+
 /// Reply to `get_product_state`.
 ///
 /// Offline/no-catalog: `installed` and `recommended` are both null (nothing was
@@ -379,18 +422,7 @@ impl Launcher {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
-        let catalog = match catalog {
-            CatalogState::Refreshed { product_errors } => product_errors
-                .into_iter()
-                .find(|(id, _)| id == product)
-                .map_or(
-                    CatalogState::Refreshed {
-                        product_errors: Vec::new(),
-                    },
-                    |(_, error)| CatalogState::Failed { error },
-                ),
-            other => other,
-        };
+        let catalog = catalog.for_product(product);
         Ok(ProductState {
             product_id: product.clone(),
             installed: assessed.record,
