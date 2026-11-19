@@ -399,6 +399,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   const quitFirst = journey === "running" ? `Quit ${product.short} first` : undefined;
   const manageItems: MenuItem[] = [
     { label: "Repair", disabledReason: quitFirst, onSelect: () => void runAction("repair") },
+    { label: "Clean install…", disabledReason: quitFirst, onSelect: () => void runAction("clean_install") },
     { label: "Open saves folder", onSelect: () => void pending.run("saves", () => api.openFolder(product.id, "saves").catch(fail)) },
     {
       label: "Open settings folder",

@@ -146,6 +146,20 @@ describe("consent dialogs open on the click (issue 138)", () => {
     expect((start.args[1] as Inspection).token).toBe("clean_install-token");
   });
 
+  it("an installed product's Manage menu offers Clean install…, which starts a consented clean install", async () => {
+    const { api, user } = mount("ready");
+    await loaded();
+    await user.click(screen.getByRole("button", { name: "Manage PD2R" }));
+    await user.click(screen.getByRole("menuitem", { name: "Clean install…" }));
+    const dialog = await screen.findByRole("dialog", { name: /Replace the PD2R files/ });
+    const confirm = within(dialog).getByRole("button", { name: "Clean install" });
+    await waitFor(() => expect(blocked(confirm)).toBe(false));
+    await user.click(confirm);
+    await waitFor(() => expect(api.calls.some((c) => c.name === "startOperation")).toBe(true));
+    const start = api.calls.find((c) => c.name === "startOperation")!;
+    expect(start.args[0]).toMatchObject({ kind: "clean_install", consent_clean_install: true });
+  });
+
   it("Not now while the inspection runs keeps the dialog closed when it answers", async () => {
     const { api, user } = mount("clean-install");
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Not now" }));
