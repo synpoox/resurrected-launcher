@@ -58,6 +58,10 @@ pub enum Readiness {
     BuildUnsupported {
         /// [`GameLocation::build`] of the unsupported executable.
         found: String,
+        /// The recommended release (a different one than installed) supports this
+        /// build, so Update fixes it (#249).
+        #[serde(default)]
+        update_fixes: bool,
     },
     /// `D2RLoader.exe` or `D2RCore.dll` is absent or has no readable ProductVersion.
     LoaderMissing,
@@ -181,8 +185,9 @@ mod tests {
             (
                 Readiness::BuildUnsupported {
                     found: "3.3.1".into(),
+                    update_fixes: true,
                 },
-                json!({ "status": "build_unsupported", "found": "3.3.1" }),
+                json!({ "status": "build_unsupported", "found": "3.3.1", "update_fixes": true }),
             ),
             (
                 Readiness::LoaderMissing,

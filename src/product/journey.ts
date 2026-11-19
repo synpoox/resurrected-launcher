@@ -40,8 +40,10 @@ export function journeyOf(state: ProductState, progress: ProgressEvent | null): 
     case "loader_unsupported":
     case "loader_modified":
       return "loader-missing";
-    case "recovery_required":
     case "build_unsupported":
+      // The recommended release supports this D2R build: Update fixes it (#249).
+      return state.readiness.update_fixes && state.recommended ? "update" : "blocked";
+    case "recovery_required":
       return "blocked";
     case "repair_needed":
       return "repair-needed";

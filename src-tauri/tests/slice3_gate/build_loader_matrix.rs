@@ -48,7 +48,8 @@ fn build_loader_matrix_same_size_but_different_hash_is_build_unsupported() {
     assert_eq!(
         state.readiness,
         Readiness::BuildUnsupported {
-            found: D2R_BUILD.into()
+            found: D2R_BUILD.into(),
+            update_fixes: false,
         }
     );
     play_refused(&rig, "game_build_unsupported");

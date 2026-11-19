@@ -317,6 +317,17 @@ export const SCENES: readonly Scene[] = [
     state: base({ readiness: { status: "build_unsupported", found: "3.3.1" } }),
   }),
   scene({
+    key: "build-unsupported-update",
+    label: "Unsupported D2R build, update supports it",
+    state: base({
+      installed: installed("0.4.1"),
+      recommended: summary("0.5.0", true),
+      readiness: { status: "build_unsupported", found: "3.3.1", update_fixes: true },
+    }),
+    notes: NOTES_UPDATE,
+    inspections: { update: { breaks_saves: true, save_breaking_notice: null } },
+  }),
+  scene({
     key: "running",
     label: "Running",
     state: base({

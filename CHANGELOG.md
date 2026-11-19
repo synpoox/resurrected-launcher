@@ -6,6 +6,10 @@
 
 - GitHub, Discord and Ko-fi icons sit above Settings in the sidebar. Each opens in your browser. The Discord link now uses the new invite.
 
+### Fixed
+
+- When a new D2R version stops your installed PD2R from working but the latest PD2R supports it, the launcher now offers Update instead of only saying it can't play.
+
 ## 0.1.4
 
 A much smaller installer and a tidier product list.
