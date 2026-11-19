@@ -12,6 +12,7 @@
 - If the game closes while starting, or a Repair didn't finish, and an update is available, Update is now offered, and the ⋯ menu is there after a startup failure. (#267)
 - When a previous change didn't finish, Check again now says why it can't recover (a File Explorer window open in the folder, or the game running), and Repair and Uninstall in ⋯ are disabled until it does. (#267)
 - If you delete the PD2R folder in File Explorer, the launcher now offers Repair instead of showing Ready and starting the game with no mod. (#267)
+- One product's broken or too-new release no longer makes every product show offline. The others keep their updates. (#271)
 - A download or catalog refresh that stalls on a dead connection now fails after a timeout instead of hanging, so Cancel, Quit and Play work again. (#269)
 - An installed PD2R now has Clean install… in its ⋯ menu, so an Update that stops on a file the launcher did not install can be recovered. (#264)
 - If you change the D2R location to a folder without PD2R, the launcher now offers Install there instead of Update, Repair and Uninstall.

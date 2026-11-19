@@ -685,7 +685,9 @@ mod tests {
             readiness,
             running_game: None,
             loader_guidance: None,
-            catalog: CatalogState::Refreshed,
+            catalog: CatalogState::Refreshed {
+                product_errors: Vec::new(),
+            },
             cancelling: false,
             startup_failed: None,
             mod_missing: false,
