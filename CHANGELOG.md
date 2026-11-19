@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Diablo II: Resurrected Forever is removed from the launcher entirely. The 09 description no longer mentions 3.3, and the Forever and 09 hero images are swapped.
+
 ## 0.1.3
 
 Smoother launcher, safer game updates, and a round of fixes.
@@ -20,7 +26,6 @@ Smoother launcher, safer game updates, and a round of fixes.
 
 - The window has one fixed size: 1600×900, or 1280×720 on smaller screens. It can no longer be resized.
 - The Forever page now uses the 30th Anniversary key art.
-- Diablo II: Resurrected Forever is hidden from the sidebar for now, and the 09 page uses the Forever art.
 - The art credits list is no longer in Settings.
 - The browser's right-click menu now works only in text fields, and browser keys such as F5 and Ctrl+F do nothing.
 - Text in the launcher can no longer be highlighted, like a regular app.

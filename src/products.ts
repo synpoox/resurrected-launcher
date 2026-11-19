@@ -16,10 +16,10 @@ export interface Product {
   /** The hero title: always exactly these two lines. */
   title: [string, string];
   description: string;
-  /** False for products without a release (Forever and 09 today): no tabs, no install. */
+  /** False for products without a release (09 today): no tabs, no install. */
   hasRelease: boolean;
   /** "About <product>" (products without a release) opens a public page: the product has an
-   *  entry in `product-pages.json`. Forever and 09 have no public page yet, so their About opens
+   *  entry in `product-pages.json`. 09 has no public page yet, so its About opens
    *  "Follow for updates on Discord" instead (issue 135). */
   aboutPage: boolean;
 }

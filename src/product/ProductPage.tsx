@@ -112,7 +112,7 @@ function useNews(productId: string) {
   };
 }
 
-/** Forever and 09 today: ribbon, description and one outlined link; no tabs. "About <product>"
+/** 09 today: ribbon, description and one outlined link; no tabs. "About <product>"
  *  opens the product's public page when it has one; otherwise "Follow for updates on Discord"
  *  opens the project Discord (issue 135). */
 function ComingSoon({ product }: { product: Product }) {

@@ -127,13 +127,11 @@ const NEWS: Record<string, NewsState> = {
       { tag: "Guide", title: "Setting up D2RLoader", published: iso(30) },
     ],
   },
-  "project-forever": { status: "ok", items: [{ tag: "Dev update", title: "Legacy items: first look", published: iso(5) }] },
   "project-09": { status: "ok", items: [] },
 };
 
 const OFFLINE_NEWS: Record<string, NewsState> = {
   pd2r: { status: "offline" },
-  "project-forever": { status: "offline" },
   "project-09": { status: "offline" },
 };
 
