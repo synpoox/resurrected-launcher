@@ -133,14 +133,40 @@
   outline-offset: -3px;
 }
 
+/* The 20px cog with a 6px gap keeps the label where a 16px cog with a 10px gap put it. */
 .sidebar .settings {
+  gap: 6px;
+}
+
+.social {
   margin-top: auto;
-  gap: 10px;
+  display: flex;
+  gap: 12px;
+  padding: 0 13px;
+}
+
+.social-link {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  color: var(--muted);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+
+.social-link:hover {
+  color: var(--text);
+}
+
+.social-icon {
+  width: 28px;
+  height: 28px;
+  fill: currentColor;
 }
 
 .cog {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   flex: none;
   fill: none;
   stroke: currentColor;

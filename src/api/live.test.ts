@@ -66,11 +66,13 @@ describe("live adapter", () => {
     await live.openNewsLink("pd2r", 2);
     await live.openProductPage("pd2r");
     await live.openCommunityPage();
+    await live.openSocialLink("kofi");
     expect(invoke.mock.calls).toEqual([
       ["get_news", { product_id: "pd2r" }],
       ["open_news_link", { product_id: "pd2r", index: 2 }],
       ["open_product_page", { product_id: "pd2r" }],
       ["open_community_page"],
+      ["open_social_link", { link: "kofi" }],
     ]);
   });
 });

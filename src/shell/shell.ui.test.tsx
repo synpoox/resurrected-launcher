@@ -91,20 +91,23 @@ describe("shell", () => {
     await loaded();
     await screen.findByText(/TCP\/IP co-op testing weekend/);
     const order: string[] = [];
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 13; i++) {
       await user.tab();
       order.push(focused().getAttribute("aria-label") ?? focused().textContent!.replace(/\s+/g, " ").trim());
     }
-    expect(order.slice(0, 7)).toEqual([
+    expect(order.slice(0, 10)).toEqual([
       "Minimise",
       "Close",
       "Project Diablo 2: Resurrected",
+      "GitHub",
+      "Discord",
+      "Ko-fi",
       "Settings",
       "Overview",
       "Play",
       "Manage PD2R",
     ]);
-    expect(order.slice(7).every((t) => /ago/.test(t))).toBe(true);
+    expect(order.slice(10).every((t) => /ago/.test(t))).toBe(true);
   });
 
   it("arrow keys move within the sidebar list; Enter activates", async () => {
@@ -115,6 +118,19 @@ describe("shell", () => {
     expect(focused().textContent).toBe("Diablo II: Resurrected 09");
     await user.keyboard("{Enter}");
     expect(focused().getAttribute("aria-current")).toBe("page");
+  });
+
+  it("sidebar social links sit above Settings and open by id", async () => {
+    const { api, user } = mount("ready");
+    await loaded();
+    const settings = screen.getByRole("button", { name: "Settings" });
+    for (const [label, id] of [["GitHub", "github"], ["Discord", "discord"], ["Ko-fi", "kofi"]]) {
+      const link = screen.getByRole("button", { name: label });
+      expect(link.getAttribute("title")).toBe(label);
+      expect(link.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      await user.click(link);
+      expect(api.calls.at(-1)).toEqual({ name: "openSocialLink", args: [id] });
+    }
   });
 
   it("shows sidebar badges with accessible names", async () => {
