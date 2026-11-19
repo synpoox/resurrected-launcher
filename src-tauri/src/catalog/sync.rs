@@ -1,9 +1,11 @@
 //! Catalog refresh: download the release feed and the manifests it recommends,
 //! validate everything, and only then replace State's metadata cache.
 //!
-//! All or nothing: offline, a failed download, invalid metadata or a changed
-//! release leaves the cache exactly as it was, so the last valid metadata stays in
-//! use and nothing unverified is reported as ready.
+//! Offline, a failed feed download, an invalid feed or a changed release leaves
+//! the cache exactly as it was, so the last valid metadata stays in use and
+//! nothing unverified is reported as ready. One product's own manifest failing
+//! (download, parse, too new a launcher) does not fail the others: it is reported
+//! in [`Fetched::failures`] and that product keeps its cached release.
 
 use std::sync::atomic::AtomicBool;
 
@@ -36,8 +38,9 @@ pub fn manifest_identity(product: &ProductId, release_id: &str) -> String {
 ///
 /// Errors: [`crate::contract::ErrorCode::ReleaseChanged`] when a known
 /// `release_id` now points at different manifest bytes, `metadata_invalid` for
-/// invalid metadata, and the download errors of [`Downloader::fetch_bytes`]. On
-/// any error the cache is unchanged.
+/// an invalid feed, and the download errors of [`Downloader::fetch_bytes`] for the
+/// feed. On any error the cache is unchanged. A single product's manifest failing
+/// is not an error here: that product keeps its cached release (see [`fetch`]).
 pub fn refresh(
     downloader: &Downloader,
     state: &mut StateStore,
@@ -67,6 +70,16 @@ pub struct Fetched {
     feed: Feed,
     /// `(cache identity, bytes)`.
     manifests: Vec<(String, Vec<u8>)>,
+    /// Products whose manifest failed to download, parse or match the feed.
+    failures: Vec<(ProductId, LauncherError)>,
+}
+
+impl Fetched {
+    /// Per-product failures: those products keep their cached release (or have no
+    /// offer) and the rest of the refresh went ahead.
+    pub fn failures(&self) -> &[(ProductId, LauncherError)] {
+        &self.failures
+    }
 }
 
 /// First phase of a refresh, without State: downloads the feed from `feed_url`
@@ -74,7 +87,9 @@ pub struct Fetched {
 /// does not already hold with the pinned SHA-256, and validates each. `download`
 /// is [`Downloader::fetch_bytes`] in production; tests route URLs through it.
 ///
-/// Errors: `metadata_invalid` for invalid metadata and the errors of `download`.
+/// Errors: `metadata_invalid` for an invalid feed and the errors of `download` for
+/// the feed. A product's own manifest failing is recorded in [`Fetched::failures`],
+/// not returned, so one bad product does not fail the others.
 pub fn fetch(
     feed_url: &str,
     download: &mut Fetch<'_>,
@@ -84,6 +99,7 @@ pub fn fetch(
     let (feed_bytes, _) = download(&feed_url, Expect::AtMost(MAX_FEED_SIZE))?;
     let feed = Feed::parse(&feed_bytes)?;
     let mut manifests = Vec::new();
+    let mut failures = Vec::new();
     for product in &feed.products {
         let Availability::Available(pointer) = &product.availability else {
             continue;
@@ -97,14 +113,20 @@ pub fn fetch(
             size: pointer.manifest_size,
             sha256: &pointer.manifest_sha256,
         };
-        let (bytes, _) = download(&pointer.manifest_url, expect)?;
-        product.check_manifest(&ReleaseManifest::parse(&bytes)?)?;
-        manifests.push((identity, bytes));
+        let fetched = download(&pointer.manifest_url, expect).and_then(|(bytes, _)| {
+            product.check_manifest(&ReleaseManifest::parse(&bytes)?)?;
+            Ok(bytes)
+        });
+        match fetched {
+            Ok(bytes) => manifests.push((identity, bytes)),
+            Err(e) => failures.push((product.product_id.clone(), e)),
+        }
     }
     Ok(Fetched {
         feed_bytes,
         feed,
         manifests,
+        failures,
     })
 }
 
@@ -119,6 +141,7 @@ pub fn apply(state: &mut StateStore, fetched: Fetched) -> Result<Feed, LauncherE
         feed_bytes,
         feed,
         manifests,
+        failures,
     } = fetched;
     let cached_feed = state
         .cached(FEED_IDENTITY)
@@ -129,6 +152,9 @@ pub fn apply(state: &mut StateStore, fetched: Fetched) -> Result<Feed, LauncherE
         let Availability::Available(pointer) = &product.availability else {
             continue;
         };
+        if failures.iter().any(|(id, _)| *id == product.product_id) {
+            continue;
+        }
         let known = cached_feed
             .as_ref()
             .and_then(|f| f.product(&product.product_id));
@@ -159,8 +185,40 @@ pub fn apply(state: &mut StateStore, fetched: Fetched) -> Result<Feed, LauncherE
     for (identity, bytes) in new {
         state.put_cached(&identity, bytes)?;
     }
+    let feed_bytes = match state.cached(FEED_IDENTITY) {
+        Some(old) if !failures.is_empty() => {
+            keep_cached_pointers(&feed_bytes, &old.bytes, &failures)
+                .filter(|spliced| Feed::parse(spliced).is_ok())
+                .unwrap_or(feed_bytes)
+        }
+        _ => feed_bytes,
+    };
     state.put_cached(FEED_IDENTITY, &feed_bytes)?;
     Ok(feed)
+}
+
+/// `new` feed with each failed product's entry replaced by its entry in the `old`
+/// cached feed, so it keeps pointing at the release whose manifest is cached.
+/// `None` when either feed is not plain JSON; the caller then stores `new` as is.
+fn keep_cached_pointers(
+    new: &[u8],
+    old: &[u8],
+    failures: &[(ProductId, LauncherError)],
+) -> Option<Vec<u8>> {
+    let old: serde_json::Value = serde_json::from_slice(old).ok()?;
+    let mut new: serde_json::Value = serde_json::from_slice(new).ok()?;
+    let id = |p: &serde_json::Value| p["product_id"].as_str().map(str::to_owned);
+    for entry in new["products"].as_array_mut()? {
+        let failed = id(entry).is_some_and(|i| failures.iter().any(|(f, _)| f.0 == i));
+        let kept = old["products"]
+            .as_array()?
+            .iter()
+            .find(|o| id(o) == id(entry));
+        if let (true, Some(kept)) = (failed, kept) {
+            *entry = kept.clone();
+        }
+    }
+    serde_json::to_vec_pretty(&new).ok()
 }
 
 #[cfg(test)]

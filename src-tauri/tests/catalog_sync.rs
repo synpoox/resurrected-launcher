@@ -6,9 +6,9 @@
 mod support;
 
 use resurrected_launcher_lib::catalog::{
-    apply, fetch, manifest_identity, refresh, Feed, Fetch, FEED_IDENTITY,
+    apply, fetch, manifest_identity, refresh, Availability, Feed, Fetch, FEED_IDENTITY,
 };
-use resurrected_launcher_lib::contract::{ErrorCode, LauncherError, Sha256Digest};
+use resurrected_launcher_lib::contract::{ErrorCode, LauncherError, ProductId, Sha256Digest};
 use resurrected_launcher_lib::install::download::{Downloader, Expect};
 use resurrected_launcher_lib::state::StateStore;
 use std::sync::atomic::AtomicBool;
@@ -66,10 +66,20 @@ fn refresh_with(
     feed_url: &str,
     download: &mut Fetch<'_>,
 ) -> Result<Feed, LauncherError> {
+    refresh_failures(state, feed_url, download).map(|(feed, _)| feed)
+}
+
+/// [`refresh_with`] plus the per-product failures.
+fn refresh_failures(
+    state: &mut StateStore,
+    feed_url: &str,
+    download: &mut Fetch<'_>,
+) -> Result<(Feed, Vec<(ProductId, LauncherError)>), LauncherError> {
     let fetched = fetch(feed_url, download, &mut |identity| {
         state.cached(identity).map(|c| c.sha256)
     })?;
-    apply(state, fetched)
+    let failures = fetched.failures().to_vec();
+    Ok((apply(state, fetched)?, failures))
 }
 
 fn identity(r: &FixtureRelease) -> String {
@@ -160,7 +170,7 @@ fn offline_or_unverified_downloads_keep_the_last_valid_metadata() {
         &r2.manifest_path(),
         Reply::WrongHash(r2.manifest_json.clone()),
     );
-    assert_eq!(code(rig.refresh()), ErrorCode::VerificationFailed);
+    assert_eq!(product_failure(&mut rig), ErrorCode::VerificationFailed);
 
     // A manifest that is not the recommended release.
     rig.server
@@ -176,7 +186,7 @@ fn offline_or_unverified_downloads_keep_the_last_valid_metadata() {
         .replace(&hex(&r2.manifest_json), &hex(&r1.manifest_json));
     wrong = text.into_bytes();
     rig.server.route("/feed.json", Reply::Body(wrong));
-    assert_eq!(code(rig.refresh()), ErrorCode::MetadataInvalid);
+    assert_eq!(product_failure(&mut rig), ErrorCode::MetadataInvalid);
 
     rig.server
         .route("/feed.json", Reply::Body(b"not json".to_vec()));
@@ -223,4 +233,71 @@ fn refresh_accepts_only_an_https_feed_on_a_public_host() {
 
 fn hex(bytes: &[u8]) -> String {
     sha256(bytes).to_string()
+}
+
+fn refresh_keeping_failures(rig: &mut Rig) -> (Feed, Vec<(ProductId, LauncherError)>) {
+    let (server, downloader) = (&rig.server, &rig.downloader);
+    let cancel = AtomicBool::new(false);
+    let mut download = |url: &str, expect: Expect<'_>| {
+        let local = server.url(url.strip_prefix(HOST).expect("fixture host"));
+        downloader.fetch_bytes(&local, expect, &cancel)
+    };
+    refresh_failures(&mut rig.state, FEED_URL, &mut download).unwrap()
+}
+
+#[test]
+fn one_products_failing_manifest_does_not_fail_the_others_and_keeps_its_cached_release() {
+    let mut rig = Rig::new();
+    let (pd2r1, pd2r2, forever) = (release(PD2R_1), release(PD2R_2), release(FOREVER_1));
+    rig.publish(support::feed(&[&pd2r1, &forever]), &[&pd2r1, &forever]);
+    rig.refresh().unwrap();
+
+    // PD2R moves to release 2 but its manifest is gone; Forever is unchanged.
+    rig.publish(support::feed(&[&pd2r2, &forever]), &[&forever]);
+    rig.server.route(&pd2r2.manifest_path(), Reply::Status(404));
+    let (feed, failures) = refresh_keeping_failures(&mut rig);
+    assert_eq!(feed.products.len(), 2);
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].0, pd2r2.manifest.product_id);
+    assert_eq!(failures[0].1.code, ErrorCode::DownloadFailed);
+
+    // The failed product still points at the cached release 1.
+    let cached = Feed::parse(&rig.cached(FEED_IDENTITY).unwrap()).unwrap();
+    let Availability::Available(pointer) = &cached
+        .product(&pd2r1.manifest.product_id)
+        .unwrap()
+        .availability
+    else {
+        panic!("available")
+    };
+    assert_eq!(pointer.release_id, pd2r1.release_id());
+    assert_eq!(
+        rig.cached(&identity(&pd2r1)),
+        Some(pd2r1.manifest_json.clone())
+    );
+    assert_eq!(rig.cached(&identity(&pd2r2)), None);
+    assert_eq!(rig.cached(&identity(&forever)), Some(forever.manifest_json));
+}
+
+#[test]
+fn a_product_whose_manifest_needs_a_newer_launcher_carries_launcher_update_required() {
+    let mut rig = Rig::new();
+    let (pd2r, forever) = (release(PD2R_1), release(FOREVER_1));
+    let mut too_new = pd2r.clone();
+    let mut doc: serde_json::Value = serde_json::from_slice(&too_new.manifest_json).unwrap();
+    doc["min_launcher_version"] = "99.0.0".into();
+    too_new.manifest_json = serde_json::to_vec_pretty(&doc).unwrap();
+    rig.publish(support::feed(&[&too_new, &forever]), &[&too_new, &forever]);
+    let (_, failures) = refresh_keeping_failures(&mut rig);
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].1.code, ErrorCode::LauncherUpdateRequired);
+    assert_eq!(rig.cached(&identity(&forever)), Some(forever.manifest_json));
+    assert_eq!(rig.cached(&identity(&too_new)), None);
+}
+
+/// The refresh succeeds and the one product manifest failed with this code.
+fn product_failure(rig: &mut Rig) -> ErrorCode {
+    let (_, failures) = refresh_keeping_failures(rig);
+    assert_eq!(failures.len(), 1);
+    failures[0].1.code
 }
