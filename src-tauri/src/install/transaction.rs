@@ -221,6 +221,12 @@ impl Tx<'_> {
             }
             Boundary::StagedMovedToLive => {
                 let mut made = HashSet::new();
+                // First install at this location: the root itself is journaled too.
+                if !present(&p.root) {
+                    entries.push(Entry::MakeDir {
+                        path: p.root.clone(),
+                    });
+                }
                 for x in &plan.to_live {
                     let to = confined(&p.root, x)?;
                     // Live dirs this step creates are journaled so rollback removes them.
