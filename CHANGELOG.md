@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- The launcher installer is much smaller to download. It now needs an internet connection during install only if your PC is missing Microsoft WebView2.
+
 ## 0.1.3
 
 Smoother launcher, safer game updates, and a round of fixes.

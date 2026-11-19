@@ -12,8 +12,8 @@
 //! | Clause | Tests (and recorded checks) |
 //! | --- | --- |
 //! | Signed artifacts | [`signed_artifacts`]: the downloaded installer's `.sig` verifies against the embedded key, and `latest.json` names that signature and version (run with `--ignored` on the artifacts); [`gate_build`]: the workflow's tag check and gate mode |
-//! | Clean installs | [`gate_build`]: per-user NSIS, offline WebView2, bundled 7-Zip, no elevation in the bundle; owner checklist rows 1, 9 |
-//! | Missing runtime | [`gate_build`]: the installer embeds the offline WebView2 installer; owner checklist row 2 (gap: no no-WebView2 snapshot) |
+//! | Clean installs | [`gate_build`]: per-user NSIS, embedded WebView2 bootstrapper, bundled 7-Zip, no elevation in the bundle; owner checklist rows 1, 9 |
+//! | Missing runtime | [`gate_build`]: the installer embeds the WebView2 bootstrapper, which needs a network only when the runtime is missing; owner checklist row 2 (gap: no no-WebView2 snapshot) |
 //! | Normal-user permissions | [`gate_build`]: per-user install and passive update mode; `failure_matrix::refusals` (`access_denied`); owner checklist row 3 |
 //! | Upgrades | [`local_endpoint`]: a gate build's updater, fed by `serve-update.ps1`, downloads and keeps N+1; owner checklist row 4 |
 //! | Bad-signature rejection | [`local_endpoint`]: tampered, wrong-key and unsigned, each rejected through `serve-update.ps1` with nothing kept; owner checklist row 5 |
