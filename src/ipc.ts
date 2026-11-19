@@ -146,6 +146,7 @@ export type CatalogState =
   | { status: "not_refreshed" }
   | { status: "refreshing" }
   | { status: "refreshed" }
+  /** Also a product's own state when only its manifest failed; check `error.code`. */
   | { status: "failed"; error: LauncherError };
 
 /**
