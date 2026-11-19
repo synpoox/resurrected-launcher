@@ -278,12 +278,20 @@ impl StateStore {
         location: &Path,
     ) -> Result<(), LauncherError> {
         let mut installed = self.installed_for_write()?;
-        match installed
-            .iter_mut()
-            .find(|r| &r.product_id == product && r.d2r_location.is_none())
+        let Some(i) = installed
+            .iter()
+            .position(|r| &r.product_id == product && r.d2r_location.is_none())
+        else {
+            return Ok(());
+        };
+        // A stamped record already there wins; stamping too would record the pair twice.
+        if installed
+            .iter()
+            .any(|r| &r.product_id == product && r.is_at(location))
         {
-            Some(r) => r.d2r_location = Some(location.to_path_buf()),
-            None => return Ok(()),
+            installed.remove(i);
+        } else {
+            installed[i].d2r_location = Some(location.to_path_buf());
         }
         self.save_installed(installed)
     }
@@ -363,6 +371,8 @@ impl StateStore {
     }
 
     fn save_installed(&mut self, installed: Vec<InstalledRelease>) -> Result<(), LauncherError> {
+        // Backstop: never write a set the next open would reject.
+        validate_installed(&installed).map_err(invalid)?;
         file::save(&self.dir.join(INSTALLED_FILE), INSTALLED_SCHEMA, &installed)?;
         self.installed = installed;
         Ok(())
@@ -860,6 +870,25 @@ mod tests {
         store.remove_installed(&pd2r()).unwrap();
         let store = StateStore::open(dir.path());
         assert_eq!(store.installed_releases(), &[at(&a, "0.4.3")]);
+    }
+
+    #[test]
+    fn stamping_next_to_a_stamped_record_at_the_same_place_keeps_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = absolute("d2r-a");
+        let stamped = InstalledRelease {
+            d2r_location: Some(a.clone()),
+            ..record("0.4.2")
+        };
+        let both = serde_json::json!({"schema_version": 1, "data": [record("0.4.1"), stamped]});
+        fs::write(dir.path().join(INSTALLED_FILE), both.to_string()).unwrap();
+        let mut store = StateStore::open(dir.path());
+        store.stamp_location(&pd2r(), &a).unwrap();
+        assert_eq!(store.installed_releases().len(), 1);
+        let reopened = StateStore::open(dir.path());
+        assert!(reopened.issues().is_empty());
+        assert_eq!(reopened.installed_releases().len(), 1);
+        assert_eq!(reopened.installed_releases()[0].release_id, "0.4.2");
     }
 
     #[test]
