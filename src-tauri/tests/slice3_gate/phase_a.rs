@@ -179,7 +179,7 @@ fn phase_a(d2r: &Path, release: Release, game: GateHost, watch: &[PathBuf]) -> F
             manifest_sha256: release.sha256,
             installed_at: 0,
             verified: true,
-            d2r_location: None,
+            d2r_location: Some(d2r.to_owned()),
         })
         .unwrap();
     let with_record = rig.state().readiness;

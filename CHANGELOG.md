@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- After you change the D2R location to a folder without PD2R, the page now offers Install instead of Update, Repair and Uninstall. Switching back to the original folder shows its real state.
+- If you change the D2R location to a folder without PD2R, the launcher now offers Install there instead of Update, Repair and Uninstall.
 
 ## 0.1.5
 

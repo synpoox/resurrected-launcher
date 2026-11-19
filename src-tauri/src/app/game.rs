@@ -412,7 +412,35 @@ impl Launcher {
             ..state.preferences().clone()
         };
         state.set_preferences(prefs)?;
+        drop(state);
+        self.stamp_records();
         Ok(location)
+    }
+
+    /// Records from before they carried a location (#260) belong to the selected
+    /// location only when the product's folder is there; otherwise they stay unknown.
+    pub(super) fn stamp_records(&self) {
+        let Ok(mut state) = locked(&self.state) else {
+            return;
+        };
+        let Some(selected) = state.preferences().d2r_location.clone() else {
+            return;
+        };
+        let unknown: Vec<InstalledRelease> = state
+            .installed_releases()
+            .iter()
+            .filter(|r| r.d2r_location.is_none())
+            .cloned()
+            .collect();
+        for r in unknown {
+            // No cached manifest: the folder can't be found, so the record stays unknown.
+            let Ok(release) = self.releases.installed(&mut state, &r) else {
+                continue;
+            };
+            if product_root(&selected, &release.manifest).is_dir() {
+                let _ = state.stamp_location(&r.product_id, &selected);
+            }
+        }
     }
 
     /// Play under the app operation lock: no operation may run, and two Plays
@@ -569,6 +597,7 @@ impl Launcher {
     /// game already running under the root and any started later, and refreshes
     /// the catalog in the background.
     pub fn start_up<R: Runtime>(self: &Arc<Self>, app: &AppHandle<R>) {
+        self.stamp_records();
         let root = match locked(&self.state) {
             Ok(state) => {
                 state.log(&format!("launcher {} started", app.package_info().version));

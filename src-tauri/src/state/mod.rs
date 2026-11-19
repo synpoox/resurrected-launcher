@@ -109,27 +109,19 @@ pub struct InstalledRelease {
     pub verified: bool,
     /// The D2R folder the release was installed into (#260). A record only applies
     /// while that folder is the selected location. `None` is a record from before
-    /// this field; `StateStore::open` fills it from the selected location.
+    /// this field; the launcher stamps it once it finds the product's folder there.
     #[serde(default)]
     pub d2r_location: Option<PathBuf>,
 }
 
-fn same_folder(a: &Path, b: &Path) -> bool {
-    let norm = |p: &Path| {
-        p.to_string_lossy()
-            .trim_end_matches(['\\', '/'])
-            .to_lowercase()
-    };
-    norm(a) == norm(b)
-}
-
 impl InstalledRelease {
     /// Whether this record describes an install in `location`. A record with no
-    /// location (not yet migrated) applies anywhere.
+    /// location (written before the field existed) is unknown, so it is at none.
     pub fn is_at(&self, location: &Path) -> bool {
-        self.d2r_location
-            .as_deref()
-            .is_none_or(|l| same_folder(l, location))
+        self.d2r_location.as_deref().is_some_and(|l| {
+            crate::game::detect::same_folder_key(l)
+                == crate::game::detect::same_folder_key(location)
+        })
     }
 }
 
@@ -259,42 +251,32 @@ impl StateStore {
             |c: &Vec<_>| validate_cache_index(c),
             &mut issues,
         );
-        let mut store = Self {
+        Self {
             dir: dir.to_owned(),
             preferences,
             installed,
             cache,
             issues: issues.0,
             blocked: issues.1,
-        };
-        store.fill_record_locations();
-        store
+        }
     }
 
-    /// Migration (#260): records written before they carried a location belong to
-    /// the selected one. Best effort; unsaved records still work in memory.
-    fn fill_record_locations(&mut self) {
-        let Some(loc) = self.preferences.d2r_location.clone() else {
-            return;
-        };
-        if !self.installed.iter().any(|r| r.d2r_location.is_none())
-            || self.blocked.contains(&INSTALLED_FILE)
+    /// Stamps a migrated record (no location yet) with `location` (#260). The caller
+    /// has checked the product's folder is there.
+    pub fn stamp_location(
+        &mut self,
+        product: &ProductId,
+        location: &Path,
+    ) -> Result<(), LauncherError> {
+        let mut installed = self.installed_for_write()?;
+        match installed
+            .iter_mut()
+            .find(|r| &r.product_id == product && r.d2r_location.is_none())
         {
-            return;
+            Some(r) => r.d2r_location = Some(location.to_path_buf()),
+            None => return Ok(()),
         }
-        let mut filled = self.installed.clone();
-        for r in filled.iter_mut().filter(|r| r.d2r_location.is_none()) {
-            r.d2r_location = Some(loc.clone());
-        }
-        if self.save_installed(filled).is_err() {
-            for r in self
-                .installed
-                .iter_mut()
-                .filter(|r| r.d2r_location.is_none())
-            {
-                r.d2r_location = Some(loc.clone());
-            }
-        }
+        self.save_installed(installed)
     }
 
     /// Before writing a blocked file: re-reads it. `Ok(Some(data))` when it is now
@@ -618,7 +600,7 @@ mod tests {
     }
 
     #[test]
-    fn record_applies_only_at_its_own_location_and_old_records_migrate() {
+    fn record_applies_only_at_its_own_location_and_unstamped_records_stay_hidden() {
         let dir = tempfile::tempdir().unwrap();
         let (a, b) = (absolute("d2r-a"), absolute("d2r-b"));
         let prefs = |p: &PathBuf| Preferences {
@@ -632,23 +614,26 @@ mod tests {
         fs::write(dir.path().join(INSTALLED_FILE), old.to_string()).unwrap();
         let mut store = StateStore::open(dir.path());
         assert!(store.issues().is_empty());
+        // Opening never stamps; with B selected the old record is unknown, so hidden.
+        store.set_preferences(prefs(&b)).unwrap();
+        assert_eq!(store.installed_release(&pd2r()), None);
+        assert_eq!(store.installed_releases()[0].d2r_location, None);
+        // Stamped once A is selected and its folder is found.
         store.set_preferences(prefs(&a)).unwrap();
-        drop(store);
-        // First open with a location migrates the record to it, on disk too.
-        let mut store = StateStore::open(dir.path());
+        store.stamp_location(&pd2r(), &a).unwrap();
+        assert!(store.installed_release(&pd2r()).is_some());
         assert_eq!(
-            store.installed_release(&pd2r()).unwrap().d2r_location,
-            Some(a.clone())
-        );
-        let reopened = StateStore::open(dir.path());
-        assert_eq!(
-            reopened.installed_releases()[0].d2r_location,
-            Some(a.clone())
+            StateStore::open(dir.path()).installed_releases()[0].d2r_location,
+            Some(a)
         );
         store.set_preferences(prefs(&b)).unwrap();
         assert_eq!(store.installed_release(&pd2r()), None);
-        store.set_preferences(prefs(&a)).unwrap();
-        assert!(store.installed_release(&pd2r()).is_some());
+        // A stamped record is never restamped.
+        store.stamp_location(&pd2r(), &b).unwrap();
+        assert_eq!(
+            store.installed_releases()[0].d2r_location,
+            Some(absolute("d2r-a"))
+        );
     }
 
     #[test]
