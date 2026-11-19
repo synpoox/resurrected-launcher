@@ -257,8 +257,10 @@ pub fn run(env: &Env, req: &Request) -> Result<Report, LauncherError> {
     }
     let product_root = plan::product_root(req.d2r, req.release);
     // A real D2R folder may have no `mods` yet; the guard needs the parent to exist.
-    if let Some(parent) = product_root.parent() {
-        if req.d2r.join("D2R.exe").is_file() {
+    // A failed or cancelled install may leave an empty `mods`, which D2R ignores.
+    let d2r_exe = std::fs::symlink_metadata(req.d2r.join("D2R.exe"));
+    if req.kind != Uninstall && d2r_exe.is_ok_and(|m| m.is_file() && !m.file_type().is_symlink()) {
+        if let Some(parent) = product_root.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| super::journal::io_error("creating", parent, e))?;
         }
