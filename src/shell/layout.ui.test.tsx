@@ -89,10 +89,10 @@ describe("the sidebar with every stylesheet loaded (issue 123)", () => {
         // An absolute item covers the sidebar (it is position: relative) and takes every click.
         expect([item.textContent, style.position]).toEqual([item.textContent, "static"]);
       }
-      // The social row and Settings sit at the bottom of the flex column, pushed down by an auto top margin
+      // Settings and the social row sit at the bottom of the flex column, pushed down by an auto top margin
       // (jsdom resolves a computed auto margin to 0px, so the matching rule is checked).
       expect(getComputedStyle(sidebar()).flexDirection).toBe("column");
-      const pushed = rules("src/shell/shell.css").filter((r) => screen.getByRole("group", { name: "Community links" }).matches(r.selectorText) && r.style.marginTop === "auto");
+      const pushed = rules("src/shell/shell.css").filter((r) => settingsItem().matches(r.selectorText) && r.style.marginTop === "auto");
       expect(pushed.map((r) => r.selectorText)).not.toEqual([]);
     });
   }

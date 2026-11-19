@@ -135,11 +135,11 @@
 
 /* The 20px cog with a 6px gap keeps the label where a 16px cog with a 10px gap put it. */
 .sidebar .settings {
+  margin-top: auto;
   gap: 6px;
 }
 
 .social {
-  margin-top: auto;
   display: flex;
   gap: 12px;
   padding: 0 13px;

@@ -99,10 +99,10 @@ describe("shell", () => {
       "Minimise",
       "Close",
       "Project Diablo 2: Resurrected",
+      "Settings",
       "GitHub",
       "Discord",
       "Ko-fi",
-      "Settings",
       "Overview",
       "Play",
       "Manage PD2R",
@@ -120,14 +120,14 @@ describe("shell", () => {
     expect(focused().getAttribute("aria-current")).toBe("page");
   });
 
-  it("sidebar social links sit above Settings and open by id", async () => {
+  it("sidebar social links sit below Settings and open by id", async () => {
     const { api, user } = mount("ready");
     await loaded();
     const settings = screen.getByRole("button", { name: "Settings" });
     for (const [label, id] of [["GitHub", "github"], ["Discord", "discord"], ["Ko-fi", "kofi"]]) {
       const link = screen.getByRole("button", { name: label });
       expect(link.getAttribute("title")).toBe(label);
-      expect(link.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(link.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
       await user.click(link);
       expect(api.calls.at(-1)).toEqual({ name: "openSocialLink", args: [id] });
     }
