@@ -179,6 +179,15 @@ impl Tx<'_> {
             .collect()
     }
 
+    /// Bytes the carry-forward copies write: new files, not renames (still in the live root here).
+    fn carry_forward_bytes(&self) -> u64 {
+        let root = &self.j.paths.root;
+        (self.j.plan.carry_forward.iter())
+            .filter_map(|x| std::fs::metadata(under(root, x)).ok())
+            .map(|m| m.len())
+            .sum()
+    }
+
     /// The complete planned entry list of multi-entry step `b`.
     fn plan_entries(&self, b: Boundary) -> Result<Vec<Entry>, LauncherError> {
         let (p, plan) = (&self.j.paths, &self.j.plan);
@@ -324,7 +333,8 @@ impl Tx<'_> {
             Boundary::LiveMovedToBackup | Boundary::CleanInstallBackupMade
         );
         if first_live_mutation && self.j.direction == Direction::Forward {
-            preflight::check(&self.j.paths, 0, &self.moved_files(), self.ctx.host)?;
+            let needs = self.carry_forward_bytes();
+            preflight::check(&self.j.paths, needs, &self.moved_files(), self.ctx.host)?;
         }
         if b.is_multi_entry() {
             let entries = self.plan_entries(b)?;
@@ -533,7 +543,10 @@ pub fn run(
     };
     preflight::check(
         &tx.j.paths,
-        tx.j.plan.space.total(),
+        tx.j.plan
+            .space
+            .total()
+            .saturating_add(tx.carry_forward_bytes()),
         &tx.moved_files(),
         ctx.host,
     )?;

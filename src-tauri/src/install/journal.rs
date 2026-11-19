@@ -279,6 +279,15 @@ impl Entry {
                     if let Some(parent) = c.to.parent() {
                         fs::create_dir_all(parent)?;
                     }
+                    // A leftover read-only temp from an interrupted run would refuse the overwrite.
+                    if let Ok(m) = fs::metadata(&c.temp) {
+                        let mut perm = m.permissions();
+                        if perm.readonly() {
+                            #[allow(clippy::permissions_set_readonly_false)]
+                            perm.set_readonly(false);
+                            fs::set_permissions(&c.temp, perm)?;
+                        }
+                    }
                     fs::copy(&c.from, &c.temp)?;
                     // The copy inherits a read-only flag, which blocks the flush's write open.
                     let mut perm = fs::metadata(&c.temp)?.permissions();

@@ -988,6 +988,7 @@ fn clean_install_carries_forward_a_read_only_edited_file() {
 
     // Backups hold read-only files; make everything deletable before asserting.
     let kept = fs::read(&path);
+    let still_read_only = fs::metadata(&path).unwrap().permissions().readonly();
     #[allow(clippy::permissions_set_readonly_false)]
     for p in std::iter::once(path.clone()).chain(
         ops::clean_install_backups(&root)
@@ -1002,6 +1003,53 @@ fn clean_install_carries_forward_a_read_only_edited_file() {
     }
     assert_eq!(report.unwrap().preserved, [rel(LOOT_FILTER)]);
     assert_eq!(kept.unwrap(), filter);
+    assert!(still_read_only, "the carried file is read-only again");
+}
+
+/// Free space of exactly `0` bytes beyond what the host reports.
+struct Free(u64);
+
+impl resurrected_launcher_lib::install::preflight::Host for Free {
+    fn free_space(&self, _: &Path) -> std::io::Result<u64> {
+        Ok(self.0)
+    }
+    fn processes_using(&self, _: &[std::path::PathBuf]) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+#[test]
+fn clean_install_too_full_for_the_carry_forward_is_refused_up_front() {
+    let rig = Rig::new();
+    let r1 = release(PD2R_1);
+    let root = rig.game.installed(&r1);
+    let filter = edit_loot_filter(&root);
+    let (r2, m2) = rig.served(PD2R_2);
+    let old = sha256(&r1.payload[LOOT_FILTER]);
+    let mut listed = listing_previous_loot_filter(&r2.manifest_json, &[old]);
+    listed.archive = m2.archive.clone();
+    let earlier = [r1.manifest.clone()];
+    let mut clean = rig.request(CleanInstall, &r2, &listed, None);
+    clean.consent_clean_install = true;
+    clean.earlier = &earlier;
+    let staged: u64 = r2.payload.values().map(|b| b.len() as u64).sum();
+    let base = listed.archive.size + staged;
+    let before = tree(&root);
+
+    let tight = Env {
+        host: &Free(base),
+        ..rig.env(&NoFaults)
+    };
+    let err = ops::run(&tight, &clean).unwrap_err();
+    assert_eq!(err.code, ErrorCode::InsufficientSpace, "{err}");
+    assert_eq!(tree(&root), before);
+    assert_no_scratch(&root);
+
+    let roomy = Env {
+        host: &Free(base + filter.len() as u64),
+        ..rig.env(&NoFaults)
+    };
+    ops::run(&roomy, &clean).unwrap();
 }
 
 #[test]
