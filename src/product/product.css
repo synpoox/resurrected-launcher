@@ -81,18 +81,18 @@
 
 .wordmark img {
   display: block;
-  width: round(calc(220px * var(--wm-k, 0.8)), 1px);
-  height: round(calc(146px * var(--wm-k, 0.8)), 1px); /* 371/560 of the width, whole pixels */
+  width: round(calc(220px * var(--wm-k, 0.7)), 1px);
+  height: round(calc(146px * var(--wm-k, 0.7)), 1px); /* 371/560 of the width, whole pixels */
 }
 
 /* Matches the logo's RESURRECTED line at 220px: weight, cap height, tracking and colour. */
 .wordmark-line {
   font-family: Cinzel, Georgia, serif;
   font-weight: 400;
-  font-size: round(calc(15px * var(--wm-k, 0.8)), 1px);
+  font-size: round(calc(15px * var(--wm-k, 0.7)), 1px);
   line-height: 1;
-  letter-spacing: round(calc(9px * var(--wm-k, 0.8)), 1px);
-  margin-right: calc(-1 * round(calc(9px * var(--wm-k, 0.8)), 1px)); /* the trailing letter-space would shift the centre */
+  letter-spacing: round(calc(9px * var(--wm-k, 0.7)), 1px);
+  margin-right: calc(-1 * round(calc(9px * var(--wm-k, 0.7)), 1px)); /* the trailing letter-space would shift the centre */
   text-transform: uppercase;
   color: var(--wordmark);
 }
@@ -100,17 +100,17 @@
 /* The logo image has empty rows above the flames and below the lower flame: these margins
    leave a small gap to each. PROJECT is 1.5x RESURRECTED. */
 .wordmark-line:first-child {
-  font-size: round(calc(22px * var(--wm-k, 0.8)), 1px);
-  letter-spacing: round(calc(13px * var(--wm-k, 0.8)), 1px);
-  margin-right: calc(-1 * round(calc(13px * var(--wm-k, 0.8)), 1px));
-  margin-bottom: calc(-1 * round(calc(21px * var(--wm-k, 0.8)), 1px));
+  font-size: round(calc(22px * var(--wm-k, 0.7)), 1px);
+  letter-spacing: round(calc(13px * var(--wm-k, 0.7)), 1px);
+  margin-right: calc(-1 * round(calc(13px * var(--wm-k, 0.7)), 1px));
+  margin-bottom: calc(-1 * round(calc(21px * var(--wm-k, 0.7)), 1px));
 }
 
 .wordmark-line:last-child {
   margin-top: 0;
-  font-size: round(calc(25px * var(--wm-k, 0.8)), 1px); /* 20px: larger than the RESURRECTED-matched lines */
-  letter-spacing: round(calc(1px * var(--wm-k, 0.8)), 1px);
-  margin-right: calc(-1 * round(calc(1px * var(--wm-k, 0.8)), 1px));
+  font-size: round(calc(29px * var(--wm-k, 0.7)), 1px); /* 20px: larger than the RESURRECTED-matched lines */
+  letter-spacing: round(calc(1px * var(--wm-k, 0.7)), 1px);
+  margin-right: calc(-1 * round(calc(1px * var(--wm-k, 0.7)), 1px));
 }
 
 .ribbon {
