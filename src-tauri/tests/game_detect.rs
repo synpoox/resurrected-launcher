@@ -335,7 +335,10 @@ fn unsupported_installed_build_is_fixed_by_a_supporting_recommended_release() {
     let recommended = manifest("new");
     // #249: the recommended release supports this build, so Update must be offered.
     assert_eq!(
-        run(&facts(Some(&loc), Some(&installed), Some(&recommended)), &host),
+        run(
+            &facts(Some(&loc), Some(&installed), Some(&recommended)),
+            &host
+        ),
         Readiness::BuildUnsupported {
             found: "3.3.93847".into(),
             update_fixes: true,

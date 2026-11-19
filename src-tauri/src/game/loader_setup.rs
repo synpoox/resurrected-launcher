@@ -75,7 +75,10 @@ mod tests {
             Readiness::D2rMissing,
             Readiness::Running { since: 1 },
             Readiness::RecoveryRequired,
-            Readiness::BuildUnsupported { found: "x".into(), update_fixes: false },
+            Readiness::BuildUnsupported {
+                found: "x".into(),
+                update_fixes: false,
+            },
             Readiness::NotInstalled,
             Readiness::UpdateAvailable,
             Readiness::Ready,
