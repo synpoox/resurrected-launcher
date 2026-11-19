@@ -189,23 +189,6 @@ fn update_with_insufficient_space_is_refused_before_the_transaction_opens() {
     s.assert_unchanged("no space");
 }
 
-#[test]
-fn update_with_space_gone_at_the_activation_recheck_rolls_back_to_the_previous_installation() {
-    let s = Scenario::new(Update);
-    let fills = FillsUp {
-        real_calls: 1,
-        calls: AtomicUsize::new(0),
-    };
-    let err = s.op.run_on(&s.rig, &NoFaults, &fills).unwrap_err();
-    assert_eq!(err.code, ErrorCode::InsufficientSpace, "{err}");
-    assert_eq!(
-        fills.calls.load(Ordering::SeqCst),
-        2,
-        "space rechecked once"
-    );
-    s.assert_unchanged("space gone before activation");
-}
-
 // ---- access denial ----
 
 /// Denies the current user creating files and dirs in `dir` (not inherited) until

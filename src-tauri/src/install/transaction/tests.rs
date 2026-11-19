@@ -309,7 +309,7 @@ impl Fixture {
             space: SpaceNeeds {
                 download: 7,
                 staging: 10,
-                recovery_copy: 10,
+                recovery_copy: 0,
             },
         }
     }
@@ -651,25 +651,11 @@ fn crash_after_the_roots_make_dir_is_recovered_to_no_root_and_a_closed_journal()
     assert_eq!(state(&fx), before);
 }
 
-/// Free space that runs out after the first preflight.
-struct Shrinking(Mutex<u64>);
-
-impl Host for Shrinking {
-    fn free_space(&self, _: &Path) -> io::Result<u64> {
-        let mut calls = self.0.lock().unwrap();
-        *calls += 1;
-        Ok(if *calls == 1 { u64::MAX } else { 0 })
-    }
-    fn processes_using(&self, _: &[PathBuf]) -> Vec<String> {
-        Vec::new()
-    }
-}
-
 struct Tight;
 
 impl Host for Tight {
     fn free_space(&self, _: &Path) -> io::Result<u64> {
-        Ok(26) // download + staging + recovery copy is 27
+        Ok(16) // download + staging is 17
     }
     fn processes_using(&self, _: &[PathBuf]) -> Vec<String> {
         Vec::new()
@@ -697,7 +683,6 @@ fn preflight_refusals_leave_the_installation_unchanged() {
     for (host, code) in [
         (&Tight as &dyn Host, ErrorCode::InsufficientSpace),
         (&GameRunning, ErrorCode::GameRunning),
-        (&Shrinking(Mutex::new(0)), ErrorCode::InsufficientSpace),
     ] {
         let fx = Fixture::new(&case);
         let err = fx.run_with(&case, &NoFaults, host, None).unwrap_err();

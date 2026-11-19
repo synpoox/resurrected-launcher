@@ -259,7 +259,7 @@ pub fn run(env: &Env, req: &Request) -> Result<Report, LauncherError> {
     // A real D2R folder may have no `mods` yet; the guard needs the parent to exist.
     // A failed or cancelled install may leave an empty `mods`, which D2R ignores.
     let d2r_exe = std::fs::symlink_metadata(req.d2r.join("D2R.exe"));
-    if req.kind != Uninstall && d2r_exe.is_ok_and(|m| m.is_file() && !m.file_type().is_symlink()) {
+    if d2r_exe.is_ok_and(|m| m.is_file() && !m.file_type().is_symlink()) {
         if let Some(parent) = product_root.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| super::journal::io_error("creating", parent, e))?;
@@ -296,7 +296,12 @@ pub fn run(env: &Env, req: &Request) -> Result<Report, LauncherError> {
     transaction::run(&guard, &op_lock, tx_plan, &mut steps, &ctx)?;
     let root = guard.root().to_path_buf();
     let remaining = if req.kind == Uninstall {
-        walk(&root)?.into_iter().map(|(rel, _)| rel).collect()
+        // A product folder deleted by hand has nothing left to report.
+        if std::fs::symlink_metadata(&root).is_ok() {
+            walk(&root)?.into_iter().map(|(rel, _)| rel).collect()
+        } else {
+            Vec::new()
+        }
     } else {
         Vec::new()
     };

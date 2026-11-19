@@ -934,3 +934,148 @@ fn clean_install_crash_after_moving_a_real_mod_folder_aside_recovers_it() {
     assert_eq!(rig.installed_release(), None);
     assert_no_scratch(&root);
 }
+
+/// A disk with no free bytes at all.
+struct FullDisk;
+
+impl resurrected_launcher_lib::install::preflight::Host for FullDisk {
+    fn free_space(&self, _: &Path) -> std::io::Result<u64> {
+        Ok(0)
+    }
+    fn processes_using(&self, _: &[std::path::PathBuf]) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+#[test]
+fn uninstall_on_a_full_disk_needs_no_free_space_for_its_backup() {
+    let rig = Rig::new();
+    let (r1, m1) = install_1(&rig);
+    let root = product_root(&rig, &m1);
+    fs::write(
+        root.join("PD2R.mpq/data/global/excel/armor.txt"),
+        b"changed",
+    )
+    .unwrap();
+    let env = Env {
+        host: &FullDisk,
+        ..rig.env(&NoFaults)
+    };
+    ops::run(&env, &rig.request(Uninstall, &r1, &m1, Some(&m1))).unwrap();
+    assert_eq!(rig.installed_release(), None);
+}
+
+#[test]
+fn clean_install_carries_forward_a_read_only_edited_file() {
+    let rig = Rig::new();
+    let r1 = release(PD2R_1);
+    let root = rig.game.installed(&r1);
+    let filter = edit_loot_filter(&root);
+    let path = root.join(LOOT_FILTER);
+    let mut perm = fs::metadata(&path).unwrap().permissions();
+    perm.set_readonly(true);
+    fs::set_permissions(&path, perm).unwrap();
+    let (r2, m2) = rig.served(PD2R_2);
+    let old = sha256(&r1.payload[LOOT_FILTER]);
+    let mut listed = listing_previous_loot_filter(&r2.manifest_json, &[old]);
+    listed.archive = m2.archive.clone();
+    let earlier = [r1.manifest.clone()];
+    let mut clean = rig.request(CleanInstall, &r2, &listed, None);
+    clean.consent_clean_install = true;
+    clean.earlier = &earlier;
+
+    let report = rig.run(&clean);
+
+    // Backups hold read-only files; make everything deletable before asserting.
+    let kept = fs::read(&path);
+    let still_read_only = fs::metadata(&path).unwrap().permissions().readonly();
+    #[allow(clippy::permissions_set_readonly_false)]
+    for p in std::iter::once(path.clone()).chain(
+        ops::clean_install_backups(&root)
+            .into_iter()
+            .map(|b| b.join(LOOT_FILTER)),
+    ) {
+        if let Ok(m) = fs::metadata(&p) {
+            let mut perm = m.permissions();
+            perm.set_readonly(false);
+            let _ = fs::set_permissions(&p, perm);
+        }
+    }
+    assert_eq!(report.unwrap().preserved, [rel(LOOT_FILTER)]);
+    assert_eq!(kept.unwrap(), filter);
+    assert!(still_read_only, "the carried file is read-only again");
+}
+
+/// Free space of exactly `0` bytes beyond what the host reports.
+struct Free(u64);
+
+impl resurrected_launcher_lib::install::preflight::Host for Free {
+    fn free_space(&self, _: &Path) -> std::io::Result<u64> {
+        Ok(self.0)
+    }
+    fn processes_using(&self, _: &[std::path::PathBuf]) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+#[test]
+fn clean_install_too_full_for_the_carry_forward_is_refused_up_front() {
+    let rig = Rig::new();
+    let r1 = release(PD2R_1);
+    let root = rig.game.installed(&r1);
+    let filter = edit_loot_filter(&root);
+    let (r2, m2) = rig.served(PD2R_2);
+    let old = sha256(&r1.payload[LOOT_FILTER]);
+    let mut listed = listing_previous_loot_filter(&r2.manifest_json, &[old]);
+    listed.archive = m2.archive.clone();
+    let earlier = [r1.manifest.clone()];
+    let mut clean = rig.request(CleanInstall, &r2, &listed, None);
+    clean.consent_clean_install = true;
+    clean.earlier = &earlier;
+    let staged: u64 = r2.payload.values().map(|b| b.len() as u64).sum();
+    let base = listed.archive.size + staged;
+    let before = tree(&root);
+
+    let tight = Env {
+        host: &Free(base),
+        ..rig.env(&NoFaults)
+    };
+    let err = ops::run(&tight, &clean).unwrap_err();
+    assert_eq!(err.code, ErrorCode::InsufficientSpace, "{err}");
+    assert_eq!(tree(&root), before);
+    assert_no_scratch(&root);
+
+    let roomy = Env {
+        host: &Free(base + filter.len() as u64),
+        ..rig.env(&NoFaults)
+    };
+    ops::run(&roomy, &clean).unwrap();
+}
+
+#[test]
+fn uninstall_after_the_product_folder_and_mods_folder_were_deleted_succeeds() {
+    for remove_mods in [false, true] {
+        let rig = Rig::new();
+        let (r1, m1) = rig.served(PD2R_1);
+        let d2r = tempfile::tempdir().unwrap();
+        fs::write(d2r.path().join("D2R.exe"), b"").unwrap();
+        let mut install = rig.request(Install, &r1, &m1, None);
+        install.d2r = d2r.path();
+        let root = rig.run(&install).unwrap().product_root;
+        fs::remove_dir_all(if remove_mods {
+            root.parent().unwrap()
+        } else {
+            &root
+        })
+        .unwrap();
+        let mut un = rig.request(Uninstall, &r1, &m1, Some(&m1));
+        un.d2r = d2r.path();
+
+        let report = rig
+            .run(&un)
+            .unwrap_or_else(|e| panic!("mods gone {remove_mods}: {e}"));
+
+        assert!(report.remaining.is_empty());
+        assert_eq!(rig.installed_release(), None);
+    }
+}
