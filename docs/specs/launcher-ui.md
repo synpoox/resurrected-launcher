@@ -221,7 +221,7 @@ Target **WCAG 2.2 AA**: 4.5:1 for text, 3:1 for large text (24px, or 18.66px bol
 
 ## Artwork
 
-Official D2R promotional art and the Diablo II: Resurrected logo (`src/art/d2r-logo.webp`, shown above the hero title, #262), © Blizzard Entertainment, **never presented as mod gameplay**. The images match resurrected-web's hero set and are bundled in `src/art` as optimised WebP ([#165](https://github.com/synpoox/resurrected-launcher/issues/165)). The launcher shows no credit list (#199).
+Official D2R promotional art, © Blizzard Entertainment, **never presented as mod gameplay**. The images match resurrected-web's hero set and are bundled in `src/art` as optimised WebP ([#165](https://github.com/synpoox/resurrected-launcher/issues/165)). The launcher shows no credit list (#199).
 
 | Product | Image | Framing |
 | --- | --- | --- |

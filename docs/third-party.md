@@ -50,7 +50,3 @@ The product page logo lockup sets its "Project" and "09" lines in Cinzel Bold (#
 | License | SIL Open Font License 1.1, shipped unchanged as `src/product/fonts/OFL.txt` |
 
 Files: `src/product/fonts/cinzel-bold.woff2` and `src/product/fonts/OFL.txt`. The CSP has no `font-src`, so `default-src 'self'` allows the bundled file.
-
-## Official Diablo II: Resurrected art
-
-The hero images (`src/art/*.webp`) and the Diablo II: Resurrected logo (`src/art/d2r-logo.webp`, #262) are official promotional art and a logo, © Blizzard Entertainment, bundled locally and never presented as mod gameplay. They are not under an open licence. The credit line is in `docs/specs/launcher-ui.md`, section "Artwork".
