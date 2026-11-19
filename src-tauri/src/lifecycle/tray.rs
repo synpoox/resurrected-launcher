@@ -207,7 +207,12 @@ pub fn view(
                 vec![action("play", format!("Play {name}"))],
             )
         }
-        Readiness::UpdateAvailable => {
+        Readiness::UpdateAvailable
+        | Readiness::BuildUnsupported {
+            update_fixes: true, ..
+        } => {
+            // The installed release can't run the current D2R build, so no Play then.
+            let can_play = matches!(state.readiness, Readiness::UpdateAvailable);
             let newer = state
                 .recommended
                 .as_ref()
@@ -215,10 +220,13 @@ pub fn view(
             shown(
                 Overlay::Update,
                 format!("Update available · {newer}"),
-                vec![
-                    action("update", format!("Update {name}")),
-                    action("play", format!("Play {installed}")),
-                ],
+                [
+                    Some(action("update", format!("Update {name}"))),
+                    can_play.then(|| action("play", format!("Play {installed}"))),
+                ]
+                .into_iter()
+                .flatten()
+                .collect(),
             )
         }
         Readiness::RepairNeeded => shown(
@@ -730,6 +738,40 @@ mod tests {
             labels(&v),
             ["Update PD2R [update:pd2r]", "Play 0.4.1 alpha [play:pd2r]"]
         );
+    }
+
+    #[test]
+    fn unsupported_build_offers_update_only_when_it_fixes_it() {
+        let fixed = view(
+            &state(
+                Readiness::BuildUnsupported {
+                    found: "3.3.1".into(),
+                    update_fixes: true,
+                },
+                Some("0.4.1"),
+                "0.4.2",
+            ),
+            None,
+            None,
+        );
+        assert_eq!(fixed.overlay, Overlay::Update);
+        assert_eq!(labels(&fixed), ["Update PD2R [update:pd2r]"]);
+
+        let stuck = view(
+            &state(
+                Readiness::BuildUnsupported {
+                    found: "3.3.1".into(),
+                    update_fixes: false,
+                },
+                Some("0.4.1"),
+                "0.4.2",
+            ),
+            None,
+            None,
+        );
+        assert_eq!(stuck.overlay, Overlay::Error);
+        assert_eq!(stuck.status, "PD2R: D2R version not supported");
+        assert!(!labels(&stuck).iter().any(|l| l.contains("[update:")));
     }
 
     #[test]
