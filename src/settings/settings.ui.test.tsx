@@ -248,7 +248,7 @@ describe("Folders and plugins", () => {
       [null, "global_plugins"],
     ]);
     expect(within(panel()).getByText(/doesn't list, enable or disable plugins/)).toBeTruthy();
-    expect(within(panel()).getByText(/Forever and 09 aren't installed/)).toBeTruthy();
+    expect(within(panel()).getByText(/09 isn't installed/)).toBeTruthy();
   });
 
   it("says a plugins folder was created on its first open only", async () => {
@@ -292,7 +292,7 @@ describe("Folders and plugins", () => {
     await user.click(tab("Folders and plugins"));
     expect(within(panel()).queryByRole("region", { name: "PD2R" })).toBeNull();
     expect(within(panel()).getAllByRole("button").map((b) => b.textContent)).toEqual(["Open plugins folder"]);
-    expect(within(panel()).getByText(/PD2R, Forever and 09 aren't installed/)).toBeTruthy();
+    expect(within(panel()).getByText(/PD2R and 09 aren't installed/)).toBeTruthy();
   });
 });
 

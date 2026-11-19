@@ -16,10 +16,10 @@ export interface Product {
   /** The hero title: always exactly these two lines. */
   title: [string, string];
   description: string;
-  /** False for products without a release (Forever and 09 today): no tabs, no install. */
+  /** False for products without a release (09 today): no tabs, no install. */
   hasRelease: boolean;
   /** "About <product>" (products without a release) opens a public page: the product has an
-   *  entry in `product-pages.json`. Forever and 09 have no public page yet, so their About opens
+   *  entry in `product-pages.json`. 09 has no public page yet, so its About opens
    *  "Follow for updates on Discord" instead (issue 135). */
   aboutPage: boolean;
 }
@@ -38,24 +38,13 @@ export const PRODUCTS: readonly Product[] = [
     aboutPage: "pd2r" in PRODUCT_PAGES,
   },
   {
-    id: "project-forever",
-    hero: "forever",
-    name: "Diablo II: Resurrected Forever",
-    short: "Forever",
-    ribbon: "Coming soon",
-    title: ["A different future.", "A resurrected world."],
-    description: "Class changes, legacy items, league mechanics and a reworked endgame.",
-    hasRelease: false,
-    aboutPage: "project-forever" in PRODUCT_PAGES,
-  },
-  {
     id: "project-09",
     hero: "09",
     name: "Diablo II: Resurrected 09",
     short: "09",
     ribbon: "Coming soon",
     title: ["An earlier era.", "A world revisited."],
-    description: "Lord of Destruction 1.09d, ported to Diablo II: Resurrected 3.3.",
+    description: "Lord of Destruction 1.09d, ported to Diablo II: Resurrected.",
     hasRelease: false,
     aboutPage: "project-09" in PRODUCT_PAGES,
   },
