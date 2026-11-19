@@ -581,7 +581,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         return (
           <>
             {busy("primary", "Update", "update", () => operate("update"))}
-            {!compact && installed && busy("ghost", `Play ${installed.display_version}`, "play", play)}
+            {!compact && installed && state.readiness.status !== "build_unsupported" && busy("ghost", `Play ${installed.display_version}`, "play", play)}
             {!compact && manage}
             {!compact && offered && line("new", `${offered} available`)}
           </>

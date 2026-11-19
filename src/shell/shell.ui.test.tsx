@@ -705,6 +705,15 @@ describe("product page", () => {
     await waitFor(() => expect(names(api).slice(before)).toContain("getProductState"));
   });
 
+  it("offers Update, not just a block, when the recommended release supports the D2R build (#249)", async () => {
+    const { user } = mount("build-unsupported-update");
+    await loaded();
+    expect(screen.queryByText(/Can't play/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Play/ })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Update" }));
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+  });
+
   it("the first launch after an update opens Patch Notes once", async () => {
     localStorage.setItem(seenKey("pd2r"), "pd2r-0.4.1-alpha");
     mount("ready");

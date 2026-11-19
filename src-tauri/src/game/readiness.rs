@@ -95,20 +95,27 @@ pub fn assess(
         // Nothing to check the build and loader against, and nothing installed.
         return Ok(Readiness::NotInstalled);
     };
-    let mut supported = false;
-    for build in builds {
-        if cache.matches(
-            &root.join(build.executable.as_str()),
-            build.size,
-            &build.sha256,
-        )? {
-            supported = true;
-            break;
+    let supports = |m: &ReleaseManifest| -> Result<bool, LauncherError> {
+        for build in &m.compatibility.game_builds {
+            if cache.matches(
+                &root.join(build.executable.as_str()),
+                build.size,
+                &build.sha256,
+            )? {
+                return Ok(true);
+            }
         }
-    }
-    if !supported {
+        Ok(false)
+    };
+    if !supports(manifest)? {
+        // An installed release that can't run this build may be fixed by updating (#249).
+        let update_fixes = match (facts.installed, facts.recommended) {
+            (Some(i), Some(r)) if r.release_id != i.release_id => supports(r)?,
+            _ => false,
+        };
         return Ok(Readiness::BuildUnsupported {
             found: location.build.clone(),
+            update_fixes,
         });
     }
     let mut versions = Vec::new();

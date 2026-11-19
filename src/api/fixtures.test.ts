@@ -24,6 +24,7 @@ describe("fixtures", () => {
       "loader-modified": "loader-missing",
       "save-breaking": "update",
       "save-breaking-skipped": "update",
+      "build-unsupported-update": "update",
       repair: "ready",
       manage: "ready",
       uninstall: "ready",

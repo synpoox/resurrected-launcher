@@ -288,6 +288,7 @@ impl Launcher {
                     .as_ref()
                     .map(|l| l.build.clone())
                     .unwrap_or_default(),
+                update_fixes: false,
             },
         };
         let guidance = manifest.and_then(|m| loader_setup::guidance(&readiness, m));
