@@ -650,7 +650,7 @@ fn repair_and_uninstall_refuse_a_record_from_another_d2r_location() {
 }
 
 #[test]
-fn uninstall_removes_only_positively_identified_managed_files_and_reports_player_files() {
+fn uninstall_removes_managed_files_backs_up_changed_ones_and_reports_player_files() {
     let rig = Rig::new();
     let (r1, m1) = install_1(&rig);
     let root = product_root(&rig, &m1);
@@ -673,16 +673,22 @@ fn uninstall_removes_only_positively_identified_managed_files_and_reports_player
     want.insert(DISPOSABLE_SENTINEL.to_owned(), Some(Vec::new()));
     let want = with_file(want, LOOT_FILTER, &filter);
     let want = with_file(want, UNKNOWN_PLUGIN, &plugin);
-    let want = with_file(want, "PD2R.mpq/data/global/excel/armor.txt", &changed);
     assert_eq!(tree(&root), want);
     assert_eq!(
         report.remaining,
-        [
-            DISPOSABLE_SENTINEL,
+        [DISPOSABLE_SENTINEL, UNKNOWN_PLUGIN, LOOT_FILTER]
+    );
+    // The changed managed file left the root for this run's labelled backup.
+    let [backup] = &report.clean_install_backups[..] else {
+        panic!("one backup: {:?}", report.clean_install_backups);
+    };
+    assert_eq!(
+        tree(backup),
+        with_file(
+            BTreeMap::new(),
             "PD2R.mpq/data/global/excel/armor.txt",
-            UNKNOWN_PLUGIN,
-            LOOT_FILTER,
-        ]
+            &changed
+        )
     );
     assert_eq!(report.product_root.file_name(), root.file_name());
     assert_eq!(rig.installed_release(), None);
@@ -697,7 +703,16 @@ fn uninstall_removes_only_positively_identified_managed_files_and_reports_player
         .collect();
     assert_eq!(outside_after, outside);
     assert_eq!(fs::read(&loader).unwrap(), b"shared loader");
-    assert_no_scratch(&root);
+    // Beside the root: only the lock and this run's backup, no scratch.
+    let beside: Vec<String> = fs::read_dir(root.parent().unwrap())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .filter(|n| n.starts_with("PD2R.") && !n.ends_with(".resurrected-lock"))
+        .collect();
+    assert_eq!(
+        beside,
+        [backup.file_name().unwrap().to_str().unwrap().to_owned()]
+    );
 }
 
 #[test]
