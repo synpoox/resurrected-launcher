@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### New
+
+- The product page shows the Diablo II: Resurrected logo at the top left of the hero, with Project above it (PD2R) or 09 below it.
+
 ### Fixed
 
 - An installed PD2R now has Clean install… in its ⋯ menu, so an Update that stops on a file the launcher did not install can be recovered. (#264)
