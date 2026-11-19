@@ -15,12 +15,13 @@ import type {
 import { isLauncherError } from "../api/types";
 import type { Product } from "../products";
 import { arrowKeys } from "../ui/focus";
+import type { SettingsTab } from "../settings";
 import { Menu, type MenuItem } from "../ui/Menu";
 import { Notice } from "../ui/Notice";
 import { BUSY_SAFETY_MS, BusyButton, usePending } from "../ui/pending";
 import { useToast } from "../ui/Toast";
 import { CleanInstallDialog, LocationDialog, SaveBreakingDialog, UninstallDialog, type SaveBreakingOp } from "./dialogs";
-import { formatBytes, formatCount, operationFailureText, formatTimeLeft, releaseLabel, startedAgo } from "./format";
+import { catalogProblemText, formatBytes, formatCount, operationFailureText, formatTimeLeft, releaseLabel, startedAgo } from "./format";
 import { Ghosted } from "../ui/motion";
 import { HeroArt, HeroCopy } from "./Hero";
 import { existingOf, hasNotice, journeyOf, type Journey } from "./journey";
@@ -52,7 +53,8 @@ type DialogState =
   // Issue 138: consent dialogs open on the click, with a null inspection until it answers.
   // `started`: Uninstall was accepted and its outcome hasn't arrived, so the confirm stays busy.
   | { kind: "uninstall"; inspection: Inspection | null; report: OutcomeReport | null; started?: boolean }
-  | { kind: "clean-install"; inspection: Inspection | null }
+  // `changed`: opened from Update or Install because the player edited files or settings it needs.
+  | { kind: "clean-install"; inspection: Inspection | null; changed?: boolean }
   | null;
 
 export interface ProductPageProps {
@@ -64,7 +66,7 @@ export interface ProductPageProps {
   /** Overrides the default tab (dev fixtures). */
   tab?: Tab;
   trayFocus?: TrayFocus;
-  onOpenSettings: () => void;
+  onOpenSettings: (tab?: SettingsTab) => void;
   /** Clears a product's clean-install backup notice; with `only`, just if it still shows those. */
   onDismissBackups?: (productId: string, only?: string[]) => void;
 }
@@ -119,7 +121,7 @@ function useNews(productId: string) {
 function ComingSoon({ product }: { product: Product }) {
   const api = useApi();
   const toast = useToast();
-  const fail = (e: unknown) => toast.show({ tone: "error", text: asError(e).message });
+  const fail = (e: unknown) => toast.show({ tone: "error", text: operationFailureText(e, product.short) });
   const about = () => void api.openProductPage(product.id).catch(fail);
   const follow = () => void api.openCommunityPage().catch(fail);
   const feed = useNews(product.id);
@@ -223,7 +225,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   const lifts = switched || journey !== firstJourney;
   const stats = progressStats(samples);
 
-  const fail = useCallback((e: unknown) => toast.show({ tone: "error", text: asError(e).message }), [toast]);
+  const fail = useCallback((e: unknown) => toast.show({ tone: "error", text: operationFailureText(e, product.short) }), [toast, product.short]);
 
   const loadNotes = useCallback(() => {
     api.getReleaseNotes(product.id).then(setReleases, () => setReleases([]));
@@ -240,6 +242,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
 
   // Install shows the space it needs, from a read-only inspection.
   const needsInstallInspection = journey === "install";
+  const locationPath = state.location?.path;
   useEffect(() => {
     if (!needsInstallInspection) return;
     let live = true;
@@ -250,7 +253,8 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
     return () => {
       live = false;
     };
-  }, [api, product.id, needsInstallInspection]);
+    // recommendedId and the location change the verdict (Adopt, Install, Clean install) after a background refresh.
+  }, [api, product.id, needsInstallInspection, recommendedId, locationPath]);
 
   // Outcomes: failures toast; an uninstall's report fills its dialog.
   useEffect(() => {
@@ -298,9 +302,11 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
    *  doesn't hold the pending slot: the modal dialog blocks the page, and Not now frees it at once.
    *  The answer fills only this dialog object, so a late one never fills a closed or newer dialog. */
   const openConsent = useCallback(
-    (kind: "uninstall" | "clean_install") => {
+    (kind: "uninstall" | "clean_install", changed = false) => {
       const opened: DialogState =
-        kind === "uninstall" ? { kind: "uninstall", inspection: null, report: null } : { kind: "clean-install", inspection: null };
+        kind === "uninstall"
+          ? { kind: "uninstall", inspection: null, report: null }
+          : { kind: "clean-install", inspection: null, changed };
       setDialog(opened);
       api.inspectOperation({ product_id: product.id, kind }).then(
         (inspection) => setDialog((d) => (d === opened ? { ...opened, inspection } : d)),
@@ -325,6 +331,8 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         fail(e);
         return;
       }
+      // Edited files or settings make the release refuse to go over them: only Clean install, with consent, can.
+      if ((kind === "update" || kind === "install") && inspection.conflicts.length > 0) return openConsent("clean_install", true);
       if ((kind === "update" || kind === "install") && inspection.breaks_saves) {
         // Acknowledged once per installed release and target (issues 213, 215): a retry after a
         // cancel or failure doesn't ask again.
@@ -468,6 +476,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
     if (stats.secondsLeft !== null) parts.push(formatTimeLeft(stats.secondsLeft));
     return parts.join(" · ") || "Starting…";
   };
+  const problem = state.catalog.status === "failed" ? catalogProblemText(state.catalog.error, product.short) : null;
   const opVerb = state.running === "update" ? "Updating to" : "Downloading";
 
   /** The action row; `compact` is the Patch Notes top-left version (main action only). */
@@ -581,7 +590,12 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
             {!compact && manage}
             {!compact &&
               (journey === "offline"
-                ? line("idle", `Offline · ${ver}${installed?.verified ? " verified" : ""} · can't check for updates`)
+                ? line(
+                    "idle",
+                    problem
+                      ? `${ver}${installed?.verified ? " verified" : ""} · ${problem}`
+                      : `Offline · ${ver}${installed?.verified ? " verified" : ""} · can't check for updates`,
+                  )
                 : line("ok", `Ready · ${ver}${latest ? " (latest)" : ""}`))}
           </>
         );
@@ -605,7 +619,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
               </span>
             )}
             {!compact && busy("ghost", "Check again", "check", checkAgain)}
-            {!compact && recovering && ghost("Export diagnostics", onOpenSettings)}
+            {!compact && recovering && ghost("Export diagnostics", () => onOpenSettings("troubleshooting"))}
             {!compact && manage}
           </>
         );
@@ -619,7 +633,20 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
             {!compact && manage}
             {!compact &&
               state.readiness.status === "running" &&
-              line("none", `Started ${startedAgo(state.readiness.since)} · Repair and updates wait until you quit`)}
+              line(
+                "none",
+                // since 0: the process listing failed, so the start time is unknown (app/game.rs).
+                state.readiness.since > 0 ? (
+                  `Started ${startedAgo(state.readiness.since)} · Repair and updates wait until you quit`
+                ) : (
+                  <>
+                    Can't tell whether D2R is running ·{" "}
+                    <button type="button" className="link" onClick={() => void pending.run("check", checkAgain)}>
+                      Check again
+                    </button>
+                  </>
+                ),
+              )}
           </>
         );
       case "repair-needed":
@@ -636,7 +663,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           <>
             {busy("primary", "Try again", "play", play)}
             {!compact && busy("ghost", "Repair", "repair", () => operate("repair"))}
-            {!compact && ghost("Export diagnostics", onOpenSettings)}
+            {!compact && ghost("Export diagnostics", () => onOpenSettings("troubleshooting"))}
             {!compact && manage}
           </>
         );
@@ -644,7 +671,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         return (
           <>
             {busy("primary", "Try again", "catalog", tryCatalog)}
-            {!compact && line("warn", "Can't reach the release catalog")}
+            {!compact && line("warn", problem ?? "Can't reach the release catalog")}
           </>
         );
     }
@@ -880,6 +907,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           inspection={dialog.inspection}
           label={label}
           installed={!!installed}
+          changed={dialog.changed}
           onClose={closeDialog}
           onConfirm={(inspection) => {
             closeDialog();

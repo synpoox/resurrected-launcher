@@ -1,10 +1,20 @@
 // Settings copy that depends on product state, kept pure so it can be tested on its own.
-import type { Folder, GameLocation, LauncherError, ProductState } from "../api/types";
+import type { Folder, GameLocation, LauncherError, OperationKind, ProductState } from "../api/types";
 import type { Product } from "../products";
 
 export const STORE_NAME: Record<GameLocation["store"], string> = {
   battle_net: "Battle.net",
   unknown: "Store not recognised",
+};
+
+/** An operation as a noun, for "Wait for the {op} to finish". */
+export const OPERATION_NAME: Record<OperationKind, string> = {
+  install: "install",
+  update: "update",
+  repair: "repair",
+  uninstall: "uninstall",
+  clean_install: "clean install",
+  adopt: "adoption",
 };
 
 export const GAME_RUNNING_REASON = "Quit the game to change this";

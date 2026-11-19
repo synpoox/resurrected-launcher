@@ -13,6 +13,7 @@ import {
   folderFailureText,
   folderName,
   GAME_RUNNING_REASON,
+  OPERATION_NAME,
   STATE_FAILED_REASON,
   recheckText,
   STORE_NAME,
@@ -40,8 +41,15 @@ export function GamePanel({ product, state, stateFailed = false, refresh }: Game
   const [recheck, setRecheck] = useState<ProductState | null>(null);
   const location = state?.location ?? null;
   const running = state?.readiness.status === "running";
+  const operating = state?.running ?? null;
   // The location can't be changed until product state has loaded; say so if loading failed.
-  const reason = running ? GAME_RUNNING_REASON : state === null && stateFailed ? STATE_FAILED_REASON : null;
+  const reason = running
+    ? GAME_RUNNING_REASON
+    : operating
+      ? `Wait for the ${OPERATION_NAME[operating]} to finish`
+      : state === null && stateFailed
+        ? STATE_FAILED_REASON
+        : null;
   const why = useId();
 
   const closed = async (chosen: boolean) => {
@@ -77,7 +85,7 @@ export function GamePanel({ product, state, stateFailed = false, refresh }: Game
         <button
           type="button"
           className="btn ghost small"
-          disabled={running || state === null}
+          disabled={running || operating !== null || state === null}
           aria-describedby={reason ? why : undefined}
           onClick={() => setChoosing(true)}
         >

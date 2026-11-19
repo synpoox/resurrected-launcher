@@ -170,7 +170,7 @@ describe("tray requests", () => {
     await act(async () => api.emitTrayRequest({ action: "show_what_happened", product_id: "pd2r", error }));
     expect((await screen.findByRole("tab", { name: "Overview" })).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText(/isn't supported by/)).toBeTruthy();
-    expect(screen.getByText(error.message)).toBeTruthy();
+    expect(screen.getByText("PD2R can't be played yet. Its page says what to do.")).toBeTruthy();
   });
 
   it("quit_while_busy opens the Quit dialog; Cancel download and quit cancels, waits, then quits", async () => {
@@ -253,7 +253,7 @@ describe("quit when the operation already ended", () => {
     const dialog = await screen.findByRole("dialog", { name: "Quit while PD2R is downloading?" });
     api.cancelOperation = refused;
     await user.click(within(dialog).getByRole("button", { name: "Cancel download and quit" }));
-    expect(await screen.findByText(/no operation running/)).toBeTruthy();
+    expect(await screen.findByText(/^Something went wrong/)).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "Cancel download and quit" })).toBeTruthy();
     expect(names(api)).not.toContain("quitLauncher");
   });
@@ -270,7 +270,7 @@ describe("quit refused", () => {
       Promise.reject({ code: "recovery_required", message: "Recovery is still running." } satisfies LauncherError);
     await user.click(within(dialog).getByRole("button", { name: "Cancel download and quit" }));
     await act(async () => api.emitOutcome({ status: "cancelled", product_id: "pd2r", kind: "install" }));
-    expect(await screen.findByText("Recovery is still running.")).toBeTruthy();
+    expect(await screen.findByText("An earlier change to PD2R didn't finish. Choose Check again to restore it.")).toBeTruthy();
     const again = within(dialog).getByRole("button", { name: "Cancel download and quit" });
     expect(again.hasAttribute("disabled")).toBe(false);
     expect(within(dialog).getByRole("button", { name: "Keep downloading" }).hasAttribute("disabled")).toBe(false);
@@ -336,7 +336,7 @@ describe("outcome report", () => {
       }),
     );
     expect(await screen.findByText(/Clean install finished/)).toBeTruthy();
-    expect(screen.getByText("Repair broke.")).toBeTruthy();
+    expect(screen.getByText(/^Something went wrong/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Manage PD2R" }));
     await user.click(screen.getByRole("menuitem", { name: "Repair" }));
     await waitFor(() => expect(names(api)).toContain("startOperation"));

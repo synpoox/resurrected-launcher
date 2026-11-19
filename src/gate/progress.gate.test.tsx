@@ -45,7 +45,7 @@ describe("progress, errors and retry", () => {
               status: "failed",
               product_id: "pd2r",
               kind: "install",
-              error: { code: "download_failed", message: "The download failed: connection reset. Try again." },
+              error: { code: "download_failed", message: "The download failed. Check your connection, then try again." },
             }),
           );
           return Promise.resolve();
@@ -53,7 +53,7 @@ describe("progress, errors and retry", () => {
       },
     });
     await user.click(await screen.findByRole("button", { name: /^Install$/ }));
-    const toast = await screen.findByText("The download failed: connection reset. Try again.");
+    const toast = await screen.findByText("The download failed. Check your connection, then try again.");
     expect(toast.closest("[role=alert], .toast")).not.toBeNull();
     // Still offering Install: the failure left nothing half-installed.
     const again = await screen.findByRole("button", { name: /^Install$/ });

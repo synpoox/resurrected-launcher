@@ -205,7 +205,7 @@ describe("product page", () => {
       a.openCommunityPage = () => Promise.reject({ code: "internal", message: "opening the Discord failed" });
     });
     await user.click(await screen.findByRole("button", { name: "Follow for updates on Discord" }));
-    expect(await screen.findByText("opening the Discord failed")).toBeTruthy();
+    expect(await screen.findByText(/^Something went wrong/)).toBeTruthy();
   });
 
   it("news: up to three items, opened by index", async () => {
@@ -375,7 +375,7 @@ describe("product page", () => {
       </ApiContext.Provider>,
     );
     await user.click(await screen.findByRole("button", { name: "About 09" }));
-    expect(await screen.findByText("opening the page failed")).toBeTruthy();
+    expect(await screen.findByText(/^Something went wrong/)).toBeTruthy();
   });
 
   it("news: empty renders nothing; offline offers Retry", async () => {

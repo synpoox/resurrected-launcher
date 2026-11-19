@@ -1,4 +1,4 @@
-import type { LauncherError, ReleaseNotes } from "../api/types";
+import { isLauncherError, type LauncherError, type ReleaseNotes } from "../api/types";
 
 const UNITS = ["B", "KB", "MB", "GB", "TB"];
 
@@ -80,11 +80,76 @@ export const statusTag = (status: ReleaseNotes["status"]) => status[0].toUpperCa
 
 export const formatCount = (n: number) => n.toLocaleString("en-US");
 
-/** The red toast after an operation fails (#170): plain copy for a Windows refusal, and
- *  never a raw `\\?\` extended-length path prefix. */
-export function operationFailureText(error: LauncherError, short: string): string {
-  if (error.code === "access_denied") {
-    return `Windows blocked a change to the ${short} folder; close Explorer windows in it and try again.`;
-  }
-  return error.message.replaceAll("\\\\?\\", "");
+const GENERIC_FAILURE =
+  "Something went wrong. Try again. If it keeps happening, use Export diagnostics in Settings → Troubleshooting.";
+
+/** The catalog line for a launcher that can't use the latest release (#272). */
+const updateNeeded = (short: string) =>
+  `A launcher update is needed for the latest ${short} · Settings → Launcher → Check for updates`;
+
+/** "2147483648 bytes needed, 1073741824 free on …" (preflight.rs) → "2.0 GB needed, 1.0 GB free. ". */
+function spaceText(message: string): string {
+  const m = /^(\d+) bytes needed, (\d+) free/.exec(message);
+  return m ? `${formatBytes(Number(m[1]))} needed, ${formatBytes(Number(m[2]))} free. ` : "";
 }
+
+/** Player wording for any launcher error, by code. Rust's `message` is a diagnostic and is never
+ *  shown (it carries paths and byte counts); insufficient_space only has its sizes read out of it.
+ *  Every toast an error reaches uses this: operation outcomes, failed actions, tray requests, Settings. */
+export function operationFailureText(error: unknown, short: string): string {
+  const e = isLauncherError(error) ? error : null;
+  switch (e?.code) {
+    case "access_denied":
+      return `Windows blocked a change to the ${short} folder; close Explorer windows in it and try again.`;
+    case "inventory_mismatch":
+      return `The files in the ${short} folder aren't the ones the launcher installed. Choose Repair or Clean install… in the ⋯ menu.`;
+    case "mandatory_setting_conflict":
+      return `Settings you changed stop this ${short} release from installing over them. Choose Clean install… in the ⋯ menu.`;
+    case "insufficient_space":
+      return `Not enough free disk space: ${spaceText(e.message)}Free up space, then try again.`;
+    case "operation_in_progress":
+      return `Another change to ${short} is still running. Wait for it to finish.`;
+    case "recovery_required":
+      return `An earlier change to ${short} didn't finish. Choose Check again to restore it.`;
+    case "download_failed":
+      return "The download failed. Check your connection, then try again.";
+    case "verification_failed":
+    case "unsafe_archive_entry":
+      return "The download didn't pass its safety check, so nothing was changed. Try again.";
+    case "release_changed":
+      return `${short} has a newer release than the one checked. Try again.`;
+    case "game_running":
+      return "Quit Diablo II: Resurrected, then try again.";
+    case "launcher_update_required":
+      return updateNeeded(short);
+    case "metadata_invalid":
+    case "unsupported_contract_version":
+      return `The latest ${short} release information couldn't be read. Try again later.`;
+    case "product_not_installed":
+      return `${short} isn't installed at this D2R location.`;
+    case "d2r_not_found":
+      return "Diablo II: Resurrected wasn't found. Choose its folder in Settings → Game.";
+    case "game_build_unsupported":
+    case "loader_not_ready":
+      return `${short} can't be played yet. Its page says what to do.`;
+    case "launch_failed":
+      return "The game couldn't be started. Try again.";
+    case "cancelled":
+      return "Cancelled.";
+    case "save_breaking_not_acknowledged":
+    case "clean_install_consent_required":
+      return "That change needs your confirmation first. Try again.";
+    default:
+      return GENERIC_FAILURE;
+  }
+}
+
+/** The status line for a catalog failure that isn't plain offline; null when it is. */
+export function catalogProblemText(error: LauncherError, short: string): string | null {
+  if (error.code === "launcher_update_required") return updateNeeded(short);
+  if (error.code === "metadata_invalid" || error.code === "unsupported_contract_version") {
+    return `The latest ${short} release information couldn't be read · Try again later`;
+  }
+  return null;
+}
+
