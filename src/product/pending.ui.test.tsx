@@ -337,7 +337,7 @@ describe("Uninstall confirm (issue 138)", () => {
     await act(async () => reply.resolve());
     await waitFor(() => expect(busy(confirm)).toBe(false));
     expect(blocked(confirm)).toBe(false);
-    expect(screen.getByText("File locked")).toBeTruthy();
+    expect(screen.getByText(/^Something went wrong/)).toBeTruthy();
     await new Promise((r) => setTimeout(r, 0));
     expect(busy(confirm)).toBe(false);
     expect(starts).toBe(1);
@@ -355,7 +355,7 @@ describe("Uninstall confirm (issue 138)", () => {
     );
     await waitFor(() => expect(busy(confirm)).toBe(false));
     expect(blocked(confirm)).toBe(false);
-    expect(await screen.findByText("Disk full")).toBeTruthy();
+    expect(await screen.findByText(/^Something went wrong/)).toBeTruthy();
   });
 });
 

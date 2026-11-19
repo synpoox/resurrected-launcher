@@ -83,9 +83,14 @@ describe("operationFailureText", () => {
     const text = operationFailureText({ code: "access_denied", message }, "PD2R");
     expect(text).toBe("Windows blocked a change to the PD2R folder; close Explorer windows in it and try again.");
   });
-  it("never shows the extended-length path prefix", () => {
+  it("never shows the Rust message, its paths or its extended-length prefix", () => {
     const text = operationFailureText({ code: "internal", message: String.raw`creating \\?\C:\x: boom` }, "PD2R");
-    expect(text).toBe(String.raw`creating C:\x: boom`);
+    expect(text).toMatch(/^Something went wrong/);
+    expect(text).not.toContain("boom");
+  });
+  it("turns insufficient_space byte counts into sizes", () => {
+    const text = operationFailureText({ code: "insufficient_space", message: "2147483648 bytes needed, 1073741824 free on C:\\" }, "PD2R");
+    expect(text).toBe("Not enough free disk space: 2.0 GB needed, 1.0 GB free. Free up space, then try again.");
   });
 });
 

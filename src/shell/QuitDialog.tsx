@@ -4,7 +4,7 @@ import { subscribe } from "../api/subscribe";
 import type { Product } from "../products";
 import { Dialog } from "../ui/Dialog";
 import { useToast } from "../ui/Toast";
-import { asError } from "../product/store";
+import { operationFailureText } from "../product/format";
 
 export interface QuitDialogProps {
   product: Product;
@@ -26,7 +26,7 @@ export function QuitDialog({ product, hasInstalled, onClose }: QuitDialogProps) 
   // Once per stop: listen for the outcome, then cancel; quit after the cancelled (or finished) outcome.
   useEffect(() => {
     if (!stopping) return;
-    const fail = (e: unknown) => toast.show({ tone: "error", text: asError(e).message });
+    const fail = (e: unknown) => toast.show({ tone: "error", text: operationFailureText(e, product.short) });
     // A refused quit (for example while recovery runs) shows why and lets the player choose again.
     const quit = () =>
       void api.quitLauncher().catch((e) => {

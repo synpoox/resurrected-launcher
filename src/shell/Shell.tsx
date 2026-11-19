@@ -5,6 +5,7 @@ import type { SceneOpen } from "../api/fixtures";
 import { DEFAULT_PRODUCT_ID, PRODUCTS, productById } from "../products";
 import { badgeOf, journeyOf, type Badge } from "../product/journey";
 import { ProductPage, type TrayFocus, type Tab } from "../product/ProductPage";
+import { operationFailureText } from "../product/format";
 import { progressStats } from "../product/stats";
 import { useProducts } from "../product/store";
 import { RestartingScreen } from "../selfupdate/RestartingScreen";
@@ -64,7 +65,7 @@ export function Shell({ product, open, tab }: ShellProps) {
         select({ kind: "product", id: r.product_id });
         traySeq.current += 1;
         setTrayFocus({ product_id: r.product_id, action: r.action, kind: r.kind, seq: traySeq.current });
-        if (r.error) toast.show({ tone: "error", text: r.error.message });
+        if (r.error) toast.show({ tone: "error", text: operationFailureText(r.error, productById(r.product_id)!.short) });
         void refresh();
       }),
     ).stop;
@@ -112,11 +113,11 @@ export function Shell({ product, open, tab }: ShellProps) {
               open={sceneOpen}
               tab={sceneOpen === open ? tab : undefined}
               trayFocus={trayFocus?.product_id === current.id ? trayFocus : undefined}
-              onOpenSettings={() => select({ kind: "settings" })}
+              onOpenSettings={(tab) => select({ kind: "settings", tab })}
               onDismissBackups={dismissBackups}
             />
           ) : (
-            <Settings />
+            <Settings initialTab={view.kind === "settings" ? view.tab : undefined} />
           )}
         </div>
         <RestartingScreen />

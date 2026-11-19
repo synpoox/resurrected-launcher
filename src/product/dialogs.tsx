@@ -6,7 +6,7 @@ import type { Product } from "../products";
 import { Dialog } from "../ui/Dialog";
 import { BusyButton, Spinner } from "../ui/pending";
 import { useToast } from "../ui/Toast";
-import { asError } from "./store";
+import { operationFailureText } from "./format";
 
 const STORE: Record<GameLocation["store"], string> = { battle_net: "Battle.net", unknown: "Store not recognised" };
 
@@ -46,7 +46,14 @@ export function LocationDialog({ product, onClose }: { product: Product; onClose
       await api.selectGameLocation(picked);
       onClose(true);
     } catch (e) {
-      setError(isLauncherError(e) && e.code === "game_running" ? "Quit the game to change this." : "That installation can't be used any more. Pick another, or browse for one.");
+      const code = isLauncherError(e) ? e.code : null;
+      setError(
+        code === "game_running"
+          ? "Quit the game to change this."
+          : code === "operation_in_progress"
+            ? "Wait for the running operation to finish, then try again."
+            : "That installation can't be used any more. Pick another, or browse for one.",
+      );
       setUsing(false);
     }
   };
@@ -227,7 +234,7 @@ export function UninstallDialog({ product, inspection, report, busy, onConfirm, 
   const api = useApi();
   const toast = useToast();
   const open = (folder: "saves" | "settings" | "clean_install_backup") =>
-    void api.openFolder(product.id, folder).catch((e: unknown) => toast.show({ tone: "error", text: asError(e).message }));
+    void api.openFolder(product.id, folder).catch((e: unknown) => toast.show({ tone: "error", text: operationFailureText(e, product.short) }));
   if (report) {
     return (
       <Dialog
@@ -325,13 +332,15 @@ export interface CleanInstallProps {
   onClose: () => void;
   /** Opened from the ⋯ menu of an installed product, whose files may already match the release. */
   installed?: boolean;
+  /** Opened from Update or Install because edited files or settings stop the release going over them. */
+  changed?: boolean;
 }
 
 /** issue 126: the product folder holds files the offered release doesn't (an older version, or edited
  *  managed files), so Install would be refused. Clean install, with this consent, moves the folder
  *  aside as a labelled backup, installs the release and carries edited settings forward. Settings
  *  the release can't run with are named (issue 134, #6 item 4); they are reset, not carried. */
-export function CleanInstallDialog({ product, inspection, label, onConfirm, onClose, installed }: CleanInstallProps) {
+export function CleanInstallDialog({ product, inspection, label, onConfirm, onClose, installed, changed }: CleanInstallProps) {
   const actions = (
     <>
       <BusyButton className="primary" blocked={!inspection} onClick={() => inspection && onConfirm(inspection)}>
@@ -362,6 +371,11 @@ export function CleanInstallDialog({ product, inspection, label, onConfirm, onCl
       onClose={onClose}
       actions={actions}
     >
+      {changed && installed && (
+        <p>
+          {version} can't be installed over the files or settings in your {product.short} folder that were changed.
+        </p>
+      )}
       {installed ? (
         <p>
           Clean install moves your {product.short} folder aside and installs {version} fresh.
