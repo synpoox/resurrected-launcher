@@ -8,7 +8,7 @@
 
 ### Fixed
 
-- When a new D2R version stops your installed PD2R from working but the latest PD2R supports it, the launcher now offers Update instead of only saying it can't play.
+- When a new D2R version stops your installed PD2R from working but the latest PD2R supports it, the launcher now offers Update instead of only saying it can't play. The tray offers Update too.
 
 ## 0.1.4
 
