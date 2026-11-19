@@ -9,6 +9,7 @@
 ### Fixed
 
 - When a new D2R version stops your installed PD2R from working but the latest PD2R supports it, the launcher now offers Update instead of only saying it can't play.
+- Check again now looks for newly published releases, not just your files, so you no longer have to restart the launcher to see a new update.
 
 ## 0.1.4
 
