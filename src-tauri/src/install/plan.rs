@@ -157,6 +157,11 @@ fn check_request(state: &StateStore, req: &Request) -> Result<(), LauncherError>
             ))
         }
     }
+    if record.is_some_and(|r| !r.is_at(req.d2r)) {
+        return Err(invalid(
+            "the installed-release record belongs to another D2R location",
+        ));
+    }
     let installed_id = record.map(|r| r.release_id.as_str());
     let ok = match req.kind {
         Install | Adopt => installed_id.is_none(),
@@ -372,6 +377,7 @@ pub fn inspect(
             manifest_sha256: req.release_sha256,
             installed_at: secs,
             verified: true,
+            d2r_location: Some(req.d2r.to_path_buf()),
         };
         plan.record =
             RecordChange::Set(serde_json::to_value(record).map_err(|e| invalid(e.to_string()))?);

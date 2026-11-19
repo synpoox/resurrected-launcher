@@ -619,6 +619,7 @@ mod tests {
                 manifest_sha256: "ab".repeat(32).parse().unwrap(),
                 installed_at: 1_760_000_000,
                 verified: true,
+                d2r_location: None,
             })
             .unwrap();
         store

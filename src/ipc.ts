@@ -91,6 +91,8 @@ export interface InstalledRelease {
   manifest_sha256: string;
   installed_at: number;
   verified: boolean;
+  /** The D2R folder it was installed into; null for a record from an older launcher. */
+  d2r_location: string | null;
 }
 
 /** Mirrors `app::ReleaseSummary`. */

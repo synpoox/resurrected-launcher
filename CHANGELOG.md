@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- After you change the D2R location to a folder without PD2R, the page now offers Install instead of Update, Repair and Uninstall. Switching back to the original folder shows its real state.
+
 ## 0.1.5
 
 Community links in the sidebar, and the launcher now offers updates that fix an unsupported D2R version.

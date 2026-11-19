@@ -667,6 +667,7 @@ mod tests {
                 manifest_sha256: Sha256Digest::from_bytes([1; 32]).unwrap(),
                 installed_at: 0,
                 verified: true,
+                d2r_location: None,
             }),
             recommended: Some(release(recommended, false)),
             running: None,

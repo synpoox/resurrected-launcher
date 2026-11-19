@@ -107,6 +107,30 @@ pub struct InstalledRelease {
     /// written after `LiveVerified`); [`StateStore::mark_unverified`] sets `false`
     /// when a Repair starts, and that Repair's commit sets it back (#155).
     pub verified: bool,
+    /// The D2R folder the release was installed into (#260). A record only applies
+    /// while that folder is the selected location. `None` is a record from before
+    /// this field; `StateStore::open` fills it from the selected location.
+    #[serde(default)]
+    pub d2r_location: Option<PathBuf>,
+}
+
+fn same_folder(a: &Path, b: &Path) -> bool {
+    let norm = |p: &Path| {
+        p.to_string_lossy()
+            .trim_end_matches(['\\', '/'])
+            .to_lowercase()
+    };
+    norm(a) == norm(b)
+}
+
+impl InstalledRelease {
+    /// Whether this record describes an install in `location`. A record with no
+    /// location (not yet migrated) applies anywhere.
+    pub fn is_at(&self, location: &Path) -> bool {
+        self.d2r_location
+            .as_deref()
+            .is_none_or(|l| same_folder(l, location))
+    }
 }
 
 fn check_text(what: &str, s: &str) -> Result<(), String> {
@@ -235,13 +259,41 @@ impl StateStore {
             |c: &Vec<_>| validate_cache_index(c),
             &mut issues,
         );
-        Self {
+        let mut store = Self {
             dir: dir.to_owned(),
             preferences,
             installed,
             cache,
             issues: issues.0,
             blocked: issues.1,
+        };
+        store.fill_record_locations();
+        store
+    }
+
+    /// Migration (#260): records written before they carried a location belong to
+    /// the selected one. Best effort; unsaved records still work in memory.
+    fn fill_record_locations(&mut self) {
+        let Some(loc) = self.preferences.d2r_location.clone() else {
+            return;
+        };
+        if !self.installed.iter().any(|r| r.d2r_location.is_none())
+            || self.blocked.contains(&INSTALLED_FILE)
+        {
+            return;
+        }
+        let mut filled = self.installed.clone();
+        for r in filled.iter_mut().filter(|r| r.d2r_location.is_none()) {
+            r.d2r_location = Some(loc.clone());
+        }
+        if self.save_installed(filled).is_err() {
+            for r in self
+                .installed
+                .iter_mut()
+                .filter(|r| r.d2r_location.is_none())
+            {
+                r.d2r_location = Some(loc.clone());
+            }
         }
     }
 
@@ -298,8 +350,14 @@ impl StateStore {
         Ok(())
     }
 
+    /// The product's record, only while it describes the selected D2R location
+    /// (#260): elsewhere the product is not installed.
     pub fn installed_release(&self, product: &ProductId) -> Option<&InstalledRelease> {
-        self.installed.iter().find(|r| &r.product_id == product)
+        let loc = self.preferences.d2r_location.as_deref();
+        self.installed
+            .iter()
+            .find(|r| &r.product_id == product)
+            .filter(|r| loc.is_none_or(|l| r.is_at(l)))
     }
 
     pub fn installed_releases(&self) -> &[InstalledRelease] {
@@ -482,6 +540,7 @@ mod tests {
             manifest_sha256: sha256(release.as_bytes()),
             installed_at: 1_760_000_000,
             verified: true,
+            d2r_location: None,
         }
     }
 
@@ -556,6 +615,40 @@ mod tests {
             };
             store.set_preferences(prefs).unwrap();
         }
+    }
+
+    #[test]
+    fn record_applies_only_at_its_own_location_and_old_records_migrate() {
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b) = (absolute("d2r-a"), absolute("d2r-b"));
+        let prefs = |p: &PathBuf| Preferences {
+            d2r_location: Some(p.clone()),
+            ..Preferences::default()
+        };
+        // An installed-releases.json from before the field existed.
+        let old = serde_json::json!({"schema_version": 1, "data": [{
+            "product_id": "pd2r", "release_id": "0.4.1", "display_version": "alpha 0.4.1",
+            "manifest_sha256": record("0.4.1").manifest_sha256, "installed_at": 1, "verified": true}]});
+        fs::write(dir.path().join(INSTALLED_FILE), old.to_string()).unwrap();
+        let mut store = StateStore::open(dir.path());
+        assert!(store.issues().is_empty());
+        store.set_preferences(prefs(&a)).unwrap();
+        drop(store);
+        // First open with a location migrates the record to it, on disk too.
+        let mut store = StateStore::open(dir.path());
+        assert_eq!(
+            store.installed_release(&pd2r()).unwrap().d2r_location,
+            Some(a.clone())
+        );
+        let reopened = StateStore::open(dir.path());
+        assert_eq!(
+            reopened.installed_releases()[0].d2r_location,
+            Some(a.clone())
+        );
+        store.set_preferences(prefs(&b)).unwrap();
+        assert_eq!(store.installed_release(&pd2r()), None);
+        store.set_preferences(prefs(&a)).unwrap();
+        assert!(store.installed_release(&pd2r()).is_some());
     }
 
     #[test]
