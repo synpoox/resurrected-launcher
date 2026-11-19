@@ -66,7 +66,8 @@
 }
 
 /* Game logo in the hero's top-left corner, left edge shared with ribbon and title, above the
-   tabs' row and left of them. The extra line (PROJECT above, 09 below) is centred on the logo. */
+   tabs' row and left of them. The extra line (PROJECT above, 09 below) is centred on the logo.
+   --wm-k scales the lockup; every length is rounded to whole pixels so text and image stay crisp. */
 .wordmark {
   position: absolute;
   z-index: 1;
@@ -80,35 +81,35 @@
 
 .wordmark img {
   display: block;
-  width: 220px;
-  height: auto;
+  width: round(calc(220px * var(--wm-k, 1)), 1px);
+  height: round(calc(146px * var(--wm-k, 1)), 1px); /* 371/560 of the width, whole pixels */
 }
 
 /* Matches the logo's RESURRECTED line at 220px: weight, cap height, tracking and colour. */
 .wordmark-line {
   font-family: Cinzel, Georgia, serif;
   font-weight: 400;
-  font-size: 14.5px; /* 10px cap height, as RESURRECTED */
+  font-size: round(calc(15px * var(--wm-k, 1)), 1px);
   line-height: 1;
-  letter-spacing: 9px;
-  margin-right: -9px; /* the trailing letter-space would shift the centre */
+  letter-spacing: round(calc(9px * var(--wm-k, 1)), 1px);
+  margin-right: calc(-1 * round(calc(9px * var(--wm-k, 1)), 1px)); /* the trailing letter-space would shift the centre */
   text-transform: uppercase;
   color: var(--wordmark);
 }
 
-/* The logo image has 17px of empty rows above the flames and 6px below the lower flame:
-   these margins leave a 2px gap to each. PROJECT is 1.5x RESURRECTED (15px caps). */
+/* The logo image has empty rows above the flames and below the lower flame: these margins
+   leave a small gap to each. PROJECT is 1.5x RESURRECTED. */
 .wordmark-line:first-child {
-  font-size: 21.5px;
-  letter-spacing: 13px;
-  margin-right: -13px;
-  margin-bottom: -19.5px;
+  font-size: round(calc(22px * var(--wm-k, 1)), 1px);
+  letter-spacing: round(calc(13px * var(--wm-k, 1)), 1px);
+  margin-right: calc(-1 * round(calc(13px * var(--wm-k, 1)), 1px));
+  margin-bottom: calc(-1 * round(calc(21px * var(--wm-k, 1)), 1px));
 }
 
 .wordmark-line:last-child {
-  margin-top: -5px;
-  letter-spacing: 1px;
-  margin-right: -1px;
+  margin-top: 0;
+  letter-spacing: round(calc(1px * var(--wm-k, 1)), 1px);
+  margin-right: calc(-1 * round(calc(1px * var(--wm-k, 1)), 1px));
 }
 
 .ribbon {
