@@ -1947,6 +1947,7 @@ fn unstamp(rig: &Rig) {
     let mut state = launcher.state.lock().unwrap();
     let mut old = state.installed_releases()[0].clone();
     old.d2r_location = None;
+    state.remove_installed(&old.product_id).unwrap();
     state.mark_installed(old).unwrap();
 }
 
