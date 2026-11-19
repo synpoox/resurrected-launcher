@@ -140,15 +140,15 @@
 .social {
   margin-top: auto;
   display: flex;
-  gap: 4px;
-  padding: 0 16px;
+  justify-content: space-evenly;
+  padding: 0 8px;
 }
 
 .social-link {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 46px;
+  height: 46px;
   color: var(--muted);
   transition: color var(--dur-fast) var(--ease-standard);
 }
@@ -158,8 +158,8 @@
 }
 
 .social-icon {
-  width: 16px;
-  height: 16px;
+  width: 28px;
+  height: 28px;
   fill: currentColor;
 }
 
