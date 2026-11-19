@@ -491,6 +491,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
       kind: request.kind,
       release,
       files_replaced_or_removed: request.kind === "repair" ? 3 : 120,
+      files_to_backup: request.kind === "uninstall" ? 2 : 0,
       files_added: request.kind === "install" ? 2341 : 4,
       files_kept: 0,
       preserved: request.kind === "uninstall" ? ["d2rloader/config.ini", "lootfilter/default.filter"] : [],

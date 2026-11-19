@@ -116,7 +116,17 @@ fn clean_install_backup_is_retained_through_later_operations_and_recovery() {
     kept("update", &to_3.run(rig, &NoFaults).unwrap());
 
     let uninstall = Op::new(rig, Uninstall, PD2R_3, Some(to_3.manifest.clone()));
-    kept("uninstall", &uninstall.run(rig, &NoFaults).unwrap());
+    // Uninstall reports only a backup it made itself (#266); the old one stays on disk.
+    assert!(uninstall
+        .run(rig, &NoFaults)
+        .unwrap()
+        .clean_install_backups
+        .is_empty());
+    assert_eq!(
+        names(&clean_install_backups(&s.root)),
+        names(std::slice::from_ref(backup))
+    );
+    assert!(tree(backup) == s.old, "uninstall: the backup changed");
 
     // A second clean install adds a second backup and keeps the first.
     let again = Op::new(rig, CleanInstall, PD2R_1, None);
@@ -179,6 +189,33 @@ fn uninstall_keeps_a_loot_filter_edited_after_inspection() {
         Some(ErrorCode::InventoryMismatch)
     );
     late.assert_kept(&rig);
+}
+
+/// #266: a managed file whose bytes differ from the release leaves the product
+/// folder for the labelled backup; the edited shipped default stays.
+#[test]
+fn uninstall_moves_a_changed_managed_file_to_the_backup() {
+    let rig = Rig::new();
+    let m1 = rig.install_1();
+    let root = rig.root();
+    let filter = edit_loot_filter(&root);
+    fs::write(root.join(ARMOR), b"changed armor").unwrap();
+
+    Op::new(&rig, Uninstall, PD2R_1, Some(m1))
+        .run(&rig, &NoFaults)
+        .unwrap();
+
+    assert_eq!(
+        tree(&root),
+        with_file(empty_root(), LOOT_FILTER, &filter),
+        "only the edited default stays"
+    );
+    let backups = clean_install_backups(&root);
+    assert_eq!(backups.len(), 1);
+    assert_eq!(
+        tree(&backups[0]),
+        with_file(Tree::new(), ARMOR, b"changed armor")
+    );
 }
 
 /// The player edits the untouched loot filter default once the run passes `at`

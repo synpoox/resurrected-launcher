@@ -301,6 +301,7 @@ impl Fixture {
         Plan {
             kind: case.kind,
             to_backup: rels(&case.to_backup),
+            to_keep: Vec::new(),
             to_live: rels(&case.to_live),
             carry_forward: rels(&case.carry_forward),
             prune_if_empty: rels(&case.prune_if_empty),

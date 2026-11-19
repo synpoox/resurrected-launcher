@@ -183,6 +183,8 @@ export interface Inspection {
   kind: OperationKind;
   release: ReleaseSummary;
   files_replaced_or_removed: number;
+  /** Uninstall: changed release files that move to a backup folder (issue 266). */
+  files_to_backup: number;
   files_added: number;
   /** Release files already in place and left as they are; with no installed release, an
    *  existing installation the launcher didn't make (issue 126). */

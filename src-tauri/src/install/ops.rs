@@ -271,6 +271,7 @@ pub fn run(env: &Env, req: &Request) -> Result<Report, LauncherError> {
     let insp = plan::inspect(&*lock(env.state)?, req, guard.root())?;
     refuse(&insp.conflicts)?;
     let preserved = insp.preserved.clone();
+    let kept_files = !insp.plan.to_keep.is_empty();
     let sink = Records {
         state: env.state,
         product: &req.release.product_id,
@@ -301,7 +302,12 @@ pub fn run(env: &Env, req: &Request) -> Result<Report, LauncherError> {
     };
     Ok(Report {
         kind: req.kind,
-        clean_install_backups: clean_install_backups(&root),
+        // Uninstall reports only the backup it made, never older clean-install ones.
+        clean_install_backups: match (req.kind == Uninstall, kept_files) {
+            (false, _) => clean_install_backups(&root),
+            (true, true) => clean_install_backups(&root).pop().into_iter().collect(),
+            (true, false) => Vec::new(),
+        },
         product_root: root,
         preserved,
         remaining,

@@ -199,6 +199,7 @@ pub fn inspect(
         plan: Plan {
             kind,
             to_backup: Vec::new(),
+            to_keep: Vec::new(),
             to_live: Vec::new(),
             carry_forward: Vec::new(),
             prune_if_empty: Vec::new(),
@@ -225,7 +226,8 @@ pub fn inspect(
         .collect();
 
     if kind == Uninstall {
-        // Only files whose bytes prove they came from the release are removed.
+        // Byte-identical release files are removed; other managed files (changed,
+        // damaged) go to the labelled backup; edited shipped defaults stay (#266).
         for f in new.inventory.files() {
             match on_disk(&under(root, &f.path))? {
                 OnDisk::File(d) if is(&d, f) => {
@@ -233,6 +235,10 @@ pub fn inspect(
                     insp.expect_backup.push((f.path.to_string(), Want::File(d)));
                     expect.push((f.path.to_string(), Want::Absent));
                     recovery += d.0;
+                }
+                OnDisk::File(_) if new.ownership_of(&f.path) == Ownership::Managed => {
+                    plan.to_keep.push(f.path.clone());
+                    expect.push((f.path.to_string(), Want::Absent));
                 }
                 OnDisk::File(d) => {
                     insp.preserved.push(f.path.clone());

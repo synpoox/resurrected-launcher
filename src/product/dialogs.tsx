@@ -226,7 +226,7 @@ export interface UninstallProps {
 export function UninstallDialog({ product, inspection, report, busy, onConfirm, onClose }: UninstallProps) {
   const api = useApi();
   const toast = useToast();
-  const open = (folder: "saves" | "settings") =>
+  const open = (folder: "saves" | "settings" | "clean_install_backup") =>
     void api.openFolder(product.id, folder).catch((e: unknown) => toast.show({ tone: "error", text: asError(e).message }));
   if (report) {
     return (
@@ -247,10 +247,21 @@ export function UninstallDialog({ product, inspection, report, busy, onConfirm, 
                 Open {product.short} folder
               </button>
             )}
+            {report.clean_install_backups.length > 0 && (
+              <button type="button" className="btn ghost" onClick={() => open("clean_install_backup")}>
+                Open backup folder
+              </button>
+            )}
           </>
         }
       >
         <p>Your saves and settings were kept.</p>
+        {report.remaining.length > 0 && (
+          <p>
+            {report.remaining.length === 1 ? "1 file stayed" : `${report.remaining.length} files stayed`} in the{" "}
+            {product.short} folder: your edited settings and files the launcher didn't install.
+          </p>
+        )}
       </Dialog>
     );
   }
@@ -273,6 +284,12 @@ export function UninstallDialog({ product, inspection, report, busy, onConfirm, 
       }
     >
       <p>{`This removes ${product.short}'s game files only.`}</p>
+      {inspection && inspection.files_to_backup > 0 && (
+        <p>
+          {inspection.files_to_backup === 1 ? "1 changed file moves" : `${inspection.files_to_backup} changed files move`} to a
+          backup folder next to the {product.short} folder.
+        </p>
+      )}
       {!inspection && <Inspecting text={`Checking ${product.short}'s files…`} />}
       <ul className="kept">
         <li>

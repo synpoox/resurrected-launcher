@@ -73,7 +73,9 @@ pub struct Paths {
     pub backup: PathBuf,
     /// Where the download (#35) writes the archive.
     pub archive: PathBuf,
-    /// Clean install only: the labelled backup `K`, never silently deleted.
+    /// Clean install, or uninstall with changed managed files: the labelled backup
+    /// `K`, never silently deleted by a commit (a rolled-back uninstall removes its
+    /// empty `K`).
     pub clean_backup: Option<PathBuf>,
 }
 
@@ -94,7 +96,10 @@ impl Paths {
 
     /// Scratch the transaction owns outright and may delete whole.
     fn is_scratch(&self, p: &Path) -> bool {
-        [&self.staging, &self.backup, &self.archive].contains(&&p.to_path_buf())
+        [&self.staging, &self.backup, &self.archive]
+            .into_iter()
+            .chain(&self.clean_backup)
+            .any(|s| s == p)
     }
 }
 
@@ -359,7 +364,9 @@ impl Journal {
         let mut want = Paths::for_root(root);
         want.clean_backup = journal.paths.clean_backup.clone();
         let clean = journal.kind == OperationKind::CleanInstall;
-        if journal.paths != want || clean != is_clean_backup_of(root, &want.clean_backup) {
+        let keeps = clean
+            || (journal.kind == OperationKind::Uninstall && journal.paths.clean_backup.is_some());
+        if journal.paths != want || keeps != is_clean_backup_of(root, &want.clean_backup) {
             return Err(unreadable(
                 "its paths do not belong to this product root".into(),
             ));
@@ -684,12 +691,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("PD2R");
         let mut paths = Paths::for_root(&root);
-        let journal = |paths: Paths, kind| Journal {
+        let journal = |paths: Paths, kind| {
+            Journal {
             version: JOURNAL_VERSION,
             kind,
             paths,
             plan: serde_json::from_value(serde_json::json!({
-                "kind": "update", "to_backup": [], "to_live": [], "carry_forward": [],
+                "kind": "update", "to_backup": [], "to_keep": [], "to_live": [], "carry_forward": [],
                 "prune_if_empty": [], "record": "remove",
                 "space": {"download": 0, "staging": 0, "recovery_copy": 0}
             }))
@@ -698,6 +706,7 @@ mod tests {
             reached: None,
             rollback_reason: None,
             steps: vec![],
+        }
         };
         journal(paths.clone(), OperationKind::Update)
             .save()
@@ -724,6 +733,11 @@ mod tests {
         );
         clean.clean_backup = Some(clean_backup_path(&root, 42));
         journal(clean, OperationKind::CleanInstall).save().unwrap();
+        assert!(Journal::load(&root).unwrap().is_some());
+
+        let mut un = Paths::for_root(&root);
+        un.clean_backup = Some(clean_backup_path(&root, 42));
+        journal(un, OperationKind::Uninstall).save().unwrap();
         assert!(Journal::load(&root).unwrap().is_some());
     }
 

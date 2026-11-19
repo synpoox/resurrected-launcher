@@ -57,6 +57,10 @@ pub struct Plan {
     /// Managed regular files moved `L` -> `B` (replaced or removed). Never player
     /// or unknown files.
     pub to_backup: Vec<RelativePath>,
+    /// Uninstall: managed files whose bytes differ from the release, moved `L` -> `K`
+    /// (the labelled backup) instead of `B`, so the player can still get them back.
+    #[serde(default)]
+    pub to_keep: Vec<RelativePath>,
     /// Entries moved `S` -> `L`. Ignored by clean install, which moves `S` whole.
     pub to_live: Vec<RelativePath>,
     /// Clean install: recognised player files copied `K` -> new `L`.
@@ -170,6 +174,7 @@ impl Tx<'_> {
             .plan
             .to_backup
             .iter()
+            .chain(&self.j.plan.to_keep)
             .map(|x| under(root, x))
             .collect()
     }
@@ -194,6 +199,17 @@ impl Tx<'_> {
                         ));
                     }
                     let to = confined(&p.backup, x)?;
+                    entries.push(Entry::Rename(PlannedRename { from, to }));
+                }
+                for x in &plan.to_keep {
+                    let from = confined(&p.root, x)?;
+                    if !std::fs::symlink_metadata(&from).is_ok_and(|m| m.is_file()) {
+                        return Err(LauncherError::new(
+                            ErrorCode::InventoryMismatch,
+                            format!("managed file {x} is not a regular file in the live root"),
+                        ));
+                    }
+                    let to = confined(&keep()?, x)?;
                     entries.push(Entry::Rename(PlannedRename { from, to }));
                 }
             }
@@ -287,6 +303,13 @@ impl Tx<'_> {
                         .collect::<Result<_, _>>()?;
                     prune.sort_by_key(|d| std::cmp::Reverse(d.components().count()));
                     entries.extend(prune.into_iter().map(|path| Entry::RemoveDir { path }));
+                } else if plan.kind == OperationKind::Uninstall {
+                    // Rolled back: the changed files are home again, so `K` is empty dirs.
+                    entries.extend(
+                        p.clean_backup
+                            .iter()
+                            .map(|path| Entry::Delete { path: path.clone() }),
+                    );
                 }
             }
             _ => unreachable!("{b:?} is not multi-entry"),
@@ -477,7 +500,9 @@ pub fn run(
         ));
     }
     let mut paths = Paths::for_root(root);
-    if plan.kind == OperationKind::CleanInstall {
+    if plan.kind == OperationKind::CleanInstall
+        || (plan.kind == OperationKind::Uninstall && !plan.to_keep.is_empty())
+    {
         let secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
