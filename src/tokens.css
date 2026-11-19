@@ -27,8 +27,7 @@
   --clear: #10101100; /* hero gradient end: --bg at 0% */
   --hover-tint: #ffffff0f; /* selected radio row */
   --white: #fff; /* text on --button and --ribbon */
-  --wordmark: #a08868; /* bronze of the logo RESURRECTED line */
-  --wordmark-shadow: #1a1208;
+  --wordmark: #81614a; /* median of the logo RESURRECTED line pixels */
   --button-coral: #cc4a3f; /* primary button gradient end (white text 4.55:1, AA) */
   --button-hover-coral: #cf483d; /* hover gradient end (white text 4.52:1, AA) */
   --glow: #e3353d59; /* primary button outer glow: --accent at 35% */

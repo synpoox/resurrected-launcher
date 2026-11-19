@@ -38,15 +38,15 @@ Not yet proven: compatibility with real PD2R release archives (slice 3 gate in #
 2. Unpack with that `7zr.exe`, then copy only `x64/7za.exe` and `License.txt` here.
 3. Update `SEVEN_ZIP_VERSION`, `SEVEN_ZIP_SIZE` and `SEVEN_ZIP_SHA256` in `extract.rs` and the tables above, then run `cargo test`.
 
-## Cinzel Bold (bundled font)
+## Cinzel Regular (bundled font)
 
-The product page logo lockup sets its "Project" and "09" lines in Cinzel Bold (#262).
+The product page logo lockup sets its "Project" and "09" lines in Cinzel Regular (#262).
 
 | | |
 | --- | --- |
-| Product | Cinzel, weight 700, latin subset (`cinzel-bold.woff2`, 15,184 bytes) |
+| Product | Cinzel, weight 400, latin subset (`cinzel-regular.woff2`, 14,128 bytes) |
 | Authors | The Cinzel Project Authors (<https://github.com/NDISCOVER/Cinzel>) |
-| Source | npm package `@fontsource/cinzel` 5.3.0 (`files/cinzel-latin-700-normal.woff2`) |
+| Source | npm package `@fontsource/cinzel` 5.3.0 (`files/cinzel-latin-400-normal.woff2`) |
 | License | SIL Open Font License 1.1, shipped unchanged as `src/product/fonts/OFL.txt` |
 
-Files: `src/product/fonts/cinzel-bold.woff2` and `src/product/fonts/OFL.txt`. The CSP has no `font-src`, so `default-src 'self'` allows the bundled file.
+Files: `src/product/fonts/cinzel-regular.woff2` and `src/product/fonts/OFL.txt`. The CSP has no `font-src`, so `default-src 'self'` allows the bundled file.
