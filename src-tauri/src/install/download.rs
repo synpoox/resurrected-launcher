@@ -21,6 +21,13 @@ use crate::contract::{ErrorCode, LauncherError, Sha256Digest};
 
 const MAX_REDIRECTS: usize = 10;
 const CHUNK: usize = 64 * 1024;
+/// A read that gets no byte for this long fails, so a half-open connection can't hang a download.
+const READ_STALL: Duration = Duration::from_secs(30);
+/// Slowest tolerated archive speed, and the fixed allowance on top of it.
+const MIN_BYTES_PER_SEC: u64 = 50 * 1024;
+const BASE_DEADLINE: Duration = Duration::from_secs(60);
+/// Deadline for downloads of unknown size (the feed).
+const METADATA_DEADLINE: Duration = Duration::from_secs(120);
 
 /// How [`Downloader::fetch`] obtained the verified archive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,6 +150,9 @@ fn require_public(url: &str, public_only: bool) -> Result<(), LauncherError> {
 pub struct Downloader {
     agent: ureq::Agent,
     public_only: bool,
+    /// Tests only: replaces the whole-request deadline.
+    #[cfg(test)]
+    deadline_override: Option<Duration>,
 }
 
 impl Default for Downloader {
@@ -165,8 +175,6 @@ impl Downloader {
     /// fixture server is `127.0.0.1:<port>`). Not for production use.
     #[doc(hidden)]
     pub fn with_tls(tls: TlsConfig) -> Self {
-        // shortcut: cancel is checked between reads, so a stalled read waits for the
-        // server or the connection to drop; add an idle-read timeout if that bites.
         let agent = ureq::Agent::config_builder()
             .https_only(true)
             // Redirects are followed by hand so every hop is checked for HTTPS.
@@ -180,10 +188,19 @@ impl Downloader {
         Self {
             agent,
             public_only: false,
+            #[cfg(test)]
+            deadline_override: None,
         }
     }
 
-    fn get(&self, url: &str) -> Result<ureq::http::Response<ureq::Body>, LauncherError> {
+    /// `deadline` bounds each request hop, headers and body together.
+    fn get(
+        &self,
+        url: &str,
+        deadline: Duration,
+    ) -> Result<ureq::http::Response<ureq::Body>, LauncherError> {
+        #[cfg(test)]
+        let deadline = self.deadline_override.unwrap_or(deadline);
         let mut url = url.to_owned();
         for _ in 0..=MAX_REDIRECTS {
             require_https(&url)?;
@@ -191,6 +208,10 @@ impl Downloader {
             let response = self
                 .agent
                 .get(&url)
+                .config()
+                .timeout_global(Some(deadline))
+                .timeout_per_read(Some(deadline.min(READ_STALL)))
+                .build()
                 .call()
                 .map_err(|e| failed(format!("request failed: {e}")))?;
             let status = response.status();
@@ -326,7 +347,11 @@ impl Downloader {
             Expect::Exact { size, sha256 } => (size, Some(sha256)),
             Expect::AtMost(max) => (max, None),
         };
-        let response = self.get(url)?;
+        let deadline = match sha256 {
+            Some(_) => BASE_DEADLINE + Duration::from_secs(limit / MIN_BYTES_PER_SEC),
+            None => METADATA_DEADLINE,
+        };
+        let response = self.get(url, deadline)?;
         let announced = response
             .headers()
             .get("content-length")
@@ -605,6 +630,59 @@ pub(crate) mod tests {
         let src = source(fixture.url("/archive"), &bytes);
         assert_eq!(fetch(&fixture, &src, &paths).unwrap(), Fetched::Downloaded);
         assert_eq!(fs::read(paths.archive()).unwrap(), bytes);
+    }
+
+    /// Headers and a first chunk, then silence: a half-open connection.
+    fn stalling_fixture(bytes: &[u8]) -> Fixture {
+        let first = bytes[..1000].to_vec();
+        let len = bytes.len();
+        Fixture::serve(move |_, _, out| {
+            let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {len}\r\n\r\n");
+            let _ = out.write_all(head.as_bytes());
+            let _ = out.write_all(&first);
+            let _ = out.flush();
+            std::thread::sleep(Duration::from_secs(20));
+        })
+    }
+
+    #[test]
+    fn stalled_download_fails_within_the_deadline() {
+        let bytes = archive_bytes();
+        let fixture = stalling_fixture(&bytes);
+        let (_dir, _guard, paths) = disposable_root();
+        let mut downloader = fixture.downloader();
+        downloader.deadline_override = Some(Duration::from_millis(500));
+        let started = std::time::Instant::now();
+        let err = downloader
+            .fetch(
+                &source(fixture.url("/archive"), &bytes),
+                &paths,
+                &AtomicBool::new(false),
+                &mut |_, _| {},
+            )
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::DownloadFailed, "{err}");
+        assert!(started.elapsed() < Duration::from_secs(10));
+        assert_nothing_left(&paths);
+    }
+
+    #[test]
+    fn cancel_still_stops_a_download_that_is_arriving() {
+        let bytes = archive_bytes();
+        let fixture = stalling_fixture(&bytes);
+        let (_dir, _guard, paths) = disposable_root();
+        let cancel = AtomicBool::new(false);
+        let err = fixture
+            .downloader()
+            .fetch(
+                &source(fixture.url("/archive"), &bytes),
+                &paths,
+                &cancel,
+                &mut |_, _| cancel.store(true, Ordering::Relaxed),
+            )
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::Cancelled, "{err}");
+        assert_nothing_left(&paths);
     }
 
     #[test]
