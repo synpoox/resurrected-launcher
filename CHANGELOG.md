@@ -5,6 +5,7 @@
 ### Fixed
 
 - If you change the D2R location to a folder without PD2R, the launcher now offers Install there instead of Update, Repair and Uninstall.
+- Install, Update and Repair no longer fail with "cannot write ... (os error 3)" when the D2R folder has no PD2Resurrected folder yet. The launcher now creates it.
 
 ## 0.1.5
 
