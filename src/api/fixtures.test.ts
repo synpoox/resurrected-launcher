@@ -22,6 +22,10 @@ describe("fixtures", () => {
     const overlays: Record<string, string> = {
       "d2r-choose": "d2r-missing",
       "loader-modified": "loader-missing",
+      "loader-update": "update",
+      "mod-missing": "repair-needed",
+      "recovery-required": "blocked",
+      "startup-failed-update": "update",
       "save-breaking": "update",
       "save-breaking-skipped": "update",
       "build-unsupported-update": "update",

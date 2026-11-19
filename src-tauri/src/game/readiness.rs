@@ -118,21 +118,59 @@ pub fn assess(
             update_fixes,
         });
     }
+    if let Some(issue) = loader_issue(root, manifest, cache, host)? {
+        // Like #249: the recommended release may allow the loader that is installed.
+        let update_fixes = match (facts.installed, facts.recommended) {
+            (Some(i), Some(r)) if r.release_id != i.release_id => {
+                supports(r)? && loader_issue(root, r, cache, host)?.is_none()
+            }
+            _ => false,
+        };
+        return Ok(match issue {
+            Readiness::LoaderUnsupported { found, allowed, .. } => Readiness::LoaderUnsupported {
+                found,
+                allowed,
+                update_fixes,
+            },
+            Readiness::LoaderModified { file, version, .. } => Readiness::LoaderModified {
+                file,
+                version,
+                update_fixes,
+            },
+            other => other,
+        });
+    }
+    Ok(match (facts.installed, facts.recommended) {
+        (None, _) => Readiness::NotInstalled,
+        (Some(_), _) if facts.unverified => Readiness::RepairNeeded,
+        (Some(i), Some(r)) if r.release_id != i.release_id => Readiness::UpdateAvailable,
+        _ => Readiness::Ready,
+    })
+}
+
+/// The first loader reason Play is refused against `manifest` (`update_fixes` unset), if any.
+fn loader_issue(
+    root: &Path,
+    manifest: &ReleaseManifest,
+    cache: &BuildHashCache,
+    host: &dyn GameHost,
+) -> Result<Option<Readiness>, LauncherError> {
     let mut versions = Vec::new();
     for file in LOADER_FILES {
         let path = root.join(file);
         let version = regular_file(&path).and_then(|_| host.product_version(&path).ok().flatten());
         match version {
             Some(v) => versions.push((file, v)),
-            None => return Ok(Readiness::LoaderMissing),
+            None => return Ok(Some(Readiness::LoaderMissing)),
         }
     }
     let allowed = &manifest.compatibility.loader_versions;
     if let Some((_, found)) = versions.iter().find(|(_, v)| !allowed.contains(v)) {
-        return Ok(Readiness::LoaderUnsupported {
+        return Ok(Some(Readiness::LoaderUnsupported {
             found: found.clone(),
             allowed: allowed.clone(),
-        });
+            update_fixes: false,
+        }));
     }
     for (file, version) in versions {
         let pins: Vec<_> = manifest
@@ -153,18 +191,14 @@ pub fn assess(
             }
         }
         if !official {
-            return Ok(Readiness::LoaderModified {
+            return Ok(Some(Readiness::LoaderModified {
                 file: file.to_string(),
                 version,
-            });
+                update_fixes: false,
+            }));
         }
     }
-    Ok(match (facts.installed, facts.recommended) {
-        (None, _) => Readiness::NotInstalled,
-        (Some(_), _) if facts.unverified => Readiness::RepairNeeded,
-        (Some(i), Some(r)) if r.release_id != i.release_id => Readiness::UpdateAvailable,
-        _ => Readiness::Ready,
-    })
+    Ok(None)
 }
 
 /// Metadata of `path` when it is a regular file, not a link or reparse point.

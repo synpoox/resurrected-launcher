@@ -15,3 +15,7 @@ Use the five default triage labels. Read `docs/agents/triage-labels.md` before t
 ### Domain docs
 
 Use a single-context layout. Read `docs/agents/domain.md` before exploring the codebase.
+
+### Changelog
+
+Player-visible changes add a fragment in `changelog.d/` (see its README); never edit `CHANGELOG.md` except in a release PR.

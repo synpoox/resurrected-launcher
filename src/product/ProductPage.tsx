@@ -12,6 +12,7 @@ import type {
   ReleaseNotes,
   TrayRequest,
 } from "../api/types";
+import { isLauncherError } from "../api/types";
 import type { Product } from "../products";
 import { arrowKeys } from "../ui/focus";
 import { Menu, type MenuItem } from "../ui/Menu";
@@ -358,7 +359,12 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
       if (state.readiness.status === "recovery_required") await api.recoverProduct(product.id);
       await refresh();
     } catch (e) {
-      fail(e);
+      const code = isLauncherError(e) ? e.code : null;
+      if (code === "access_denied") {
+        toast.show({ tone: "error", text: `Close any File Explorer windows open in the ${product.short} folder, then choose Check again.` });
+      } else if (code === "game_running") {
+        toast.show({ tone: "error", text: "Quit Diablo II: Resurrected, then choose Check again." });
+      } else fail(e);
     }
   };
   const tryCatalog = () => api.refreshCatalog().then(refresh, fail);
@@ -396,7 +402,8 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
   const offered = recommended ? label(recommended.release_id, recommended.display_version) : null;
 
   // While the game runs the menu stays, and what needs it closed says why (issue 156).
-  const quitFirst = journey === "running" ? `Quit ${product.short} first` : undefined;
+  const recovering = state.readiness.status === "recovery_required";
+  const quitFirst = journey === "running" ? `Quit ${product.short} first` : recovering ? "Choose Check again first" : undefined;
   const manageItems: MenuItem[] = [
     { label: "Repair", disabledReason: quitFirst, onSelect: () => void runAction("repair") },
     { label: "Clean install…", disabledReason: quitFirst, onSelect: () => void runAction("clean_install") },
@@ -478,6 +485,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           <>
             {busy("primary", "Get D2RLoader", "loader", () => api.openLoaderDownloadPage().catch(fail))}
             {!compact && busy("ghost", "Check again", "check", checkAgain)}
+            {!compact && installed && manage}
           </>
         );
       case "install": {
@@ -582,7 +590,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         return (
           <>
             {busy("primary", "Update", "update", () => operate("update"))}
-            {!compact && installed && state.readiness.status !== "build_unsupported" && busy("ghost", `Play ${installed.display_version}`, "play", play)}
+            {!compact && installed && !["build_unsupported", "loader_unsupported", "loader_modified"].includes(state.readiness.status) && busy("ghost", `Play ${installed.display_version}`, "play", play)}
             {!compact && manage}
             {!compact && offered && line("new", `${offered} available`)}
           </>
@@ -597,6 +605,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
               </span>
             )}
             {!compact && busy("ghost", "Check again", "check", checkAgain)}
+            {!compact && recovering && ghost("Export diagnostics", onOpenSettings)}
             {!compact && manage}
           </>
         );
@@ -617,7 +626,8 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
         return (
           <>
             {busy("primary", "Repair", "repair", () => operate("repair"))}
-            {!compact && installed && busy("ghost", `Play ${installed.display_version}`, "play", play)}
+            {!compact && installed && recommended && recommended.release_id !== installed.release_id && busy("ghost", "Update", "update", () => operate("update"))}
+            {!compact && installed && !state.mod_missing && busy("ghost", `Play ${installed.display_version}`, "play", play)}
             {!compact && manage}
           </>
         );
@@ -627,6 +637,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
             {busy("primary", "Try again", "play", play)}
             {!compact && busy("ghost", "Repair", "repair", () => operate("repair"))}
             {!compact && ghost("Export diagnostics", onOpenSettings)}
+            {!compact && manage}
           </>
         );
       case "offline-empty":
@@ -637,6 +648,17 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           </>
         );
     }
+  };
+
+  const startupNotice = (): ReactNode => {
+    const code = state.startup_failed?.exit_code;
+    return (
+      <Notice tone="error">
+        <b>The game closed while starting</b>
+        {code !== null && code !== undefined ? ` (exit code ${code})` : ""}. Try again. If it keeps happening, Repair
+        restores {product.short}'s files and keeps your saves and edited filters.
+      </Notice>
+    );
   };
 
   const notice = (): ReactNode => {
@@ -704,7 +726,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
                   <li>
                     {r.status === "build_unsupported"
                       ? "Check for a launcher or PD2R update, or restore the supported D2R build."
-                      : "Choose Check again. If it keeps failing, use Repair from the ⋯ menu."}
+                      : `Choose Check again. If it keeps failing, close any File Explorer windows open in the ${product.short} folder, or use Export diagnostics.`}
                   </li>
                   <li>Choose Check again.</li>
                 </ol>
@@ -719,16 +741,15 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
             restores them and keeps your saves and edited filters.
           </Notice>
         );
-      case "startup-failed": {
-        const code = state.startup_failed?.exit_code;
-        return (
-          <Notice tone="error">
-            <b>The game closed while starting</b>
-            {code !== null && code !== undefined ? ` (exit code ${code})` : ""}. Try again. If it keeps happening, Repair
-            restores {product.short}'s files and keeps your saves and edited filters.
+      case "startup-failed":
+        return startupNotice();
+      case "update":
+        if (state.startup_failed) return startupNotice();
+        return r.status === "loader_unsupported" || r.status === "loader_modified" ? (
+          <Notice>
+            <b>This D2RLoader isn't allowed by your installed {product.short}</b>, but {offered} allows it. Update fixes it.
           </Notice>
-        );
-      }
+        ) : null;
       default:
         return null;
     }

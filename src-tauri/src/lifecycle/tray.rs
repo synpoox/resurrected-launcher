@@ -210,8 +210,14 @@ pub fn view(
         Readiness::UpdateAvailable
         | Readiness::BuildUnsupported {
             update_fixes: true, ..
+        }
+        | Readiness::LoaderUnsupported {
+            update_fixes: true, ..
+        }
+        | Readiness::LoaderModified {
+            update_fixes: true, ..
         } => {
-            // The installed release can't run the current D2R build, so no Play then.
+            // The installed release can't run with this build or loader, so no Play then.
             let can_play = matches!(state.readiness, Readiness::UpdateAvailable);
             let newer = state
                 .recommended
@@ -232,10 +238,14 @@ pub fn view(
         Readiness::RepairNeeded => shown(
             Overlay::Error,
             "Repair didn't finish".into(),
-            vec![
-                action("show", "Show what happened".into()),
-                action("play", format!("Play {installed}")),
-            ],
+            [
+                Some(action("show", "Show what happened".into())),
+                // The mod folder is gone: the backend refuses Play until Repair restores it.
+                (!state.mod_missing).then(|| action("play", format!("Play {installed}"))),
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
         ),
         Readiness::NotInstalled => shown(Overlay::Idle, "Not installed".into(), vec![]),
         // Also every product until startup recovery finished.
@@ -680,6 +690,7 @@ mod tests {
             },
             cancelling: false,
             startup_failed: None,
+            mod_missing: false,
         }
     }
 
@@ -775,6 +786,32 @@ mod tests {
         assert_eq!(stuck.overlay, Overlay::Error);
         assert_eq!(stuck.status, "PD2R: D2R version not supported");
         assert!(!labels(&stuck).iter().any(|l| l.contains("[update:")));
+    }
+
+    #[test]
+    fn loader_offers_update_only_when_it_fixes_it() {
+        let loader = |update_fixes| Readiness::LoaderUnsupported {
+            found: "1.4.0".into(),
+            allowed: vec!["1.3.1-beta".into()],
+            update_fixes,
+        };
+        let fixed = view(&state(loader(true), Some("0.4.1"), "0.4.2"), None, None);
+        assert_eq!(fixed.overlay, Overlay::Update);
+        assert_eq!(labels(&fixed), ["Update PD2R [update:pd2r]"]);
+        let stuck = view(&state(loader(false), Some("0.4.1"), "0.4.2"), None, None);
+        assert_eq!(stuck.overlay, Overlay::Error);
+    }
+
+    #[test]
+    fn repair_needed_offers_no_play_when_the_mod_folder_is_gone() {
+        let mut s = state(Readiness::RepairNeeded, Some("0.4.2"), "0.4.2");
+        assert!(labels(&view(&s, None, None))
+            .iter()
+            .any(|l| l.contains("[play:")));
+        s.mod_missing = true;
+        assert!(!labels(&view(&s, None, None))
+            .iter()
+            .any(|l| l.contains("[play:")));
     }
 
     #[test]
