@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.5
+
+Community links in the sidebar, and the launcher now offers updates that fix an unsupported D2R version.
 
 ### New
 
