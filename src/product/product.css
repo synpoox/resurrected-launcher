@@ -47,6 +47,46 @@
   max-width: min(560px, calc(100% - 120px - var(--feed-width)));
 }
 
+/* Cinzel Bold (OFL, src/product/fonts/OFL.txt): the Roman inscriptional capitals of the logo's RESURRECTED line. */
+@font-face {
+  font-family: Cinzel;
+  font-weight: 700;
+  font-display: block;
+  src: url("./fonts/cinzel-bold.woff2?no-inline") format("woff2");
+}
+
+/* Game logo at the top left of the hero copy, left edge shared with ribbon and title. The extra
+   line (PROJECT above, 09 below) is centred on the logo's width. */
+.wordmark {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+  gap: 6px;
+}
+
+.wordmark img {
+  display: block;
+  width: 220px;
+  height: auto;
+}
+
+.wordmark-line {
+  font-family: Cinzel, Georgia, serif;
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1;
+  letter-spacing: 0.5em;
+  margin-right: -0.5em; /* the trailing letter-space would shift the centre */
+  text-transform: uppercase;
+  color: var(--wordmark);
+  text-shadow: 0 2px 2px var(--wordmark-shadow);
+}
+
 .ribbon {
   display: inline-block;
   padding: 5px 14px;

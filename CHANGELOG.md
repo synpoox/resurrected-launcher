@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### New
+
+- The product page now shows a gold game wordmark at the top left of the hero, above the ribbon and title.
+
 ### Fixed
 
 - Install, Update and Repair no longer fail with "cannot write ... (os error 3)" when the D2R folder has no PD2Resurrected folder yet. The launcher now creates it.

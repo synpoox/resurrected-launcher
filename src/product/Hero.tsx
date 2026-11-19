@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { HERO_ART } from "../art";
+import { HERO_ART, LOGO_SRC as logo } from "../art";
 import type { Product } from "../products";
 import { motionAllowed } from "../ui/motion";
 
@@ -58,6 +58,12 @@ export function HeroArt({ product }: { product: Product }) {
 export function HeroCopy({ product }: { product: Product }) {
   return (
     <div className="copy">
+      {/* Decorative: the h1 below stays the one heading; the sidebar and hero art name the product. */}
+      <div className="wordmark" aria-hidden="true" data-testid="wordmark">
+        {product.wordmark.above && <span className="wordmark-line">{product.wordmark.above}</span>}
+        <img src={logo} alt="" />
+        {product.wordmark.below && <span className="wordmark-line">{product.wordmark.below}</span>}
+      </div>
       <span className={`ribbon${product.hasRelease ? "" : " soon"}`}>{product.ribbon}</span>
       <h1 className="title">
         <span>{product.title[0]}</span>
