@@ -360,7 +360,7 @@ fn play_refuses_every_unplayable_readiness_without_spawning() {
         Readiness::D2rMissing,
         Readiness::Running { since: 1 },
         Readiness::RecoveryRequired,
-        Readiness::BuildUnsupported { found: "x".into() },
+        Readiness::BuildUnsupported { found: "x".into(), update_fixes: false },
         Readiness::LoaderMissing,
         Readiness::LoaderUnsupported {
             found: "1.0".into(),

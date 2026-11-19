@@ -309,6 +309,7 @@ fn unknown_build_is_unsupported_by_size_or_hash() {
     other_size.compatibility.game_builds[0].size += 1;
     let unsupported = Readiness::BuildUnsupported {
         found: "3.3.93847".into(),
+        update_fixes: false,
     };
     for m in [&other_hash, &other_size] {
         assert_eq!(run(&facts(Some(&loc), Some(m), None), &host), unsupported);
@@ -321,6 +322,34 @@ fn unknown_build_is_unsupported_by_size_or_hash() {
     assert_eq!(
         run(&facts(Some(&loc), Some(&other_hash), None), &no_loader),
         unsupported
+    );
+}
+
+#[test]
+fn unsupported_installed_build_is_fixed_by_a_supporting_recommended_release() {
+    let game = game_dir();
+    let loc = location(game.path());
+    let host = ok_host();
+    let mut installed = manifest("old");
+    installed.compatibility.game_builds[0].sha256 = support::sha256(b"older build");
+    let recommended = manifest("new");
+    // #249: the recommended release supports this build, so Update must be offered.
+    assert_eq!(
+        run(&facts(Some(&loc), Some(&installed), Some(&recommended)), &host),
+        Readiness::BuildUnsupported {
+            found: "3.3.93847".into(),
+            update_fixes: true,
+        }
+    );
+    // Neither supports it: no update helps.
+    let mut also_old = manifest("new");
+    also_old.compatibility.game_builds[0].sha256 = support::sha256(b"older build");
+    assert_eq!(
+        run(&facts(Some(&loc), Some(&installed), Some(&also_old)), &host),
+        Readiness::BuildUnsupported {
+            found: "3.3.93847".into(),
+            update_fixes: false,
+        }
     );
 }
 

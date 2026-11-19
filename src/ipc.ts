@@ -115,7 +115,7 @@ export type Readiness =
   | { status: "d2r_missing" }
   | { status: "running"; since: number }
   | { status: "recovery_required" }
-  | { status: "build_unsupported"; found: string }
+  | { status: "build_unsupported"; found: string; update_fixes?: boolean }
   | { status: "loader_missing" }
   | { status: "loader_unsupported"; found: string; allowed: string[] }
   | { status: "loader_modified"; file: string; version: string }
