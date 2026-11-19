@@ -154,6 +154,8 @@ describe("consent dialogs open on the click (issue 138)", () => {
     const dialog = await screen.findByRole("dialog", { name: /Replace the PD2R files/ });
     const confirm = within(dialog).getByRole("button", { name: "Clean install" });
     await waitFor(() => expect(blocked(confirm)).toBe(false));
+    expect(within(dialog).getByText(/moves your PD2R folder aside and installs/)).toBeTruthy();
+    expect(within(dialog).queryByText(/doesn't match/)).toBeNull();
     await user.click(confirm);
     await waitFor(() => expect(api.calls.some((c) => c.name === "startOperation")).toBe(true));
     const start = api.calls.find((c) => c.name === "startOperation")!;

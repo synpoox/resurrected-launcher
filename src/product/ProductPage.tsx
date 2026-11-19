@@ -858,6 +858,7 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
           product={product}
           inspection={dialog.inspection}
           label={label}
+          installed={!!installed}
           onClose={closeDialog}
           onConfirm={(inspection) => {
             closeDialog();
