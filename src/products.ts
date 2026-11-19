@@ -13,6 +13,8 @@ export interface Product {
   short: string;
   /** Ribbon tag above the title. */
   ribbon: string;
+  /** The extra line of the logo lockup: above (PD2R) or below (09) the Diablo II: Resurrected logo. */
+  wordmark: { above?: string; below?: string };
   /** The hero title: always exactly these two lines. */
   title: [string, string];
   description: string;
@@ -31,6 +33,7 @@ export const PRODUCTS: readonly Product[] = [
     hero: "pd2r",
     name: "Project Diablo 2: Resurrected",
     short: "PD2R",
+    wordmark: { above: "Project" },
     ribbon: "Playable alpha",
     title: ["The game you know.", "A world reborn."],
     description: "The Project Diablo 2 experience, rebuilt on Diablo II: Resurrected.",
@@ -42,6 +45,7 @@ export const PRODUCTS: readonly Product[] = [
     hero: "09",
     name: "Diablo II: Resurrected 09",
     short: "09",
+    wordmark: { below: "09" },
     ribbon: "Coming soon",
     title: ["An earlier era.", "A world revisited."],
     description: "Lord of Destruction 1.09d, ported to Diablo II: Resurrected.",

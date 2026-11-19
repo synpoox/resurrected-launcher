@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+### New
+
+- The product page shows the Diablo II: Resurrected logo at the top left of the hero, with Project above it (PD2R) or 09 below it.
+
 ### Fixed
 
 - One product's broken or too-new release no longer makes every product show offline. The others keep their updates. (#271)
+- A download or catalog refresh that stalls on a dead connection now fails after a timeout instead of hanging, so Cancel, Quit and Play work again. (#269)
 - An installed PD2R now has Clean install… in its ⋯ menu, so an Update that stops on a file the launcher did not install can be recovered. (#264)
 - If you change the D2R location to a folder without PD2R, the launcher now offers Install there instead of Update, Repair and Uninstall.
 - Install, Update and Repair no longer fail with "cannot write ... (os error 3)" when the D2R folder has no PD2Resurrected folder yet. The launcher now creates it.

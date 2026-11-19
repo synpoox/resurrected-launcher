@@ -42,7 +42,7 @@ describe("bundled art", () => {
   });
 
   it("every hero is real, bundled, optimised art, framed per the spec", () => {
-    const framing = { pd2r: ["55% center", undefined], forever: ["74% 22%", "auto 135%"], "09": ["20% 30%", undefined] };
+    const framing = { pd2r: ["55% center", undefined], forever: ["74% 22%", "auto 135%"], "09": ["10% 0%", undefined] };
     for (const [id, art] of Object.entries(HERO_ART)) {
       expect([art.position, art.size], id).toEqual(framing[id as keyof typeof framing]);
       expect(art.accessibleName, id).not.toMatch(/placeholder/i);

@@ -37,6 +37,16 @@
     linear-gradient(90deg, var(--shade) 0%, var(--clear) 50%);
 }
 
+/* Per-product scrim (HERO_ART scrim): darkens the top-left corner behind the wordmark on bright
+   art, gone well before the characters' faces. */
+.shade.scrim {
+  background:
+    radial-gradient(620px 420px at 0 0, var(--bg) 0, var(--shade) 45%, var(--clear) 100%),
+    linear-gradient(180deg, var(--shade) 0, var(--clear) 120px),
+    linear-gradient(0deg, var(--bg) 4%, var(--shade) 30%, var(--clear) 62%),
+    linear-gradient(90deg, var(--shade) 0%, var(--clear) 50%);
+}
+
 .copy {
   position: absolute;
   z-index: 1;
@@ -45,6 +55,62 @@
   translate: 0 -50%;
   /* Stays left of the news column at the 1024 minimum. */
   max-width: min(560px, calc(100% - 120px - var(--feed-width)));
+}
+
+/* Cinzel Regular (OFL, src/product/fonts/OFL.txt): the Roman inscriptional capitals of the logo's RESURRECTED line. */
+@font-face {
+  font-family: Cinzel;
+  font-weight: 400;
+  font-display: block;
+  src: url("./fonts/cinzel-regular.woff2?no-inline") format("woff2");
+}
+
+/* Game logo in the hero's top-left corner, left edge shared with ribbon and title, above the
+   tabs' row and left of them. The extra line (PROJECT above, 09 below) is centred on the logo.
+   --wm-k scales the lockup; every length is rounded to whole pixels so text and image stay crisp. */
+.wordmark {
+  position: absolute;
+  z-index: 1;
+  left: 44px;
+  top: 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+}
+
+.wordmark img {
+  display: block;
+  width: round(calc(220px * var(--wm-k, 0.7)), 1px);
+  height: round(calc(146px * var(--wm-k, 0.7)), 1px); /* 371/560 of the width, whole pixels */
+}
+
+/* Matches the logo's RESURRECTED line at 220px: weight, cap height, tracking and colour. */
+.wordmark-line {
+  font-family: Cinzel, Georgia, serif;
+  font-weight: 400;
+  font-size: round(calc(15px * var(--wm-k, 0.7)), 1px);
+  line-height: 1;
+  letter-spacing: round(calc(9px * var(--wm-k, 0.7)), 1px);
+  margin-right: calc(-1 * round(calc(9px * var(--wm-k, 0.7)), 1px)); /* the trailing letter-space would shift the centre */
+  text-transform: uppercase;
+  color: var(--wordmark);
+}
+
+/* The logo image has empty rows above the flames and below the lower flame: these margins
+   leave a small gap to each. PROJECT is 1.5x RESURRECTED. */
+.wordmark-line:first-child {
+  font-size: round(calc(22px * var(--wm-k, 0.7)), 1px);
+  letter-spacing: round(calc(13px * var(--wm-k, 0.7)), 1px);
+  margin-right: calc(-1 * round(calc(13px * var(--wm-k, 0.7)), 1px));
+  margin-bottom: calc(-1 * round(calc(21px * var(--wm-k, 0.7)), 1px));
+}
+
+.wordmark-line:last-child {
+  margin-top: 0;
+  font-size: round(calc(29px * var(--wm-k, 0.7)), 1px); /* 20px: larger than the RESURRECTED-matched lines */
+  letter-spacing: round(calc(1px * var(--wm-k, 0.7)), 1px);
+  margin-right: calc(-1 * round(calc(1px * var(--wm-k, 0.7)), 1px));
 }
 
 .ribbon {
