@@ -353,7 +353,7 @@ export const SCENES: readonly Scene[] = [
     notes: [],
     news: OFFLINE_NEWS,
   }),
-  scene({ key: "coming-soon", label: "Coming soon", product: "project-forever", state: base() }),
+  scene({ key: "coming-soon", label: "Coming soon", product: "project-09", state: base() }),
   scene({
     key: "quit-busy",
     label: "Quit while busy",

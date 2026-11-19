@@ -29,15 +29,15 @@ export const HERO_ART: Record<HeroProductId, HeroArt> = {
     "55% center",
   ),
   forever: official(
-    forever,
-    "Diablo before a glowing arcane circle in the official Diablo II: Resurrected 30th Anniversary key art",
-    "20% 30%",
-  ),
-  "09": official(
     nine,
     "Official Diablo II: Resurrected Paladin promotional artwork",
     "74% 22%",
     "auto 135%",
+  ),
+  "09": official(
+    forever,
+    "Diablo before a glowing arcane circle in the official Diablo II: Resurrected 30th Anniversary key art",
+    "20% 30%",
   ),
 };
 

@@ -52,7 +52,6 @@ describe("shell", () => {
     const products = within(screen.getByRole("list", { name: "Products" })).getAllByRole("button");
     expect(products.map((b) => b.textContent)).toEqual([
       "Project Diablo 2: Resurrected",
-      "Diablo II: Resurrected Forever",
       "Diablo II: Resurrected 09",
     ]);
     expect(products[0].getAttribute("aria-current")).toBe("page");
@@ -63,8 +62,14 @@ describe("shell", () => {
     localStorage.setItem(LAST_PRODUCT_KEY, "project-09");
     const { user } = mount("ready");
     expect(screen.getByRole("button", { name: "Diablo II: Resurrected 09" }).getAttribute("aria-current")).toBe("page");
-    await user.click(screen.getByRole("button", { name: "Diablo II: Resurrected Forever" }));
-    expect(localStorage.getItem(LAST_PRODUCT_KEY)).toBe("project-forever");
+    await user.click(screen.getByRole("button", { name: "Project Diablo 2: Resurrected" }));
+    expect(localStorage.getItem(LAST_PRODUCT_KEY)).toBe("pd2r");
+  });
+
+  it("a saved Forever selection falls back to PD2R", () => {
+    localStorage.setItem(LAST_PRODUCT_KEY, "project-forever");
+    mount("ready");
+    expect(screen.getByRole("button", { name: "Project Diablo 2: Resurrected" }).getAttribute("aria-current")).toBe("page");
   });
 
   it("window controls and the drag region call the window commands", async () => {
@@ -107,8 +112,6 @@ describe("shell", () => {
     await loaded();
     screen.getByRole("button", { name: "Project Diablo 2: Resurrected" }).focus();
     await user.keyboard("{ArrowDown}");
-    expect(focused().textContent).toBe("Diablo II: Resurrected Forever");
-    await user.keyboard("{ArrowUp}{ArrowUp}");
     expect(focused().textContent).toBe("Diablo II: Resurrected 09");
     await user.keyboard("{Enter}");
     expect(focused().getAttribute("aria-current")).toBe("page");
@@ -158,8 +161,8 @@ describe("product page", () => {
     const { api, user } = mount("coming-soon");
     expect(await screen.findByText("Coming soon")).toBeTruthy();
     expect(screen.queryByRole("tablist")).toBeNull();
-    // Forever has no public page yet (#80): no About, a straight link to the Discord (issue 135).
-    expect(screen.queryByRole("button", { name: "About Forever" })).toBeNull();
+    // 09 has no public page yet (#80): no About, a straight link to the Discord (issue 135).
+    expect(screen.queryByRole("button", { name: "About 09" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Follow for updates on Discord" }));
     expect(api.calls.at(-1)).toEqual({ name: "openCommunityPage", args: [] });
     expect(names(api)).not.toContain("openProductPage");
@@ -169,16 +172,16 @@ describe("product page", () => {
   it("About opens the product page by product id when the product has one", async () => {
     api = createFixtureApi("coming-soon");
     const user = userEvent.setup();
-    const forever = { ...productById("project-forever")!, aboutPage: true };
+    const nine = { ...productById("project-09")!, aboutPage: true };
     render(
       <ApiContext.Provider value={api}>
         <ToastProvider>
-          <ProductPage product={forever} data={undefined} refresh={() => Promise.resolve()} onOpenSettings={() => {}} />
+          <ProductPage product={nine} data={undefined} refresh={() => Promise.resolve()} onOpenSettings={() => {}} />
         </ToastProvider>
       </ApiContext.Provider>,
     );
-    await user.click(await screen.findByRole("button", { name: "About Forever" }));
-    expect(api.calls.at(-1)).toEqual({ name: "openProductPage", args: ["project-forever"] });
+    await user.click(await screen.findByRole("button", { name: "About 09" }));
+    expect(api.calls.at(-1)).toEqual({ name: "openProductPage", args: ["project-09"] });
   });
 
   it("Follow shows why when opening the Discord is refused", async () => {
@@ -347,15 +350,15 @@ describe("product page", () => {
     api = createFixtureApi("coming-soon");
     api.openProductPage = () => Promise.reject({ code: "internal", message: "opening the page failed" });
     const user = userEvent.setup();
-    const forever = { ...productById("project-forever")!, aboutPage: true };
+    const nine = { ...productById("project-09")!, aboutPage: true };
     render(
       <ApiContext.Provider value={api}>
         <ToastProvider>
-          <ProductPage product={forever} data={undefined} refresh={() => Promise.resolve()} onOpenSettings={() => {}} />
+          <ProductPage product={nine} data={undefined} refresh={() => Promise.resolve()} onOpenSettings={() => {}} />
         </ToastProvider>
       </ApiContext.Provider>,
     );
-    await user.click(await screen.findByRole("button", { name: "About Forever" }));
+    await user.click(await screen.findByRole("button", { name: "About 09" }));
     expect(await screen.findByText("opening the page failed")).toBeTruthy();
   });
 
