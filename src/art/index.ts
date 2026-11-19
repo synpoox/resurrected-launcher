@@ -14,6 +14,7 @@ export interface HeroArt {
   position: string; // CSS background-position, from the spec's framing table
   size?: string; // CSS background-size; defaults to "cover"
   accessibleName: string; // the hero's accessible name
+  scrim?: true; // darkens the top-left corner so the wordmark reads on bright art
 }
 
 const official = (src: string, accessibleName: string, position: string, size?: string): HeroArt => ({
@@ -35,7 +36,7 @@ export const HERO_ART: Record<HeroProductId, HeroArt> = {
     "74% 22%",
     "auto 135%",
   ),
-  "09": official(nine, "Official Diablo II: Resurrected Assassin and Druid artwork", "10% 0%"),
+  "09": { ...official(nine, "Official Diablo II: Resurrected Assassin and Druid artwork", "10% 0%"), scrim: true },
 };
 
 export const MARK_SRC: string = mark;
