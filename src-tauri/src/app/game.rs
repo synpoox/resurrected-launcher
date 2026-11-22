@@ -344,7 +344,7 @@ impl Launcher {
                 Readiness::RepairNeeded
             }
             Ok(r) => r,
-            // D2R.exe could not be hashed: its build is unverified, so not playable.
+            // A pinned loader file could not be hashed: unverified, so not playable.
             Err(_) => Readiness::BuildUnsupported {
                 found: location
                     .as_ref()

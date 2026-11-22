@@ -42,8 +42,8 @@ pub struct Facts<'a> {
     pub running: &'a [RunningGame],
 }
 
-/// SHA-256 of game executables and pinned loader files keyed by (path, size,
-/// mtime), so an unchanged `D2R.exe` or `D2RLoader.exe` is hashed once per
+/// SHA-256 of pinned loader files keyed by (path, size, mtime), so an unchanged
+/// `D2RLoader.exe` is hashed once per
 /// launcher run. Shared across assessments.
 #[derive(Debug, Default)]
 pub struct BuildHashCache {
@@ -53,9 +53,12 @@ pub struct BuildHashCache {
 /// The product's [`Readiness`], first reason in the precedence order documented on
 /// it. Build and loader checks use `installed`, or `recommended` when not installed:
 ///
-/// - Build: `<root>\<executable>` of some `compatibility.game_builds` entry matches
-///   its size and SHA-256 (hashed through `cache`); else `build_unsupported` with
-///   the location's build. A missing executable is `d2r_missing`.
+/// - Build: a missing `D2R.exe` (or every `compatibility.game_builds` executable
+///   missing) is `d2r_missing`. Size and SHA-256 are never checked (Steam and
+///   Battle.net exes differ in bytes). When some entry has a `pe_timestamp`, the
+///   PE header TimeDateStamp of `<root>\<executable>` of some entry with one must
+///   equal it, else `build_unsupported`; with no `pe_timestamp` anywhere the build
+///   is not checked.
 /// - Loader: [`GameHost::product_version`] of both `<root>\D2RLoader.exe` and
 ///   `<root>\D2RCore.dll` is in `compatibility.loader_versions`; then, for each
 ///   file whose (version, file) `compatibility.loader_builds` pins, its size and
@@ -95,22 +98,24 @@ pub fn assess(
         // Nothing to check the build and loader against, and nothing installed.
         return Ok(Readiness::NotInstalled);
     };
-    let supports = |m: &ReleaseManifest| -> Result<bool, LauncherError> {
-        for build in &m.compatibility.game_builds {
-            if cache.matches(
-                &root.join(build.executable.as_str()),
-                build.size,
-                &build.sha256,
-            )? {
-                return Ok(true);
-            }
-        }
-        Ok(false)
+    // Only entries that pin a stamp gate; a manifest with none checks no build.
+    let supports = |m: &ReleaseManifest| {
+        let mut pinned = m
+            .compatibility
+            .game_builds
+            .iter()
+            .filter_map(|b| b.pe_timestamp.map(|t| (b.executable.as_str(), t)));
+        let mut any = false;
+        let ok = pinned.any(|(exe, t)| {
+            any = true;
+            pe_timestamp(&root.join(exe)) == Some(t)
+        });
+        ok || !any
     };
-    if !supports(manifest)? {
+    if !supports(manifest) {
         // An installed release that can't run this build may be fixed by updating (#249).
         let update_fixes = match (facts.installed, facts.recommended) {
-            (Some(i), Some(r)) if r.release_id != i.release_id => supports(r)?,
+            (Some(i), Some(r)) if r.release_id != i.release_id => supports(r),
             _ => false,
         };
         return Ok(Readiness::BuildUnsupported {
@@ -122,7 +127,7 @@ pub fn assess(
         // Like #249: the recommended release may allow the loader that is installed.
         let update_fixes = match (facts.installed, facts.recommended) {
             (Some(i), Some(r)) if r.release_id != i.release_id => {
-                supports(r)? && loader_issue(root, r, cache, host)?.is_none()
+                supports(r) && loader_issue(root, r, cache, host)?.is_none()
             }
             _ => false,
         };
@@ -199,6 +204,28 @@ fn loader_issue(
         }
     }
     Ok(None)
+}
+
+/// The PE file header's TimeDateStamp of `path`, `None` when it is not a regular
+/// PE file. Reads only the DOS and PE headers.
+pub fn pe_timestamp(path: &Path) -> Option<u32> {
+    use std::io::{Read, Seek, SeekFrom};
+    regular_file(path)?;
+    let mut f = fs::File::open(path).ok()?;
+    let mut dos = [0u8; 64];
+    f.read_exact(&mut dos).ok()?;
+    if &dos[..2] != b"MZ" {
+        return None;
+    }
+    let e_lfanew = u32::from_le_bytes(dos[0x3c..0x40].try_into().ok()?);
+    f.seek(SeekFrom::Start(e_lfanew.into())).ok()?;
+    // Signature P E 0 0, Machine (2), NumberOfSections (2), TimeDateStamp (4).
+    let mut head = [0u8; 12];
+    f.read_exact(&mut head).ok()?;
+    if head[..4] != [b'P', b'E', 0, 0] {
+        return None;
+    }
+    Some(u32::from_le_bytes(head[8..12].try_into().ok()?))
 }
 
 /// Metadata of `path` when it is a regular file, not a link or reparse point.

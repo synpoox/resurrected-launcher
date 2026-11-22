@@ -443,6 +443,7 @@ impl Rig {
             executable: RelativePath::new("D2R.exe").unwrap(),
             size: D2R_BYTES.len() as u64,
             sha256: sha256(D2R_BYTES),
+            pe_timestamp: None,
         }];
         self.releases.0.lock().unwrap().push(Release {
             manifest,

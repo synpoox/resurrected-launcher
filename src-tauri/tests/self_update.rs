@@ -861,6 +861,7 @@ fn restart_waits_while_a_product_operation_runs() {
         executable: RelativePath::new("D2R.exe").unwrap(),
         size: D2R_BYTES.len() as u64,
         sha256: support::sha256(D2R_BYTES),
+        pe_timestamp: None,
     }];
     // Holds the install in its download while Restart to update is chosen.
     server.route(

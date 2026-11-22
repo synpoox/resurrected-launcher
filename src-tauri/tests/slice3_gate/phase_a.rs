@@ -237,6 +237,7 @@ fn phase_a_reads_a_real_layout_copy_and_changes_nothing() {
         executable: RelativePath::new("D2R.exe").unwrap(),
         size: D2R_BYTES.len() as u64,
         sha256: support::sha256(D2R_BYTES),
+        pe_timestamp: None,
     }];
     let published = Release {
         manifest,

@@ -32,27 +32,18 @@ fn build_loader_matrix_supported_build_and_loader_are_ready_and_play() {
     loader.stop();
 }
 
-/// The build label alone never makes a build supported: the fingerprint is the
-/// executable's size and SHA-256.
+/// A D2R.exe whose bytes the manifest does not list (a Steam copy, say) still
+/// plays: the exe hash never gates Play.
 #[test]
-fn build_loader_matrix_same_size_but_different_hash_is_build_unsupported() {
+fn build_loader_matrix_unlisted_exe_still_plays() {
     let rig = Rig::new();
     rig.adopted();
     let exe = rig.d2r.join("D2R.exe");
     let mut bytes = fs::read(&exe).unwrap();
     *bytes.last_mut().unwrap() ^= 0xff;
     fs::write(&exe, &bytes).unwrap();
-    assert_eq!(fs::metadata(&exe).unwrap().len(), D2R_BYTES.len() as u64);
 
-    let state = rig.state();
-    assert_eq!(
-        state.readiness,
-        Readiness::BuildUnsupported {
-            found: D2R_BUILD.into(),
-            update_fixes: false,
-        }
-    );
-    play_refused(&rig, "game_build_unsupported");
+    assert_eq!(rig.state().readiness.play_refusal(), None);
 }
 
 /// #267: deleting the mod folder in Explorer must not leave Play starting -mod with no mod.

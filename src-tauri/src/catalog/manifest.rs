@@ -59,7 +59,9 @@ pub struct Archive {
     pub sha256: Sha256Digest,
 }
 
-/// A verified game build, identified by its executable's bytes, not a marketing label.
+/// A game build this release was verified with. `size` and `sha256` describe one
+/// store's exe and never gate Play; `pe_timestamp` does, since it is the same per
+/// patch on Steam and Battle.net.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameBuild {
     pub build: String,
@@ -68,6 +70,8 @@ pub struct GameBuild {
     pub executable: RelativePath,
     pub size: u64,
     pub sha256: Sha256Digest,
+    /// The executable's PE header TimeDateStamp; `None` in manifests that predate it.
+    pub pe_timestamp: Option<u32>,
 }
 
 /// An official D2RLoader file this release is verified with, pinned by version and
@@ -323,6 +327,9 @@ struct RawGameBuild {
     executable: String,
     size: Option<u64>,
     sha256: Option<String>,
+    /// Added after schema 3 shipped, so manifests without it still parse.
+    #[serde(default)]
+    pe_timestamp: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -539,6 +546,7 @@ impl RawManifest {
                     executable: check::path(&format!("{field}.executable"), g.executable)?,
                     size: check::size(&format!("{field}.size"), g.size)?,
                     sha256: check::digest(&format!("{field}.sha256"), g.sha256)?,
+                    pe_timestamp: g.pe_timestamp,
                 })
             })?,
             loader_versions,

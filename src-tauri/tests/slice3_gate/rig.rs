@@ -394,6 +394,7 @@ impl Rig {
             executable: RelativePath::new("D2R.exe").unwrap(),
             size: exe.len() as u64,
             sha256: support::sha256(&exe),
+            pe_timestamp: None,
         }];
         let published = Release {
             manifest,

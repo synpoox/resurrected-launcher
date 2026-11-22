@@ -355,6 +355,7 @@ fn quit_while_an_install_downloads_asks_and_does_not_exit() {
         executable: RelativePath::new("D2R.exe").unwrap(),
         size: D2R_BYTES.len() as u64,
         sha256: support::sha256(D2R_BYTES),
+        pe_timestamp: None,
     }];
     // Holds the operation in its download while Quit is chosen.
     server.route(
