@@ -15,7 +15,7 @@ use resurrected_launcher_lib::contract::{
     ErrorCode, GameLocation, GameStore, Readiness, RelativePath, RunningGame,
 };
 use resurrected_launcher_lib::game::detect::{candidates, validate};
-use resurrected_launcher_lib::game::readiness::{assess, BuildHashCache, Facts};
+use resurrected_launcher_lib::game::readiness::{assess, pe_timestamp, BuildHashCache, Facts};
 use resurrected_launcher_lib::game::{GameHost, SystemGameHost};
 
 const GAME_BYTES: &[u8] = b"fixture D2R.exe bytes";
@@ -77,6 +77,7 @@ fn manifest(release_id: &str) -> ReleaseManifest {
         executable: RelativePath::new("D2R.exe").unwrap(),
         size: GAME_BYTES.len() as u64,
         sha256: support::sha256(GAME_BYTES),
+        pe_timestamp: None,
     }];
     m.compatibility.loader_versions = vec![LOADER.into()];
     m
@@ -297,8 +298,10 @@ fn readiness_follows_the_documented_precedence() {
     assert_eq!(run(&busy, &host), Readiness::D2rMissing);
 }
 
+/// A Steam or other D2R.exe whose size or SHA-256 the manifest does not list still
+/// plays when no entry pins a `pe_timestamp`: size and hash never gate Play.
 #[test]
-fn unknown_build_is_unsupported_by_size_or_hash() {
+fn unlisted_build_still_plays() {
     let game = game_dir();
     let loc = location(game.path());
     let host = ok_host();
@@ -307,52 +310,89 @@ fn unknown_build_is_unsupported_by_size_or_hash() {
     other_hash.compatibility.game_builds[0].sha256 = support::sha256(b"another build");
     let mut other_size = manifest("r1");
     other_size.compatibility.game_builds[0].size += 1;
+    let newer = manifest("r2");
+    for m in [&other_hash, &other_size] {
+        let installed = facts(Some(&loc), Some(m), None);
+        assert_eq!(run(&installed, &host), Readiness::Ready);
+        assert_eq!(run(&installed, &host).play_refusal(), None::<ErrorCode>);
+        // Not installed: Install is offered, not refused for the build.
+        assert_eq!(
+            run(&facts(Some(&loc), None, Some(m)), &host),
+            Readiness::NotInstalled
+        );
+        // Installed and a newer release exists: Play is still allowed.
+        assert_eq!(
+            run(&facts(Some(&loc), Some(m), Some(&newer)), &host),
+            Readiness::UpdateAvailable
+        );
+    }
+}
+
+/// A minimal PE header (DOS stub, PE signature, file header) with TimeDateStamp `stamp`.
+fn pe(stamp: u32) -> Vec<u8> {
+    let mut b = vec![0u8; 64];
+    b[..2].copy_from_slice(b"MZ");
+    b[0x3c] = 64; // e_lfanew
+    b.extend([b'P', b'E', 0, 0, 0x64, 0x86, 1, 0]);
+    b.extend(stamp.to_le_bytes());
+    b
+}
+
+/// The build gate is the PE TimeDateStamp, never the bytes: a Steam exe with other
+/// bytes but the listed stamp plays; another patch's stamp does not.
+#[test]
+fn build_is_gated_by_pe_timestamp_not_hash() {
+    const V33: u32 = 0x6a6b96a4;
+    const V34: u32 = 0x6ad81202;
+    let game = game_dir();
+    // Bytes differ from the manifest's sha256 and size.
+    fs::write(game.path().join("D2R.exe"), pe(V34)).unwrap();
+    assert_eq!(pe_timestamp(&game.path().join("D2R.exe")), Some(V34));
+    assert_eq!(pe_timestamp(&game.path().join("D2RCore.dll")), None);
+    let loc = location(game.path());
+    let host = ok_host();
+    let stamped = |id: &str, stamp| {
+        let mut m = manifest(id);
+        m.compatibility.game_builds[0].pe_timestamp = Some(stamp);
+        m
+    };
+
+    let v34 = stamped("r1", V34);
+    assert_eq!(
+        run(&facts(Some(&loc), Some(&v34), None), &host),
+        Readiness::Ready
+    );
+    // A second, unstamped entry neither helps nor hurts.
+    let mut both = stamped("r1", V33);
+    both.compatibility
+        .game_builds
+        .push(manifest("x").compatibility.game_builds.remove(0));
     let unsupported = Readiness::BuildUnsupported {
         found: "3.3.93847".into(),
         update_fixes: false,
     };
-    for m in [&other_hash, &other_size] {
-        assert_eq!(run(&facts(Some(&loc), Some(m), None), &host), unsupported);
-        // Not installed: the recommended release's compatibility decides.
-        assert_eq!(run(&facts(Some(&loc), None, Some(m)), &host), unsupported);
-    }
-    // Build is checked before the loader.
-    let no_loader = FakeHost::with_versions("3.3.93847", "", "");
-    fs::remove_file(game.path().join("D2RCore.dll")).unwrap();
     assert_eq!(
-        run(&facts(Some(&loc), Some(&other_hash), None), &no_loader),
+        run(&facts(Some(&loc), Some(&both), None), &host),
         unsupported
     );
-}
-
-#[test]
-fn unsupported_installed_build_is_fixed_by_a_supporting_recommended_release() {
-    let game = game_dir();
-    let loc = location(game.path());
-    let host = ok_host();
-    let mut installed = manifest("old");
-    installed.compatibility.game_builds[0].sha256 = support::sha256(b"older build");
-    let recommended = manifest("new");
-    // #249: the recommended release supports this build, so Update must be offered.
     assert_eq!(
-        run(
-            &facts(Some(&loc), Some(&installed), Some(&recommended)),
-            &host
-        ),
+        run(&facts(Some(&loc), None, Some(&both)), &host),
+        unsupported
+    );
+    // #249: Update is offered when the recommended release lists the stamp.
+    let v34_new = stamped("r2", V34);
+    assert_eq!(
+        run(&facts(Some(&loc), Some(&both), Some(&v34_new)), &host),
         Readiness::BuildUnsupported {
             found: "3.3.93847".into(),
             update_fixes: true,
         }
     );
-    // Neither supports it: no update helps.
-    let mut also_old = manifest("new");
-    also_old.compatibility.game_builds[0].sha256 = support::sha256(b"older build");
+    // Not a PE file at all, with a stamp listed: unsupported.
+    fs::write(game.path().join("D2R.exe"), GAME_BYTES).unwrap();
     assert_eq!(
-        run(&facts(Some(&loc), Some(&installed), Some(&also_old)), &host),
-        Readiness::BuildUnsupported {
-            found: "3.3.93847".into(),
-            update_fixes: false,
-        }
+        run(&facts(Some(&loc), Some(&v34), None), &host),
+        unsupported
     );
 }
 
@@ -508,29 +548,28 @@ fn pinned_loader_files_must_match_the_official_bytes() {
 }
 
 #[test]
-fn build_hash_is_cached_by_path_size_and_mtime() {
+fn loader_hash_is_cached_by_path_size_and_mtime() {
     let game = game_dir();
-    let exe = game.path().join("D2R.exe");
+    let file = game.path().join("D2RLoader.exe");
     let loc = location(game.path());
-    let m = manifest("r1");
+    let mut m = manifest("r1");
+    m.compatibility.loader_builds = vec![pin(LOADER, "D2RLoader.exe", b"loader")];
     let f = facts(Some(&loc), Some(&m), None);
     let host = ok_host();
     let cache = BuildHashCache::default();
     assert_eq!(assess(&f, &cache, &host).unwrap(), Readiness::Ready);
 
     // Same size and mtime, different bytes: the cached hash is reused.
-    let mtime = fs::metadata(&exe).unwrap().modified().unwrap();
-    let mut other = GAME_BYTES.to_vec();
-    other[0] ^= 1;
-    fs::write(&exe, &other).unwrap();
-    set_mtime(&exe, mtime);
+    let mtime = fs::metadata(&file).unwrap().modified().unwrap();
+    fs::write(&file, b"LOADER").unwrap();
+    set_mtime(&file, mtime);
     assert_eq!(assess(&f, &cache, &host).unwrap(), Readiness::Ready);
 
     // A new mtime is a new key, so the changed bytes are hashed.
-    set_mtime(&exe, mtime + Duration::from_secs(10));
+    set_mtime(&file, mtime + Duration::from_secs(10));
     assert!(matches!(
         assess(&f, &cache, &host).unwrap(),
-        Readiness::BuildUnsupported { .. }
+        Readiness::LoaderModified { .. }
     ));
 }
 

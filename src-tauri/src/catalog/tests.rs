@@ -345,6 +345,23 @@ fn release_manifest_without_loader_builds_still_parses() {
         ReleaseManifest::parse(&fixture("real/pd2r-0.1.0-alpha/release-manifest.json")).unwrap();
     assert_eq!(m.compatibility.loader_versions, ["1.3.1-beta"]);
     assert!(m.compatibility.loader_builds.is_empty());
+    assert_eq!(m.compatibility.game_builds[0].pe_timestamp, None);
+}
+
+/// `game_builds[].pe_timestamp` is additive like `loader_builds`.
+#[test]
+fn release_manifest_reads_optional_pe_timestamp() {
+    let raw = String::from_utf8(fixture("real/pd2r-0.1.0-alpha/release-manifest.json")).unwrap();
+    let raw = raw.replacen(
+        "\"executable\": \"D2R.exe\",",
+        "\"executable\": \"D2R.exe\", \"pe_timestamp\": 1785435812,",
+        1,
+    );
+    let m = ReleaseManifest::parse(raw.as_bytes()).unwrap();
+    assert_eq!(
+        m.compatibility.game_builds[0].pe_timestamp,
+        Some(0x6a6b96a4)
+    );
 }
 
 #[test]

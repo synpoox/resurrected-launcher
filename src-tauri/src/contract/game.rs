@@ -27,7 +27,7 @@ pub struct GameLocation {
     /// The D2R root (the folder holding `D2R.exe`), absolute.
     pub path: PathBuf,
     /// `D2R.exe`'s PE ProductVersion, e.g. `3.3.93847`. A label for display only:
-    /// support is decided by size and SHA-256 against `compatibility.game_builds`.
+    /// Play is gated by the exe's PE TimeDateStamp, never its bytes.
     pub build: String,
     pub store: GameStore,
 }
@@ -54,7 +54,9 @@ pub enum Readiness {
     },
     /// An interrupted transaction is pending; startup recovery must resolve it.
     RecoveryRequired,
-    /// `D2R.exe`'s size and SHA-256 match no `compatibility.game_builds` entry.
+    /// Some `compatibility.game_builds` entry pins a `pe_timestamp` and `D2R.exe`'s
+    /// PE TimeDateStamp matches none (or a pinned loader file could not be hashed).
+    /// Never decided by the exe's size or SHA-256.
     BuildUnsupported {
         /// [`GameLocation::build`] of the unsupported executable.
         found: String,
