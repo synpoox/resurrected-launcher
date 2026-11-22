@@ -488,3 +488,34 @@ fn lifecycle_plugin_commands_are_refused_over_ipc() {
         assert!(err.to_string().contains("not allowed"), "{cmd}: {err}");
     }
 }
+
+/// A product installed in two D2R folders has two records but is one product:
+/// the tray once listed "Play PD2R" twice.
+#[test]
+fn a_product_installed_in_two_d2r_folders_is_known_once() {
+    let (state, d2r) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let mut store = StateStore::open(state.path());
+    for folder in [d2r.path().to_owned(), d2r.path().join("other")] {
+        store
+            .mark_installed(InstalledRelease {
+                product_id: ProductId("pd2r".into()),
+                release_id: "pd2r-1".into(),
+                display_version: "1".into(),
+                manifest_sha256: support::sha256(b"manifest"),
+                installed_at: 1,
+                verified: true,
+                d2r_location: Some(folder),
+            })
+            .unwrap();
+    }
+    assert_eq!(store.installed_releases().len(), 2);
+    drop(store);
+    let (app, _webview) = mount(
+        state.path(),
+        d2r.path(),
+        Box::new(CachedReleases),
+        Downloader::new(),
+    );
+    let known = tauri::Manager::state::<Arc<Launcher>>(&app).known_products();
+    assert_eq!(known, [ProductId("pd2r".into())]);
+}
