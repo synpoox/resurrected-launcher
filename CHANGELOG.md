@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.7
+
+Update checks while the launcher is open, clearer error messages, and safer uninstall and clean install.
+
+### New
+
+- The launcher checks for a new release while it is open, and Play checks first, so an update shows up without a restart. (#282)
+
+### Fixed
+
+- When the latest release needs a newer launcher, the product page now says so and points to Settings → Launcher → Check for updates, instead of saying you're offline. (#272)
+- Failures now say what happened in plain words, such as not enough disk space with the sizes, or a download that failed, instead of showing technical messages. (#272)
+- Update and Install now offer a Clean install, with an explanation, when you edited files or settings the new release can't go over. (#272)
+- The Adopt and Clean install choice for a first install now updates when the D2R location or the offered release changes. (#272)
+- In Settings, Change… for the D2R location is disabled while an install, update or repair runs, and says why. (#272)
+- When the launcher can't tell when D2R started, it no longer shows "Started 493000 h ago". It says it can't tell whether D2R is running, with Check again. (#272)
+- Export diagnostics now opens Settings on the Troubleshooting tab. (#272)
+- Uninstall now works on a full disk instead of asking for free space it never uses. (#273)
+- Clean install no longer fails and rolls back when a file of yours that it keeps is read-only. (#273)
+- Uninstall finishes cleanly when the mod folder, or the whole mods folder, was already deleted by hand. (#273)
+
 ## 0.1.6
 
 Safer uninstall, install records kept per D2R folder, and fixes for stuck starts, recovery and a deleted mod folder.
