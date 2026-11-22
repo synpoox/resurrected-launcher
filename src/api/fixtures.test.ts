@@ -34,6 +34,7 @@ describe("fixtures", () => {
       uninstall: "ready",
       "coming-soon": "ready",
       "quit-busy": "downloading",
+      "ready-then-update": "ready",
       adopt: "install",
       "clean-install": "install",
     };

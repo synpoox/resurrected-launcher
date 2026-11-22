@@ -34,6 +34,8 @@ export interface Scene {
   /** Start at the last progress event instead of the first (replaying the ones before it). */
   progressAtEnd?: boolean;
   open?: SceneOpen;
+  /** Dev and tests: what the second `refreshCatalog` (the first is startup's) changes in the state, as a newly published release would (#282). */
+  afterRefresh?: Partial<ProductState>;
   /** Overrides of what `inspectOperation` answers, per kind (an existing install, issue 126). */
   inspections?: Partial<Record<OperationKind, Partial<Inspection>>>;
 }
@@ -398,6 +400,12 @@ export const SCENES: readonly Scene[] = [
     progress: download(540, 40),
     open: "quit",
   }),
+  scene({
+    key: "ready-then-update",
+    label: "Ready; the next catalog refresh finds 0.5.0",
+    state: base(),
+    afterRefresh: { recommended: summary("0.5.0"), readiness: { status: "update_available" } },
+  }),
 ];
 
 export const DEFAULT_SCENE = "ready";
@@ -422,6 +430,8 @@ export interface FixtureApi extends LauncherApi {
   emitOutcome(outcome: OperationOutcome): void;
   /** Sends a tray request to every subscriber (tests). */
   emitTrayRequest(request: TrayRequest): void;
+  /** Reports the native window gaining focus (tests). */
+  emitWindowFocus(): void;
   /** The folder the next `chooseGameLocation` picker returns; null cancels (the default). */
   picked: GameLocation | null;
 }
@@ -443,6 +453,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
   const calls: Call[] = [];
   let state = s.state;
   let detected: GameLocation[] = [];
+  let refreshes = 0;
   let script = s.progress ?? [];
   let step = s.progressAtEnd ? script.length - 1 : 0;
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -450,6 +461,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
   const progressed = new Set<(e: ProgressEvent) => void>();
   const outcomes = new Set<(o: OperationOutcome) => void>();
   const trays = new Set<(r: TrayRequest) => void>();
+  const windowFocus = new Set<() => void>();
 
   const record = (name: keyof LauncherApi, ...args: unknown[]) => calls.push({ name, args });
   const set = (next: Partial<ProductState>) => {
@@ -514,6 +526,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
     emitProgress: (e) => progressed.forEach((h) => h(e)),
     emitOutcome: emit,
     emitTrayRequest: (r) => trays.forEach((h) => h(r)),
+    emitWindowFocus: () => windowFocus.forEach((h) => h()),
     dispose: () => {
       clearInterval(timer);
       timer = undefined;
@@ -582,7 +595,14 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
       set({ readiness: { status: "running", since: game.since }, running_game: game, startup_failed: null });
       return Promise.resolve(game);
     },
-    refreshCatalog: () => done("refreshCatalog"),
+    refreshCatalog() {
+      record("refreshCatalog");
+      // The first call is startup's; the scene's release appears on the next.
+      const found = ++refreshes > 1 ? s.afterRefresh : undefined;
+      s.afterRefresh = found ? undefined : s.afterRefresh;
+      set(found ?? {}); // like the backend, a state event always ends a refresh
+      return Promise.resolve();
+    },
 
     detectGameLocations() {
       record("detectGameLocations");
@@ -672,6 +692,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
     },
     onOutcome: (h) => subscribe(outcomes, h),
     onTrayRequest: (h) => subscribe(trays, h),
+    onWindowFocus: (h) => subscribe(windowFocus, h),
     picked: null,
   };
   return api;

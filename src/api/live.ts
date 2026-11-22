@@ -43,5 +43,6 @@ export function createLiveApi() {
     onProgress: ipc.onProgress,
     onOutcome: ipc.onOutcome,
     onTrayRequest: ipc.onTrayRequest,
+    onWindowFocus: ipc.onWindowFocus,
   } satisfies LauncherApi;
 }
