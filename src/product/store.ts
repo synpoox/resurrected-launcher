@@ -40,6 +40,65 @@ export function startup(api: LauncherApi): Promise<void> {
   return done;
 }
 
+/** Between background checks: a window focus within this of the last check is ignored. */
+export const CHECK_DEBOUNCE_MS = 30_000;
+/** How often an open launcher re-reads the feed (#282). */
+export const CHECK_INTERVAL_MS = 20 * 60_000;
+/** How long Play waits for the feed before launching what is installed (#282). */
+export const PLAY_CHECK_MS = 4_000;
+
+/**
+ * Background update check (#282): refreshes the catalog when the window gains focus or is shown
+ * again, and every `CHECK_INTERVAL_MS`. Best effort: errors are ignored, a refresh already running
+ * is the backend's to skip, and checks closer than `CHECK_DEBOUNCE_MS` are dropped. The state event
+ * that ends a refresh re-reads product state, so a newer release shows Update. Returns its cleanup.
+ */
+export function watchCatalog(api: LauncherApi, now: () => number = Date.now): () => void {
+  let last = now(); // startup just refreshed
+  const check = () => {
+    if (now() - last < CHECK_DEBOUNCE_MS) return;
+    last = now();
+    api.refreshCatalog().catch(() => undefined);
+  };
+  const onVisible = () => document.visibilityState === "visible" && check();
+  window.addEventListener("focus", check);
+  document.addEventListener("visibilitychange", onVisible);
+  const timer = setInterval(check, CHECK_INTERVAL_MS);
+  return () => {
+    window.removeEventListener("focus", check);
+    document.removeEventListener("visibilitychange", onVisible);
+    clearInterval(timer);
+  };
+}
+
+/**
+ * Refreshes the catalog and resolves when the refresh ends or `timeoutMs` passes, whichever is first.
+ * Never rejects: an unreachable feed just means the installed release is what there is (#282).
+ */
+export function refreshCatalogWithin(api: LauncherApi, productId: string, timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    let finished = false;
+    const sub = subscribe(
+      api.onStateChanged(() => {
+        // The catalog says `refreshing` until the backend's refresh ends.
+        void api
+          .getProductState(productId)
+          .then((s) => s.catalog.status !== "refreshing" && finish())
+          .catch(() => undefined);
+      }),
+    );
+    const timer = setTimeout(() => finish(), timeoutMs);
+    function finish() {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      sub.stop();
+      resolve();
+    }
+    sub.ready.then(() => api.refreshCatalog()).catch(() => finish());
+  });
+}
+
 /**
  * Coalesces state reads: at most one in flight and one queued, so reads never overlap and an older
  * reply can't overwrite a newer one. Every read waits for startup recovery first.
@@ -136,7 +195,11 @@ export function useProducts(api: LauncherApi): Products {
       }),
     );
     reread();
-    return sub.stop;
+    const unwatch = watchCatalog(api);
+    return () => {
+      sub.stop();
+      unwatch();
+    };
   }, [api, refresh]);
 
   return { products, refresh, dismissBackups };
