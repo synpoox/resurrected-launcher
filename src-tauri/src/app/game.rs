@@ -366,17 +366,27 @@ impl Launcher {
         })
     }
 
-    /// Every product State knows: installed ones, then the cached feed's.
+    /// Every product State knows, each once: installed ones, then the cached feed's.
+    /// A product installed in several D2R folders has several records.
     pub fn known_products(&self) -> Vec<ProductId> {
         let mut products: Vec<ProductId> = Vec::new();
         if let Ok(mut s) = locked(&self.state) {
-            products.extend(s.installed_releases().iter().map(|r| r.product_id.clone()));
+            let mut ids: Vec<ProductId> = s
+                .installed_releases()
+                .iter()
+                .map(|r| r.product_id.clone())
+                .collect();
             let feed = s
                 .cached(FEED_IDENTITY)
                 .and_then(|c| Feed::parse(&c.bytes).ok());
-            for p in feed.into_iter().flat_map(|f| f.products) {
-                if !products.contains(&p.product_id) {
-                    products.push(p.product_id);
+            ids.extend(
+                feed.into_iter()
+                    .flat_map(|f| f.products)
+                    .map(|p| p.product_id),
+            );
+            for id in ids {
+                if !products.contains(&id) {
+                    products.push(id);
                 }
             }
         }
