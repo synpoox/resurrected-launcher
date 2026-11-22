@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.8
+
+Steam copies of D2R are no longer blocked from playing.
+
+### Fixed
+
+- Steam copies of D2R, and any D2R.exe whose file differs from the one a release was tested with, are no longer refused with "isn't supported". (#286)
+
 ## 0.1.7
 
 Update checks while the launcher is open, clearer error messages, and safer uninstall and clean install.
