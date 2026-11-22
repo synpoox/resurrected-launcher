@@ -66,6 +66,7 @@ export function watchCatalog(api: LauncherApi, now: () => number = Date.now): ()
   document.addEventListener("visibilitychange", onVisible);
   const timer = setInterval(check, CHECK_INTERVAL_MS);
   const native = subscribe(api.onWindowFocus(check));
+  native.ready.catch(() => undefined); // no native focus (e.g. denied): the DOM listeners above still run
   return () => {
     window.removeEventListener("focus", check);
     document.removeEventListener("visibilitychange", onVisible);
