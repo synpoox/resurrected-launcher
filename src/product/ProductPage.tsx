@@ -356,8 +356,8 @@ function Loaded({ product, data, refresh, open, tab: forcedTab, trayFocus, onOpe
       // From Ready, look for a newer release first (#282). An unreachable feed never blocks Play.
       if (state.readiness.status === "ready") {
         await refreshCatalogWithin(api, product.id, PLAY_CHECK_MS);
-        const fresh = await api.getProductState(product.id);
-        if (fresh.readiness.status === "update_available") {
+        const fresh = await api.getProductState(product.id).catch(() => null);
+        if (fresh?.readiness.status === "update_available") {
           await refresh();
           toast.show({ tone: "info", text: `A new ${product.short} release is available. Update, or choose Play to launch what's installed.` });
           return;

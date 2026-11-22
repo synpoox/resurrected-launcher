@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 /** True inside the Tauri webview; false in tests and a plain browser. */
 export { isTauri } from "@tauri-apps/api/core";
@@ -421,6 +422,11 @@ export interface TrayRequest {
 /** Event "tray-request", Versioned like the others. */
 export function onTrayRequest(handler: (r: TrayRequest) => void): Promise<UnlistenFn> {
   return listen<Versioned<TrayRequest>>("tray-request", (e) => handler(current(e.payload)));
+}
+
+/** The native window gained focus (#282): `show_main` focuses it on a tray restore without a DOM event. */
+export function onWindowFocus(handler: () => void): Promise<UnlistenFn> {
+  return getCurrentWindow().onFocusChanged((e) => e.payload && handler());
 }
 
 // ---- Launcher self-update (#88). Mirror `app::selfupdate`. ----

@@ -102,6 +102,8 @@ export interface LauncherApi {
   onProgress(handler: (event: ProgressEvent) => void): Promise<Unlisten>;
   onOutcome(handler: (outcome: OperationOutcome) => void): Promise<Unlisten>;
   onTrayRequest(handler: (request: TrayRequest) => void): Promise<Unlisten>;
+  /** The native window gained focus (also after a tray restore, which DOM focus may not report; #282). */
+  onWindowFocus(handler: () => void): Promise<Unlisten>;
 }
 
 export function isLauncherError(e: unknown): e is LauncherError {

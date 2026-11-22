@@ -430,6 +430,8 @@ export interface FixtureApi extends LauncherApi {
   emitOutcome(outcome: OperationOutcome): void;
   /** Sends a tray request to every subscriber (tests). */
   emitTrayRequest(request: TrayRequest): void;
+  /** Reports the native window gaining focus (tests). */
+  emitWindowFocus(): void;
   /** The folder the next `chooseGameLocation` picker returns; null cancels (the default). */
   picked: GameLocation | null;
 }
@@ -459,6 +461,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
   const progressed = new Set<(e: ProgressEvent) => void>();
   const outcomes = new Set<(o: OperationOutcome) => void>();
   const trays = new Set<(r: TrayRequest) => void>();
+  const windowFocus = new Set<() => void>();
 
   const record = (name: keyof LauncherApi, ...args: unknown[]) => calls.push({ name, args });
   const set = (next: Partial<ProductState>) => {
@@ -523,6 +526,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
     emitProgress: (e) => progressed.forEach((h) => h(e)),
     emitOutcome: emit,
     emitTrayRequest: (r) => trays.forEach((h) => h(r)),
+    emitWindowFocus: () => windowFocus.forEach((h) => h()),
     dispose: () => {
       clearInterval(timer);
       timer = undefined;
@@ -688,6 +692,7 @@ export function createFixtureApi(key: string, options: FixtureOptions = {}): Fix
     },
     onOutcome: (h) => subscribe(outcomes, h),
     onTrayRequest: (h) => subscribe(trays, h),
+    onWindowFocus: (h) => subscribe(windowFocus, h),
     picked: null,
   };
   return api;

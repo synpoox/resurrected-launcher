@@ -48,10 +48,11 @@ export const CHECK_INTERVAL_MS = 20 * 60_000;
 export const PLAY_CHECK_MS = 4_000;
 
 /**
- * Background update check (#282): refreshes the catalog when the window gains focus or is shown
- * again, and every `CHECK_INTERVAL_MS`. Best effort: errors are ignored, a refresh already running
- * is the backend's to skip, and checks closer than `CHECK_DEBOUNCE_MS` are dropped. The state event
- * that ends a refresh re-reads product state, so a newer release shows Update. Returns its cleanup.
+ * Background update check (#282): refreshes the catalog when the window gains focus (native, or DOM
+ * as a fallback) or is shown again, and every `CHECK_INTERVAL_MS`. Best effort: errors are ignored,
+ * a refresh already running is the backend's to skip, and checks closer than `CHECK_DEBOUNCE_MS`
+ * are dropped. The state event that ends a refresh re-reads product state, so a newer release shows
+ * Update. Returns its cleanup.
  */
 export function watchCatalog(api: LauncherApi, now: () => number = Date.now): () => void {
   let last = now(); // startup just refreshed
@@ -64,38 +65,66 @@ export function watchCatalog(api: LauncherApi, now: () => number = Date.now): ()
   window.addEventListener("focus", check);
   document.addEventListener("visibilitychange", onVisible);
   const timer = setInterval(check, CHECK_INTERVAL_MS);
+  const native = subscribe(api.onWindowFocus(check));
   return () => {
     window.removeEventListener("focus", check);
     document.removeEventListener("visibilitychange", onVisible);
     clearInterval(timer);
+    native.stop();
+  };
+}
+
+const watchers = new WeakMap<LauncherApi, { users: number; stop: () => void }>();
+
+/** One `watchCatalog` per API however many hooks mount; the last user to leave stops it. */
+function shareWatch(api: LauncherApi): () => void {
+  let w = watchers.get(api);
+  if (!w) {
+    w = { users: 0, stop: watchCatalog(api) };
+    watchers.set(api, w);
+  }
+  w.users += 1;
+  const mine = w;
+  return () => {
+    if (--mine.users === 0) {
+      mine.stop();
+      watchers.delete(api);
+    }
   };
 }
 
 /**
  * Refreshes the catalog and resolves when the refresh ends or `timeoutMs` passes, whichever is first.
  * Never rejects: an unreachable feed just means the installed release is what there is (#282).
+ * The end listener is armed after `refreshCatalog` answers (with one immediate read), so an
+ * unrelated state event can't end the wait early.
  */
 export function refreshCatalogWithin(api: LauncherApi, productId: string, timeoutMs: number): Promise<void> {
   return new Promise((resolve) => {
     let finished = false;
-    const sub = subscribe(
-      api.onStateChanged(() => {
-        // The catalog says `refreshing` until the backend's refresh ends.
-        void api
-          .getProductState(productId)
-          .then((s) => s.catalog.status !== "refreshing" && finish())
-          .catch(() => undefined);
-      }),
-    );
-    const timer = setTimeout(() => finish(), timeoutMs);
+    let sub: ReturnType<typeof subscribe> | undefined;
+    const timer = setTimeout(finish, timeoutMs);
     function finish() {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
-      sub.stop();
+      sub?.stop();
       resolve();
     }
-    sub.ready.then(() => api.refreshCatalog()).catch(() => finish());
+    // The catalog says `refreshing` until the backend's refresh ends.
+    const ended = () =>
+      api
+        .getProductState(productId)
+        .then((s) => s.catalog.status !== "refreshing" && finish())
+        .catch(finish);
+    api
+      .refreshCatalog()
+      .then(() => {
+        if (finished) return;
+        sub = subscribe(api.onStateChanged(() => void ended()));
+        return sub.ready.then(ended);
+      })
+      .catch(finish);
   });
 }
 
@@ -195,7 +224,7 @@ export function useProducts(api: LauncherApi): Products {
       }),
     );
     reread();
-    const unwatch = watchCatalog(api);
+    const unwatch = shareWatch(api);
     return () => {
       sub.stop();
       unwatch();
