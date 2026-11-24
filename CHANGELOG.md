@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.9
+
+Safer updates across a save break, and a tray menu fix.
+
+### Fixed
+
+- An update now warns about a save break that came before the release you update to, even if the launcher never saw that release. (#291)
+- The tray menu no longer shows "Play PD2R" twice when PD2R is installed in more than one D2R folder. (#289)
+
 ## 0.1.8
 
 Steam copies of D2R are no longer blocked from playing.
