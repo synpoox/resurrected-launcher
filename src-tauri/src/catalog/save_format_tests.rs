@@ -176,3 +176,25 @@ fn unnumbered_list_needs_a_format_version_and_release_ids() {
         None
     );
 }
+
+#[test]
+fn cached_listed_releases_do_not_prompt_a_listed_install() {
+    // 0.2.5 and 0.2.6 are both flagged save-breaking and share a date; the launcher cached them.
+    let to = numbered("p-0.2.7", "2026-03-01", 1, Some(&["p-0.2.5", "p-0.2.6"]));
+    let (v5, v6) = (
+        rel("p-0.2.5", "2026-02-01", None, true),
+        rel("p-0.2.6", "2026-02-01", None, true),
+    );
+    let history = [v5.clone(), v6.clone()];
+    assert!(!to.breaks_saves_from(Some(&v5), &history));
+    assert!(!to.breaks_saves_from(Some(&v6), &history));
+    assert!(to.breaks_saves_from(Some(&rel("p-0.2.4", "2026-01-01", None, false)), &history));
+}
+
+#[test]
+fn an_unlisted_cached_break_still_prompts_a_listed_install() {
+    let to = numbered("p-0.2.7", "2026-03-01", 1, Some(&["p-0.2.5"]));
+    let installed = rel("p-0.2.5", "2026-02-01", None, true);
+    let unlisted = rel("p-0.2.6", "2026-02-15", None, true);
+    assert!(to.breaks_saves_from(Some(&installed), &[unlisted]));
+}

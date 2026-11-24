@@ -182,7 +182,8 @@ impl ReleaseManifest {
     /// (exclusive) and this one (inclusive of its date) is save-breaking or declares
     /// a format other than the installed one's, or when the installed release declares
     /// no format and this release lists the unnumbered releases it reads and the
-    /// installed one is not among them. Other missing data counts as compatible.
+    /// installed one is not among them. When it is among them, cached releases this
+    /// release also lists are not counted. Other missing data counts as compatible.
     pub fn breaks_saves_from(
         &self,
         installed: Option<&ReleaseManifest>,
@@ -203,13 +204,23 @@ impl ReleaseManifest {
         if differs(self) {
             return true;
         }
-        if installed.saves.save_format_version.is_none() {
-            if let Some(same) = &self.saves.unnumbered_compatible_releases {
-                if installed.product_id == self.product_id && !same.contains(&installed.release_id)
-                {
-                    return true;
-                }
-            }
+        // This release's word on the unnumbered releases whose saves it reads (#290).
+        let listed = |m: &ReleaseManifest| {
+            m.saves.save_format_version.is_none()
+                && m.product_id == self.product_id
+                && self
+                    .saves
+                    .unnumbered_compatible_releases
+                    .as_ref()
+                    .is_some_and(|same| same.contains(&m.release_id))
+        };
+        let vouched = listed(installed);
+        if installed.saves.save_format_version.is_none()
+            && self.saves.unnumbered_compatible_releases.is_some()
+            && installed.product_id == self.product_id
+            && !vouched
+        {
+            return true;
         }
         history.iter().any(|m| {
             m.product_id == self.product_id
@@ -217,6 +228,8 @@ impl ReleaseManifest {
                 && m.release_id != installed.release_id
                 && m.release_date >= installed.release_date
                 && m.release_date <= self.release_date
+                // a listed install writes the format of every listed release, flagged or not
+                && !(vouched && listed(m))
                 && (m.is_save_breaking() || differs(m))
         })
     }
