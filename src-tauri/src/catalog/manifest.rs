@@ -182,7 +182,8 @@ impl ReleaseManifest {
     /// (exclusive) and this one (inclusive of its date) is save-breaking or declares
     /// a format other than the installed one's, or when the installed release declares
     /// no format and this release lists the unnumbered releases it reads and the
-    /// installed one is not among them. Other missing data counts as compatible.
+    /// installed one is not among them. When it is among them, cached releases this
+    /// release also lists are not counted. Other missing data counts as compatible.
     pub fn breaks_saves_from(
         &self,
         installed: Option<&ReleaseManifest>,
