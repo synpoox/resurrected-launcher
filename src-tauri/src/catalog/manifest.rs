@@ -120,6 +120,12 @@ pub struct Saves {
     /// installed and target values catches a save-breaking release that an update
     /// skips over (#213).
     pub save_format_version: Option<u32>,
+    /// Earlier releases of this product that declare no `save_format_version` but
+    /// write the saves this release reads. When present, an installed release with no
+    /// format version that is not listed counts as save-breaking, so the first
+    /// releases to declare a format still catch a break that came before them.
+    /// Absent: such an installed release counts as compatible.
+    pub unnumbered_compatible_releases: Option<Vec<String>>,
     pub loader_save_format: Option<Setting>,
 }
 
@@ -174,7 +180,9 @@ impl ReleaseManifest {
     /// different one (higher: a breaking release may have been skipped; lower: a
     /// downgrade), or when any release in `history` between the installed one
     /// (exclusive) and this one (inclusive of its date) is save-breaking or declares
-    /// a format other than the installed one's. Missing data counts as compatible.
+    /// a format other than the installed one's, or when the installed release declares
+    /// no format and this release lists the unnumbered releases it reads and the
+    /// installed one is not among them. Other missing data counts as compatible.
     pub fn breaks_saves_from(
         &self,
         installed: Option<&ReleaseManifest>,
@@ -194,6 +202,14 @@ impl ReleaseManifest {
         };
         if differs(self) {
             return true;
+        }
+        if installed.saves.save_format_version.is_none() {
+            if let Some(same) = &self.saves.unnumbered_compatible_releases {
+                if installed.product_id == self.product_id && !same.contains(&installed.release_id)
+                {
+                    return true;
+                }
+            }
         }
         history.iter().any(|m| {
             m.product_id == self.product_id
@@ -347,6 +363,9 @@ struct RawSaves {
     save_breaking: bool,
     incompatibility_notice: Option<String>,
     save_format_version: Option<u32>,
+    /// Added with #290, so manifests without it still parse.
+    #[serde(default)]
+    unnumbered_compatible_releases: Option<Vec<String>>,
     loader_save_format: Option<RawSetting>,
 }
 
@@ -579,6 +598,20 @@ impl RawManifest {
             save_format_version: match s.save_format_version {
                 Some(0) => return Err(invalid("saves.save_format_version", "must be at least 1")),
                 v => v,
+            },
+            unnumbered_compatible_releases: match s.unnumbered_compatible_releases {
+                Some(_) if s.save_format_version.is_none() => {
+                    return Err(invalid(
+                        "saves.unnumbered_compatible_releases",
+                        "needs saves.save_format_version",
+                    ))
+                }
+                Some(ids) => Some(
+                    ids.into_iter()
+                        .map(|id| check::ident("saves.unnumbered_compatible_releases", id))
+                        .collect::<Result<_, _>>()?,
+                ),
+                None => None,
             },
             loader_save_format: s
                 .loader_save_format
